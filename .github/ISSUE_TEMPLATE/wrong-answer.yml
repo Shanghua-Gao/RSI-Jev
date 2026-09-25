@@ -1,0 +1,42 @@
+name: The model got it wrong
+description: A case where the model is confidently wrong. These are the most useful reports.
+labels: [wrong-answer]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These models are improved by an autonomous research loop. A concrete case
+        where the model is confidently wrong becomes a test case, and often a
+        hypothesis — so this is genuinely useful, not a complaint.
+  - type: textarea
+    id: state
+    attributes:
+      label: The document (state)
+      description: What the model was given to read. Trim it, but keep what matters.
+      render: text
+    validations: {required: true}
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: The `questions` object you sent, or just the instructions and options.
+      render: json
+    validations: {required: true}
+  - type: textarea
+    id: got
+    attributes:
+      label: What it answered, and what you expected
+      description: Paste the answer including the probabilities — the confidence matters as much as the choice.
+      render: json
+    validations: {required: true}
+  - type: dropdown
+    id: model
+    attributes:
+      label: Model
+      options: [RSI-Jev-v1.0-2B, RSI-Jev-v1.0-0.8B, both]
+    validations: {required: true}
+  - type: input
+    id: setup
+    attributes:
+      label: How you ran it
+      description: Device and precision if you know them, e.g. "CUDA, bf16, the default server".

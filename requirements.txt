@@ -1,0 +1,17 @@
+# Running and serving the models. Deliberately loose: nothing on this path needs
+# the pinned training stack (see requirements-repro.txt), and pinning an old
+# torch on every user would hand them its published advisories for no benefit.
+# The torch floor is the first version clear of all published torch advisories,
+# and the one the test suite is run against.
+torch>=2.13
+transformers>=5.17,<6
+safetensors
+huggingface_hub
+
+# Serving
+fastapi
+uvicorn
+
+# Tests
+pytest
+httpx

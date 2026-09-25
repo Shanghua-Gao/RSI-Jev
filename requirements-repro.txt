@@ -1,0 +1,23 @@
+# The exact stack v1.0 was TRAINED and EVALUATED on. You need this only to
+# reproduce the published numbers, not to run the models -- see requirements.txt
+# for that.
+#
+# Numbers are only comparable within one kernel stack, and every record carries
+# a linear_attn_kernel stamp saying which one produced it.
+#
+# The torch pin is load-bearing: flash-linear-attention needs Triton 3.3.1.
+# Triton 3.2 cannot compile it, and Triton 3.4 to 3.7.0 computes WRONG gated
+# delta-rule gradients on Hopper (fla #640) -- fla refuses to run there. Do not
+# bump torch here without re-checking that.
+#
+# NOTE: this torch is pinned below the current advisories on purpose. It is the
+# version the published numbers were produced on, and moving it silently changes
+# them. Use it in a throwaway environment for reproduction, not in a service;
+# requirements.txt is the one to run the models with.
+torch==2.7.1
+triton==3.3.1
+flash-linear-attention==0.5.2
+transformers==5.17.0
+datasets==4.1.1
+safetensors
+huggingface_hub

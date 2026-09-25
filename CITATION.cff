@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: If you use these models or this record, please cite it.
+title: "RSI-Jev: typed-decision models trained by a self-improving loop of AI agents"
+authors:
+  - family-names: Gao
+    given-names: Shanghua
+repository-code: "https://github.com/Shanghua-Gao/RSI-Jev"
+url: "https://huggingface.co/shgao"
+license: MIT
+version: v1.0
+date-released: "2026-09-24"
+keywords:
+  - typed-decisions
+  - decision-model
+  - recursive-self-improvement
+  - autonomous-research
+references:
+  - type: article
+    title: "AutoScientists: Self-Organizing Agent Teams for Long-Running Scientific Experimentation"
+    authors:
+      - family-names: Gao
+        given-names: Shanghua
+      - family-names: Fang
+        given-names: Ada
+      - family-names: Zitnik
+        given-names: Marinka
+    year: 2026
+    url: "https://arxiv.org/abs/2605.28655"

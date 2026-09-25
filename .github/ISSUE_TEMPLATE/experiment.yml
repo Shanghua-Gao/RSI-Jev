@@ -1,0 +1,40 @@
+name: I tried a variant
+description: You changed the model, data or training and measured something. Negative results welcome.
+labels: [experiment]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A well-measured negative is worth more here than a small positive, so
+        please report it either way. Two things make a result actionable, and
+        they are asked for below: **paired per-seed deltas** rather than only a
+        mean, and **which kernel stack** you were on.
+  - type: textarea
+    id: change
+    attributes:
+      label: What you changed
+      description: Which file or setting, and what you expected it to do.
+    validations: {required: true}
+  - type: textarea
+    id: numbers
+    attributes:
+      label: What you measured
+      description: |
+        Per-seed numbers against the baseline you compared with, not just the mean.
+        A delta whose sign flips across seeds is noise, and only the per-seed
+        values show that.
+      render: text
+    validations: {required: true}
+  - type: input
+    id: seeds
+    attributes:
+      label: Seeds
+      placeholder: "17, 29, 43"
+    validations: {required: true}
+  - type: input
+    id: stack
+    attributes:
+      label: Kernel stack
+      description: Numbers do not compare across stacks. `meta.json` records the one a checkpoint used.
+      placeholder: "fla-0.5.2/torch-2.7.1+cu128"
+    validations: {required: true}
