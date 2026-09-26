@@ -1,7 +1,7 @@
 """How fast is it on YOUR machine?
 
     python scripts/bench.py                      # 0.8B, downloads on first run
-    python scripts/bench.py --model 2b
+    python scripts/bench.py --model v2.0-2b
 
 Times the served path — the same code the server calls — across document sizes
 and question counts, because together those decide the cost: the document is
@@ -32,7 +32,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-REPOS = {"0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b", "2b": "shgao/rsi-jev-v1.0-qwen3.5-2b"}
+# Keyed by release, because a key that means "the 2B one" stops being useful the
+# moment there are two of them.
+REPOS = {"v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
+         "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
+         "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
 QUESTIONS = {
     "refund": {"type": "noul", "instructions": "Is the customer asking for a refund?"},
     "escalate": {"type": "noul", "instructions": "Should a human agent take this now?"},
@@ -52,7 +56,7 @@ TICKET = ("Order #48213, placed 3 March, two-day shipping. Customer wrote on 11 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="0.8b", choices=sorted(REPOS))
+    ap.add_argument("--model", default="v2.0-2b", choices=sorted(REPOS))
     ap.add_argument("--ckpt", default=None)
     ap.add_argument("--device", default=None)
     ap.add_argument("--dtype", default=None, choices=["bf16", "fp32"])

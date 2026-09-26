@@ -187,6 +187,33 @@ class OptionScorer(nn.Module):
         return logits
 
 
+CAL_PCA_DIM = 16          # hidden-state directions the confidence head reads
+CAL_N_SCALAR = 7          # p_top, top-2 logit gap, normalised entropy, log K, mode one-hot (3)
+CAL_LOGT_CLAMP = 3.0      # |log tau| <= 3: tau in [0.05, 20]
+
+
+def cal_features(logits: torch.Tensor, decision_h: torch.Tensor, mode_id: torch.Tensor | None,
+                 pca_mean: torch.Tensor, pca_W: torch.Tensor) -> torch.Tensor:
+    """Input features of the confidence head, all from the SAME forward pass:
+    the uncalibrated option distribution's shape, the question's mode and option
+    count, and a low-rank projection of the decision hidden state (the only
+    feature that can tell an in-distribution question from an OOD one)."""
+    z = logits.float()
+    finite = torch.isfinite(z)
+    k = finite.sum(-1).clamp_min(2).float()
+    p = torch.softmax(z, dim=-1)
+    top2 = torch.topk(z.masked_fill(~finite, -1e9), 2, dim=-1).values
+    gap = (top2[:, 0] - top2[:, 1]).clamp(0, 30)
+    ent = -(p * torch.log(p.clamp_min(1e-12))).masked_fill(~finite, 0).sum(-1) / torch.log(k)
+    ptop = p.max(-1).values
+    if mode_id is None:
+        mode_id = torch.zeros(z.shape[0], dtype=torch.long, device=z.device)
+    onehot = F.one_hot(mode_id.long(), len(MODES)).float()
+    proj = (decision_h.float() - pca_mean) @ pca_W
+    return torch.cat([proj, ptop[:, None], gap[:, None], ent[:, None], torch.log(k)[:, None],
+                      onehot], dim=-1)
+
+
 class DecisionModel(nn.Module):
     """A frozen (or tuned) text tower plus a trained option scorer."""
 
@@ -198,6 +225,22 @@ class DecisionModel(nn.Module):
         self.scorer = OptionScorer(hidden, cfg)
         self.lm_head = lm_head
         self.mix_logits = None
+        # Post-hoc calibration (the cal-1 / cal-4 arms). Buffers only, never
+        # parameters: nothing here is trained by the optimiser or counted as
+        # trainable. They stay at identity (cal_mode "none") during training and
+        # are fitted by fit.calibrate() on DEV data after the SFT steps; the
+        # forward pass then rescales the logits it already computed, so a
+        # decision is still ONE forward pass.
+        self.cal_mode = "none"            # "none" | "temp" | "temp_mode" | "oof_head" | "oof_head_scorefloor"
+        k = CAL_PCA_DIM
+        self.register_buffer("cal_logT", torch.zeros(()))
+        self.register_buffer("cal_logT_mode", torch.zeros(len(MODES)))
+        self.register_buffer("cal_pca_mean", torch.zeros(hidden))
+        self.register_buffer("cal_pca_W", torch.zeros(hidden, k))
+        self.register_buffer("cal_feat_mu", torch.zeros(k + CAL_N_SCALAR))
+        self.register_buffer("cal_feat_sd", torch.ones(k + CAL_N_SCALAR))
+        self.register_buffer("cal_w", torch.zeros(k + CAL_N_SCALAR))
+        self.register_buffer("cal_b", torch.zeros(()))
         if cfg.layer_mix:
             cands = list(cfg.layer_mix)
             self.register_buffer("_mix_candidates", torch.tensor(cands), persistent=False)
@@ -341,7 +384,8 @@ class DecisionModel(nn.Module):
             h = torch.einsum("cbth,bc->bth", stack.to(w.dtype), w)
             return self._readout(h, final, b, decision_index, option_index,
                                  option_span_start, option_span_end,
-                                 option_token_ids, option_mask, want_base)
+                                 option_token_ids, option_mask, want_base,
+                                 mode_id=mode_id)
         layer = self.cfg.readout_layer
         if isinstance(layer, dict):
             if mode_id is None:
@@ -358,11 +402,12 @@ class DecisionModel(nn.Module):
             h = hs[layer]
         return self._readout(h, final, b, decision_index, option_index,
                              option_span_start, option_span_end,
-                             option_token_ids, option_mask, want_base)
+                             option_token_ids, option_mask, want_base,
+                             mode_id=mode_id)
 
     def _readout(self, h, final, b, decision_index, option_index,
                  option_span_start, option_span_end, option_token_ids,
-                 option_mask, want_base):
+                 option_mask, want_base, mode_id=None):
         decision_h = h[b, decision_index]                        # (B, H)
         option_h = None
         if option_span_start is not None and self.cfg.option_pool == "mean":
@@ -403,6 +448,11 @@ class DecisionModel(nn.Module):
             # take probability mass.
             if option_mask is not None:
                 logits = logits.masked_fill(~option_mask, float("-inf"))
+
+        if self.cal_mode != "none":
+            with torch.autocast(decision_h.device.type, enabled=False):
+                log_t = self.cal_log_temperature(logits.float(), decision_h.float(), mode_id)
+                logits = logits.float() / torch.exp(log_t).unsqueeze(-1)
 
         base = None
         if self.cfg.residual or want_base:
@@ -458,6 +508,29 @@ class DecisionModel(nn.Module):
     @staticmethod
     def probs(logits: torch.Tensor) -> torch.Tensor:
         return F.softmax(logits, dim=-1)
+
+    def cal_log_temperature(self, logits: torch.Tensor, decision_h: torch.Tensor,
+                            mode_id: torch.Tensor | None) -> torch.Tensor:
+        """log tau per row, (B,). Argmax-preserving: every row is divided by one
+        positive scalar, so top-1 is exactly the uncalibrated model's."""
+        B = logits.shape[0]
+        if self.cal_mode == "temp":
+            return self.cal_logT.expand(B)
+        if self.cal_mode == "temp_mode":
+            if mode_id is None:
+                raise ValueError("per-mode temperature needs mode_id in the batch")
+            return self.cal_logT_mode[mode_id]
+        if self.cal_mode in ("oof_head", "oof_head_scorefloor", "oof_head_joint"):
+            f = cal_features(logits, decision_h, mode_id, self.cal_pca_mean, self.cal_pca_W)
+            f = (f - self.cal_feat_mu) / self.cal_feat_sd
+            lt = (f @ self.cal_w + self.cal_b).clamp(-CAL_LOGT_CLAMP, CAL_LOGT_CLAMP)
+            if self.cal_mode == "oof_head_scorefloor":
+                if mode_id is None:
+                    raise ValueError("oof_head_scorefloor needs mode_id in the batch")
+                # score rows soften but never sharpen (cal-4b)
+                lt = torch.where(mode_id == MODES.index("score"), lt.clamp_min(0.0), lt)
+            return lt
+        raise ValueError(f"unknown cal_mode {self.cal_mode!r}")
 
     def trainable_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

@@ -1,4 +1,4 @@
-# The exact stack v1.0 was TRAINED and EVALUATED on. You need this only to
+# The exact stack v1.0 and v2.0 were TRAINED and EVALUATED on. You need this only to
 # reproduce the published numbers, not to run the models -- see requirements.txt
 # for that.
 #

@@ -70,7 +70,8 @@ def main() -> int:
                                                                max(len(q.options) for q in questions)))
         return [list(p.probs) for p in preds], tokens
 
-    app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key)
+    app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
+                     calibration=meta.get("calibration", "none"))
     print(f"serving {a.ckpt} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {meta['base_model']}, kernel {meta['linear_attn_kernel']}, "
           f"tower {dtype_name} on {device}", flush=True)

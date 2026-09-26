@@ -58,6 +58,14 @@ class FitConfig:
     # bf16 autocast for the forward pass while the weights stay fp32. Needed when
     # the tower trains: fp32 activations for 24 layers at batch 16 used 79 GB.
     autocast_bf16: bool = False
+    # Post-hoc calibration on DEV data (rsijev/calibrate.py). "none" reproduces
+    # the champion exactly (no dev split, nothing withheld from training).
+    #   temp | temp_mode | oof_head
+    cal_method: str = "none"
+    cal_td_frac: float = 0.20        # typed-decisions TRAIN cases withheld as dev
+    cal_synth_frac: float = 0.03
+    cal_mc_frac: float = 0.05
+    cal_joint_lambda: float = 0.0     # oof_head_joint: weight on score-row soft-gold Brier
     rl: RLConfig = field(default_factory=RLConfig)
     log_every: int = 50
 
@@ -89,6 +97,17 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     # Its own stream, so turning option shuffling on does not change the data
     # ORDER an arm sees and break the pairing with its control.
     order_rng = random.Random(seed + 104729)
+    cal_report = None
+    dev = []
+    if cfg.cal_method != "none":
+        from .calibrate import split_dev
+        cases, dev = split_dev(cases, td_frac=cfg.cal_td_frac, synth_frac=cfg.cal_synth_frac,
+                               mc_frac=cfg.cal_mc_frac)
+        print(f"    calibration: {len(dev)} dev cases withheld from training "
+              f"({sum(len(c.questions) for c, _ in dev)} questions); {len(cases)} train cases",
+              flush=True)
+    if any(c.source.startswith("caldev:") for c in cases):
+        raise ValueError("caldev:* cases are calibration-only and must never be trained on")
     pairs = list(iter_questions(cases))
     order = list(range(len(pairs)))
     random.Random(seed).shuffle(order)          # data order is part of the CRN
@@ -209,5 +228,17 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     averaged = {k: torch.stack([c[k].float() for c in ckpts]).mean(0) for k in ckpts[0]}
     model.scorer.load_state_dict({k: v.to(next(model.scorer.parameters()).dtype)
                                   for k, v in averaged.items()})
+    if cfg.cal_method != "none":
+        from .calibrate import calibrate
+        cal_report = calibrate(model, tokenizer, dev, enc, method=cfg.cal_method,
+                               max_options=max_options, device=device,
+                               joint_lambda=cfg.cal_joint_lambda)
+        print("    CALIBRATION " + " ".join(f"{k}={v}" for k, v in cal_report.items()), flush=True)
+        # Into the record through history: step -1 keeps it out of every stability
+        # rule (they read step > 150 / >= 750) and history[-1] stays the final loss.
+        # "loss" here is the calibrated dev pool's weighted top-label BCE.
+        history.insert(0, {"step": -1, "loss": cal_report["cal_dev_wbce_cal"], **cal_report})
+
     return {"history": history, "averaged_over": len(ckpts),
-            "examples_seen": cfg.steps * cfg.batch_size, "seed": seed}
+            "examples_seen": cfg.steps * cfg.batch_size, "seed": seed,
+            "calibration": cal_report}

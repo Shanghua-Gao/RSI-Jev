@@ -83,7 +83,8 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
 
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
-               api_key: str | None = None, version: str = "v1.0") -> FastAPI:
+               api_key: str | None = None, version: str = "v2.0",
+               calibration: str = "none") -> FastAPI:
     app = FastAPI(title="RSI-Jev", version=version,
                   description="A Jev-compatible typed-decision API served by a "
                               "trained decision model. See GET /v1/limits for the "
@@ -151,7 +152,11 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
 
     @app.get("/v1/limits", tags=["Limits"])
     def limits_route() -> dict[str, Any]:
-        return {**limits(), "served_model_name": served_model_name, "version": version}
+        # `calibration` is part of what a client needs to know: from v2.0 a checkpoint
+        # may ship a fitted calibration, and then the probabilities in an answer are
+        # rescaled. The chosen option is the same either way, the numbers are not.
+        return {**limits(), "served_model_name": served_model_name, "version": version,
+                "calibration": calibration}
 
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:

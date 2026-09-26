@@ -37,8 +37,11 @@ rule that applies to our own ideas.
 The repo publishes the **search**, not just the scores, because in our own history the search is
 where nearly all the error lived.
 
-- **No contamination, checked rather than asserted** — against the 1,200-case train and 400-case
-  test splits, the 6,977 training cases share **zero** states and not one 12-word phrase.
+- **No contamination, checked rather than asserted** — no release trains on any benchmark's
+  **test** split, and no training document shares a state with one. Whether a release may use a
+  benchmark's **train** split changed at v2.0, and it changes what its scores mean:
+  [`BENCHMARKS.md`](BENCHMARKS.md#what-a-model-may-train-on). A held-out set of three benchmarks
+  is read once per release, so two releases can still be compared on equal terms.
 - **Null floors are measured, not assumed** — arms provably identical to the control, verified by
   object identity before any GPU time. Their spread *is* the noise floor, so a difference smaller
   than it is not a result.
@@ -46,7 +49,10 @@ where nearly all the error lived.
   failure rather than getting quietly re-cut.
 - **Artifacts are verified.** A checkpoint is reloaded from disk, re-scored, and published only if
   it reproduces its training run's per-question predictions exactly. Both v1.0 checkpoints agree
-  at **1.0000**.
+  at **1.0000**, and v2.0 at 1.0000 on typed-decisions. Its MMLU-Pro agreement is 0.9980 on one
+  machine and 1.0000 on another, because a few of that benchmark's answers turn on a logit
+  margin below 0.001 — reported rather than rounded, in
+  [`versions/v2.0.md`](versions/v2.0.md#3-checkpoints).
 - **Failures ship**, including the ones that killed our own champion.
 
 What that buys: the bug behind v1.0 took **seven registered negatives** to find. Each was an
@@ -96,9 +102,14 @@ re-run our search rather than check our result.
 **v1.0 itself was built in a human-directed agent session** under the same pre-registration
 discipline, not by the swarm. An earlier phase pointed the same loop at a narrower question — how
 far an *inference algorithm* alone could go on a frozen model, with no training — and that is
-where the multi-agent results so far come from. The multi-agent run on the model, data and
-training axes is under way and has produced no release yet. **v1.0 is the baseline it has to
-beat**, which is the only reason its numbers are worth publishing at all.
+where the earlier multi-agent results come from.
+
+**v2.0 is the first release the multi-agent run produced**, out of about fifty arms of which four
+were kept. It is also the first release to show the limit of its own bar: it beats v1.0 by 0.096
+on the suite it was judged against, and does **not** beat it on the three benchmarks held out from
+the whole search. That is in its record and in [`EXPLORE.md`](EXPLORE.md) rather than left for a
+reader to discover, because a search that only publishes the numbers it was optimising is the
+failure mode this repo exists to avoid.
 
 ## Related work
 
