@@ -35,7 +35,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-REPOS = {"0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b", "2b": "shgao/rsi-jev-v1.0-qwen3.5-2b"}
+# Keyed by release, because a key that means "the 2B one" stops being useful the
+# moment there are two of them.
+REPOS = {"v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
+         "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
+         "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
+
+# The cascade needs a small model and a large one, so it runs v1.0's pair: v2.0 was
+# only ever trained at 2B. It is also the honest pair for this script, whose claim
+# that no test document was seen in training holds for v1.0 and not for v2.0.
+CASCADE = ("v1.0-0.8b", "v1.0-2b")
 COVERAGE = (1.0, 0.9, 0.8, 0.6, 0.4, 0.2)
 # Escalate the least-confident share of documents, rather than thresholding on a
 # probability. With several questions per document almost every document has one
@@ -104,7 +113,7 @@ def main() -> int:
     # the cascade is a routing decision only if you are not paying to swap
     # checkpoints between documents.
     loaded, sizes = {}, {}
-    for key in ("0.8b", "2b"):
+    for key in CASCADE:
         before = torch.cuda.memory_allocated() if device == "cuda" else 0
         loaded[key] = load_release(snapshot_download(REPOS[key]), device,
                                    infer_dtype=dtype)

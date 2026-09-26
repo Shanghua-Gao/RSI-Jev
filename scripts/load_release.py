@@ -64,6 +64,16 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None):
                       **dict(spec.get("arch_extra") or {}))
     model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
+    # v2.0 onward a checkpoint may ship a fitted calibration (calibration.safetensors
+    # + calibration.json, rsijev/calibrate.py). It is part of the released model, not
+    # an extra: the forward pass divides each question's logits by one positive
+    # temperature, so the answer is unchanged and it is still one forward pass. A
+    # checkpoint without those files -- v1.0 -- loads exactly as it always did.
+    if (ckpt / "calibration.safetensors").exists():
+        from rsijev.calibrate import load_calibration
+        meta["calibration"] = load_calibration(model, ckpt)
+    else:
+        meta["calibration"] = "none"
     model.scorer.to(torch.float32)          # never follows the tower down
     model.eval()
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
@@ -95,7 +105,8 @@ def main() -> int:
     dt = {"bf16": torch.bfloat16, "fp32": torch.float32}.get(args.dtype)
     model, tok, enc, meta = load_release(args.ckpt, dev, infer_dtype=dt)
     print(f"loaded {args.ckpt}: base {meta['base_model']}, kernel "
-          f"{meta['linear_attn_kernel']}, tower {args.dtype or 'fp32'}")
+          f"{meta['linear_attn_kernel']}, tower {args.dtype or 'fp32'}, "
+          f"calibration {meta['calibration']}")
     if not args.verify:
         return 0
     from rsijev.contract import gold_label

@@ -113,7 +113,13 @@ def test_a_version_card_describes_itself():
 # ---------------------------------------------------------------------------
 
 FIGURE = re.compile(r"^0\.\d{3,4}$")
-QUOTING = [d for d in DOCS if "/" not in d]
+# The README only. It is the shop window, so a figure there must be one the release
+# record backs. The other project documents are the SEARCH record: EXPLORE.md quotes a
+# per-arm number for every direction the loop tried, most of them rejected and none of
+# them in any release card. Requiring those to appear in the latest card would mean
+# either restating the whole experiment log in every release record or not publishing
+# the log -- and the log is the point of this repo.
+QUOTING = ["README.md"]
 
 
 # Columns that hold a fit statistic rather than an accuracy. A goodness-of-fit or a

@@ -1,0 +1,19 @@
+{
+  "questions": 24320,
+  "mode_share": {
+    "choice": 0.394,
+    "noul": 0.3937,
+    "score": 0.2123
+  },
+  "noul_true_rate": 0.508,
+  "score_mean_level": 2.2281,
+  "score_argmax_hist": {
+    "0": 0.061,
+    "1": 0.135,
+    "2": 0.3459,
+    "3": 0.3666,
+    "4": 0.0906,
+    "5": 0.0008
+  },
+  "choice_first_option_rate": 0.5068
+}
