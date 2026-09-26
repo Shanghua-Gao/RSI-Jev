@@ -7,8 +7,8 @@ authors:
 repository-code: "https://github.com/Shanghua-Gao/RSI-Jev"
 url: "https://huggingface.co/shgao"
 license: MIT
-version: v1.0
-date-released: "2026-09-24"
+version: v2.0
+date-released: "2026-09-25"
 keywords:
   - typed-decisions
   - decision-model

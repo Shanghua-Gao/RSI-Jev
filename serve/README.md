@@ -37,9 +37,18 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 }
 ```
 
-That is the answer RSI-Jev-v1.0-2B actually returns for that request — bf16 on a GB10,
-probabilities rounded to three places. Note that `score` is an index into the
+That is the answer **RSI-Jev-v1.0-2B** actually returns for that request — bf16 on a
+GB10, probabilities rounded to three places. v2.0 returns different probabilities for
+the same request: it ships a fitted calibration that rescales every answer, so its
+numbers here would be sharper and its `confidence` higher. The worked example stays on
+v1.0 because a test re-runs it against that checkpoint. Note that `score` is an index into the
 rubric, so 1.197 is "Urgent", not a fraction of the scale.
+
+**Ask whether you are getting calibrated probabilities.** `GET /v1/limits` reports a
+`calibration` field: `none` for a v1.0 checkpoint, or the method a v2.0 one shipped, e.g.
+`oof_head_scorefloor`. The chosen option is identical either way — calibration divides each
+question's logits by one positive number — but the probabilities are not, so a threshold
+tuned against one is not the same threshold against the other.
 
 | route | purpose |
 |---|---|
