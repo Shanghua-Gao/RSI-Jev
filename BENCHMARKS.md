@@ -86,10 +86,16 @@ numbers should be compared before trusting either.
 
 ## How a result becomes a result## How a result becomes a result
 
-- **Four seeds** (17/29/43/71), judged on the mean, and then **repeated on four fresh
-  seeds** (97/113/131/151) against the previous champion run on those same seeds. v1.0
-  used three seeds and no confirmation step; a near-miss that looked real twice is what
-  taught us to add one.
+- **Seeds scale with the effect.** An arm starts at one seed. A gap of about +0.015 or more
+  — several times the paired seed sd — is confirmed by **one fresh seed** the arm has never
+  run on. A smaller gap near the bar earns up to three seeds, plus that fresh confirmation
+  seed. Spending four seeds on a difference you can already see is compute that buys
+  nothing; the confirmation seed is what is load-bearing, because it is the only number the
+  arm was not selected on.
+- v1.0 used three seeds and **no** confirmation step, and a near-miss that looked real twice
+  is what taught us to add one. v2.0 was judged under a four-seed rule with four
+  confirmation seeds, which is why its record quotes four; the rule above is what a new arm
+  is held to.
 - **The bar is the suite's own noise**: +0.006 on the suite mean, no benchmark down by more
   than its own seed noise, MMLU-Pro within 0.030. Per-seed sd is 0.011–0.016 on a single
   benchmark, so single-benchmark differences smaller than that are not findings.
