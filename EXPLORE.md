@@ -225,3 +225,114 @@ only — MMLU-Pro −0.026 against a 0.020 limit — and the run owner widened t
 then confirmed on four fresh seeds and became v2.0. The original rejection is left in the
 log, because a bar moved after seeing the result is the kind of thing a reader should be
 able to catch us doing.
+
+## jevtr_v1, continued — from v2.0 to v2.1 (2026-09-26/27)
+
+The same loop, same suite, same bar, with one rule changed: **seeds now scale with the
+effect** (one seed by default, a gap of about +0.015 or more confirmed by one fresh seed,
+smaller gaps up to three plus that confirmation seed) instead of four seeds for everything.
+Four-seed arms below were run under the old rule; the two-seed ones under the new.
+
+**Forty-three more arms; one lasting win, and it is not about data.** v2.1 is built from it.
+Some rows in the table at the end pair an RL arm with its own matched control, so the 43 arms
+fit in 37 rows.
+
+Two questions drove the stretch. The first was v2.0's one real regression: it had given up
+general knowledge (MMLU-Pro 0.305 against v1.0's 0.355) to gain on the decision benchmarks,
+and the near-miss repair rule says that is to be diagnosed, not accepted. The second was
+whether reinforcement learning could beat supervised training anywhere in this setting, with
+matched controls this time — the earlier RL arms had been judged against the champion rather
+than against the supervised run of the same data, which is the comparison that settles it.
+
+| axis | arms | best | what it was |
+|---|---|---|---|
+| optimiser | 6 | **+0.022 suite, +0.054 MMLU-Pro** | the tower's bottom 8 of 24 layers at one tenth the learning rate — this became v2.1 |
+| data | 6 | +0.008 MMLU-Pro | replay weighted toward science, half recast to ten options; no suite gain |
+| reinforcement learning | 20 | +0.002 | five setups, four of them with a matched SFT control; two failed to run, none of the rest cleared the bar |
+| scale | 7 | — | 4B would not train; 0.8B gained 0.12 over its own reference and stayed 0.05 below 2B |
+| tooling / control | 4 | — | a 13-benchmark suite, and the single sanctioned read of the held-out set |
+
+### What worked
+
+| what | effect | notes |
+|---|---|---|
+| **The tower's lower third at one tenth the learning rate** | MMLU-Pro 0.305 → **0.359**, suite 0.705 → **0.726** | the whole recovery, at no cost to any benchmark. Confirmed on a fresh seed, where the gain was *larger* |
+| Replay weighted toward science, half of it recast to MMLU-Pro's ten-option shape | MMLU-Pro +0.008 | the best any data arm managed, and it is an eighth of what the learning rate managed |
+| The procedural benchmark's train split | procedural 0.62 → **0.87** | the same in-domain lever v2.0 was built on, applied to the one decision benchmark v2.0 had got worse at |
+
+### What did not work
+
+| what | result | why, as far as we can tell |
+|---|---|---|
+| **A retention KL** against the base model's next-token distribution | MMLU-Pro 0.3085, worse than v2.0 | the KL held near 0.02 nats/token, so the *language model* was preserved and the decision readout's general knowledge eroded regardless. What the readout uses is not what next-token prediction protects. +22% training time |
+| **Halving the whole tower's learning rate** | +0.004 MMLU-Pro, inside the noise | the lower layers are where it matters; a uniform change dilutes it away |
+| **Freezing the tower's lower third** | MMLU-Pro +0.016 on 4/4 seeds, but JevBench −0.026, Kev devtools −0.021, Nimble holdout −0.026 | those layers do have to adapt to the decision task. Slowing them beats stopping them |
+| **More replay** (30%), or recasting *all* of it to ten options | no better than 15% and half | the dose and the shape were already right |
+| **More train-split data** (6k per source instead of 3k) | +0.002, sign inconsistent, one regression | the dose is saturated past 3k |
+| **Eleven extra coverage sources** | suite −0.001, MMLU-Pro 0.2845 | breadth of public classification data erodes general knowledge, as it did at 200k |
+| **Two data-selection policies head to head** (a heuristic against EXP3 over sources) | 0.703 against 0.707, inside the noise | neither policy beats taking the mix as given, at this corpus size |
+| **Reinforcement learning, five setups, four with a matched SFT control** | RL 0.7063 / ctl 0.7075 · RL 0.7079 / ctl 0.7056 · RL 0.7065 / ctl 0.7082 · RL 0.7093 / ctl 0.7074 | every RL arm landed at or below the supervised run it was matched against, and the two that beat the champion beat it by +0.002. With a known target distribution for every option and one step per decision, the supervised optimum is already the answer; a KL-anchored policy cannot get far from it, and an unanchored one degrades (0.6892 at a higher policy learning rate). Counting every arm whose training signal was a reward rather than the teacher's target distribution, this project has now run **eighteen, and kept none** |
+| **A 4B tower** on v2.0's recipe | would not train | at the same batch and schedule; not pursued further |
+| The v2.1 treatment **at 0.8B** | 0.6834, rejected | the 0.8B line has its own keeper at 0.6791 (against its 0.5547 reference), still 0.05 below 2B |
+
+### What comes back with us
+
+- **When something is forgotten, look at the learning rate before looking at the data.**
+  Four repairs were tried; the three data-and-regularisation ones bought +0.008, +0.004 and
+  a trade. Slowing the layers the knowledge sits in bought +0.054 and cost nothing.
+- **Preserving a language model is not preserving what a readout reads.** The retention KL
+  is the cleanest negative result of the stretch, because it succeeded at its own objective
+  and failed at the goal.
+- **RL is done here.** Eighteen arms across the project, eleven of them in this stretch, the
+  last four against matched supervised controls. It is not that RL is weak; it is that a
+  one-step, full-information decision with a known target distribution leaves it nothing to
+  find.
+- **A held-out set is spent once it is read.** The three benchmarks frozen before v2.0 have
+  now decided two releases. Folding them into the routine suite is right, but only alongside
+  freezing a new set; otherwise the suite absorbs every independent check the project has.
+  See [`BENCHMARKS.md`](BENCHMARKS.md).
+
+### Every arm, with its numbers
+
+**Judged on the 12-benchmark suite mean** · champion 0.7049 (`suite-train-1-cap3k`), the
+recipe v2.0 shipped
+
+| arm | axis | outcome | suite mean | MMLU-Pro | what it was |
+|---|---|---|---|---|---|
+| `mmlu-keep-1a-retention-kl` | training | rejected | 0.7046 | 0.3085 | a KL against the base model's next-token distribution, to stop forgetting |
+| `mmlu-keep-1b-st-tower-half` | training | rejected | 0.7067 | 0.3273 | the whole tower at half the learning rate |
+| `mmlu-keep-1c-freeze-lower-third` | training | rejected | 0.7030 | 0.3390 | freeze the tower's lower third — recovers knowledge, breaks three benchmarks |
+| `suite-train-2-cap3k-rep15stem10-confirm` | data | **kept** | 0.7024 | 0.3245 | science-weighted replay confirmed on fresh seeds |
+| `suite-train-2-cap3k-rep30` | data | rejected | 0.7041 | 0.3097 | 30% replay instead of 15% |
+| `suite-train-3a-cap6k` | data | rejected | 0.7058 | 0.3085 | 6k train-split cases per source instead of 3k |
+| `coverage-1-cap3k-plus-cov` | data | rejected | 0.7036 | 0.2845 | eleven further public classification sources |
+| `round2-a-cap3k-plus-heuristic` | data | noise | 0.7030 | 0.3050 | generator round 2, heuristic source selection |
+| `round2-b-cap3k-plus-exp3_mixed` | data | noise | 0.7072 | 0.3097 | the same, EXP3 over sources |
+| `ctl-2b-cap3k-adamw8bit` | control | control | 0.6953 | 0.2970 | 8-bit AdamW on the tower, for the 4B feasibility question |
+| `rl-env-1-cap3k` | control | control | 0.7056 | 0.3050 | the v2.0 checkpoint inside the new RL environment, untrained — the environment's own reference |
+| `rl-env-1-sftgold` | training | control | 0.7021 | 0.3080 | supervised on the environment's gold answers |
+| `rl-env-1-sftgold-b` | training | control | 0.7074 | 0.3045 | the same, second configuration |
+| `rl-env-1-rl` | training | failed | — | — | the first RL run in that environment: would not complete |
+| `rl-env-1-rl-b` | training | failed | — | — | the second, likewise |
+| `rl-env-1-rl-c` | training | rejected | 0.7098 | 0.3135 | RL in that environment; +0.002 on its control, below the bar |
+| `rl-env-2-a-sftrl` / `-ctl` | training | improved, not kept | 0.7063 / 0.7075 | 0.305 / 0.305 | SFT-then-RL against its own SFT control — **below it** |
+| `rl-env-2-a-sftrl-confirm` / `-ctl-confirm` | training | improved, not kept | 0.7086 / 0.7068 | 0.309 / 0.303 | the same pair on a fresh seed; +0.002, below the bar |
+| `rl-env-2-b-rl` | training | rejected | 0.7076 | 0.3080 | a second reward in the same environment |
+| `rl-env-2-c-rl` / `-ctl` | training | improved, not kept | 0.7079 / 0.7056 | 0.309 / 0.305 | a third; +0.002 |
+| `rl-env-2-c-rl-confirm` | training | improved, not kept | 0.7066 | 0.307 | and on a fresh seed it did not hold |
+| `rl-env-3-sftrl5-gate` / `-sft5` | training | rejected | 0.7093 / 0.7074 | 0.312 / 0.310 | a gated reward against its SFT control |
+| `rl-env-4-sftrl5v3-hilr` / `-sft5v3` | training | rejected | 0.6892 / 0.7068 | 0.305 / 0.306 | a higher policy learning rate — clearly worse |
+| `rl-judge-1-rl` / `-ctl-sft` | training | rejected | 0.7065 / 0.7082 | 0.3225 / 0.326 | a learned judge as the reward, against its SFT control — below it |
+| `scale-4b-cap3k` | model | failed | — | — | v2.0's recipe on a 4B base: would not train |
+| `s08b-1b-cap3k` | model | failed | — | — | the same at 0.8B, first attempt |
+| `ctl-08b-ref` | control | control | 0.5547 | 0.2565 | the 0.8B reference for the arms below |
+| `s08b-1c-rep15stem10` | model | improved, not kept | 0.6767 | 0.2687 | the science-weighted recipe at 0.8B |
+| `s08b-1c-rep15stem10-confirm` | model | **kept** | 0.6791 | 0.2717 | confirmed: +0.124 over its reference, 0.05 below 2B |
+| `s08b-1d-cal4b-rep15stem10` | training | control | 0.6757 | 0.2580 | the confidence head at 0.8B |
+| `s08b-2a-lowerlr01-proc` | model | rejected | 0.6834 | 0.2720 | v2.1's treatment at 0.8B — it does not carry down |
+| `cand-2b-1b-freeze4-stem-proc` | training | rejected | 0.7185 | 0.3270 | the new corpus with the bottom 4 layers frozen |
+| `cand-2b-1a-lowerlr01-stem-proc` | training | improved, not kept | 0.7258 | 0.3590 | **the new corpus with the bottom 8 layers at lr ×0.1** |
+| `cand-2b-1a-lowerlr01-stem-proc-confirm` | training | **kept** | 0.7286 | 0.3600 | confirmed on fresh seed 97, larger there than where it was selected |
+| `tool-suite-v2` | tool | tool | — | — | a 13-benchmark suite; retired unapplied, because folding the held-out sets into the routine suite would have spent them |
+| `final-report-rcA-vs-v1` | control | control | — | — | the single sanctioned read of the held-out set for v2.0 |
+| `rc-B-cand1a-cal4b` | control | control | **0.7291** | **0.3830** | **the released v2.1 checkpoint**: the recipe + v2.0's confidence head, seed 17 |

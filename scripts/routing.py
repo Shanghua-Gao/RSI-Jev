@@ -37,13 +37,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
+REPOS = {"v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
+         "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
 
-# The cascade needs a small model and a large one, so it runs v1.0's pair: v2.0 was
-# only ever trained at 2B. It is also the honest pair for this script, whose claim
-# that no test document was seen in training holds for v1.0 and not for v2.0.
+# The cascade needs a small model and a large one, so it runs v1.0's pair: neither
+# v2.0 nor v2.1 was ever trained at 0.8B. It is also the honest pair for this script,
+# whose claim that no test document was seen in training holds for v1.0 and for
+# neither of the later two.
 CASCADE = ("v1.0-0.8b", "v1.0-2b")
 COVERAGE = (1.0, 0.9, 0.8, 0.6, 0.4, 0.2)
 # Escalate the least-confident share of documents, rather than thresholding on a

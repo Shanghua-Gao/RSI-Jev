@@ -31,13 +31,13 @@ Entry points are in `scripts/`, and each one says what it is on its first line
 | `run_arm_lib.py` | one experiment end to end. `release_train.py` and the internal search loop both call it, so a release is the same code path as an experiment |
 | `release_train.py` | train one release checkpoint |
 | `load_release.py` | load one; `--verify` re-scores it against the run that produced it |
-| `calibrate.py` | fits the v2.0 confidence head on withheld data, and loads it back |
+| `calibrate.py` | fits the confidence head (v2.0 on) on withheld data, and loads it back |
 
 Two corpus builders ship: `build_synth_corpus.py` builds v1.0's corpus, and
 `build_corpus.py` builds a corpus from public classification sources that are
 deliberately **not** evaluation targets.
 
-**v2.0's corpus takes four more builders**, all of them here:
+**v2.0's and v2.1's corpus takes four more builders**, all of them here:
 
 | script | what it produces |
 |---|---|
@@ -65,7 +65,7 @@ imports flash-linear-attention.
 
 **To reproduce the published numbers**, use `requirements-repro.txt`. Numbers
 are only comparable within one kernel stack, and every record carries a
-`linear_attn_kernel` stamp saying which produced it. v1.0 and v2.0 share one stack:
+`linear_attn_kernel` stamp saying which produced it. v1.0, v2.0 and v2.1 share one stack:
 
 - Python 3.11, **torch 2.7.1+cu128, Triton 3.3.1, flash-linear-attention 0.5.2**
 - transformers 5.17.0, datasets 4.1.1, safetensors
@@ -80,20 +80,27 @@ The expected numbers are in that release's record under
 [`../versions/`](../versions/). One H100 80 GB per run; about 13 minutes of
 training at 2B for v1.0 and about 50 for v2.0, which takes 5,774 steps.
 
-**v2.0** additionally fits a calibration head after training, on data withheld
-from it (`rsijev/calibrate.py`). `run_arm_lib` splats `fit_extra` into the
-`FitConfig`, so the spec carries it:
+**v2.0 and v2.1** additionally fit a calibration head after training, on data
+withheld from it (`rsijev/calibrate.py`). `run_arm_lib` splats `fit_extra` into the
+`FitConfig`, so the spec carries the whole recipe difference:
 
 ```json
 {"steps": 5774, "sources": "synth,td_train,mc_replay,st_*",
- "fit_extra": {"cal_method": "oof_head_scorefloor"}}
+ "fit_extra": {"cal_method": "oof_head_scorefloor",
+               "lower_layers_n": 8, "lower_layers_lr_scale": 0.1}}
 ```
 
-`cal_method` `none` reproduces the model as trained, uncalibrated; the released
-checkpoint uses `oof_head_scorefloor`. The fitted values are saved beside the
-weights as `calibration.safetensors`, and `load_release.py` applies them when it
-finds them. Section 2.1 of [`../versions/v2.0.md`](../versions/v2.0.md) says what
-the head is and what it costs.
+`cal_method` `none` reproduces the model as trained, uncalibrated; both released
+checkpoints use `oof_head_scorefloor`. The fitted values are saved beside the weights
+as `calibration.safetensors`, and `load_release.py` applies them when it finds them.
+Section 2.1 of [`../versions/v2.0.md`](../versions/v2.0.md) says what the head is and
+what it costs.
+
+`lower_layers_n` / `lower_layers_lr_scale` are **v2.1's** one optimiser change: the
+tower's lowest *n* decoder layers train in their own parameter group at a fraction of
+`lr_base`. v1.0 and v2.0 leave them at the defaults (`0` / `1.0`), which is one group
+for the whole tower. Section 2 of [`../versions/v2.1.md`](../versions/v2.1.md) says why
+it matters more than any of the data changes tried against the same problem.
 
 ### v1.0
 

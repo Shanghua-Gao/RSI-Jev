@@ -83,7 +83,7 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
 
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
-               api_key: str | None = None, version: str = "v2.0",
+               api_key: str | None = None, version: str = "v2.1",
                calibration: str = "none") -> FastAPI:
     app = FastAPI(title="RSI-Jev", version=version,
                   description="A Jev-compatible typed-decision API served by a "

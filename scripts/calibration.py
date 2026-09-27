@@ -30,7 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
+REPOS = {"v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
+         "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
 BINS = [(0.9, 1.01, "90-100%"), (0.7, 0.9, "70-90%"),
@@ -39,7 +40,7 @@ BINS = [(0.9, 1.01, "90-100%"), (0.7, 0.9, "70-90%"),
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="v2.0-2b", choices=sorted(REPOS))
+    ap.add_argument("--model", default="v2.1-2b", choices=sorted(REPOS))
     ap.add_argument("--ckpt", default=None)
     ap.add_argument("--cases", type=int, default=100)
     ap.add_argument("--device", default=None)

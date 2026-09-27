@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -44,6 +45,9 @@ def main() -> int:
                     help="tower precision (default bf16 on CUDA, fp32 elsewhere). "
                          "The scorer is always fp32. Evaluation always uses fp32.")
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--version", default=None,
+                    help="the release being served, as GET /v1/limits reports it. "
+                         "Read off the checkpoint's own name when it carries one.")
     a = ap.parse_args()
 
     import torch
@@ -70,8 +74,15 @@ def main() -> int:
                                                                max(len(q.options) for q in questions)))
         return [list(p.probs) for p in preds], tokens
 
+    # /v1/limits reports which release is answering, so take it from the checkpoint
+    # rather than from whatever this tree was cut for: serving a v1.0 checkpoint out of
+    # a v2.1 checkout would otherwise announce v2.1, and a client tuning a threshold
+    # per release would be told the wrong one.
+    found = re.search(r"v\d+\.\d+", Path(a.ckpt).resolve().name)
+    served_version = a.version or (found.group(0) if found else None)
     app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
-                     calibration=meta.get("calibration", "none"))
+                     calibration=meta.get("calibration", "none"),
+                     **({"version": served_version} if served_version else {}))
     print(f"serving {a.ckpt} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {meta['base_model']}, kernel {meta['linear_attn_kernel']}, "
           f"tower {dtype_name} on {device}", flush=True)

@@ -36,6 +36,7 @@ VERSIONS = [
     ("v1.0 · 0.8B", "0.8b", "shgao/rsi-jev-v1.0-qwen3.5-0.8b"),
     ("v1.0 · 2B", "2b", "shgao/rsi-jev-v1.0-qwen3.5-2b"),
     ("v2.0 · 2B", "v2.0-2b", "shgao/rsi-jev-v2.0-qwen3.5-2b"),
+    ("v2.1 · 2B", "v2.1-2b", "shgao/rsi-jev-v2.1-qwen3.5-2b"),
 ]
 
 

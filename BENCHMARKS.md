@@ -47,6 +47,7 @@ document shares a state with one. This is verified by the arm runner rather than
 |---|---|---|
 | v1.0 | **no** — a separate synthetic corpus only, with no shared state and no shared 12-word phrase with either split | zero-shot |
 | v2.0 | **yes** — typed-decisions and nine other suite benchmarks contributed their train splits | not zero-shot: in-domain, for the ten it trained on |
+| v2.1 | **yes** — the same ten plus procedural | not zero-shot: in-domain, for eleven of the twelve. MMLU-Pro is the one it did not train on |
 
 Two releases' benchmark numbers are therefore **not** interchangeable. When comparing
 across releases, use the held-out set below.
@@ -55,7 +56,17 @@ across releases, use the held-out set below.
 and scienthoon OOD — were frozen before this work began and are scored **once**, after a
 release model has been chosen, never during the search. No release trains on them. They are
 the only place two releases are measured on equal terms, and they are where to look first
-when a release claims an improvement. Each release's record reports them in full.
+when a release claims an improvement. Each release's record reports them in full: v2.0 was
+flat or worse than v1.0 on all three, v2.1 is ahead on all three.
+
+**A held-out set is consumable, so each release freezes the next one.** Once a set has been
+read, the choice of what to release has been informed by it, and reading it again for a
+later release measures something a little less clean each time. Folding a spent set into the
+routine evaluation suite is the right thing to do with it — the measurement gets better —
+but only alongside freezing a *new* set from sources the search has not touched. Otherwise
+the suite slowly absorbs every independent check the project has, nothing is left outside
+it, and no later release can be caught fitting its own benchmarks. The set behind v2.0 and
+v2.1 is spent; v2.2 is measured against a new one.
 
 ## What you can check yourself
 
@@ -84,7 +95,7 @@ release record are the same measurement.
 data we hold; they are dropped at load time. `--no-decontam` keeps them, and the two
 numbers should be compared before trusting either.
 
-## How a result becomes a result## How a result becomes a result
+## How a result becomes a result
 
 - **Seeds scale with the effect.** An arm starts at one seed. A gap of about +0.015 or more
   — several times the paired seed sd — is confirmed by **one fresh seed** the arm has never
@@ -99,8 +110,8 @@ numbers should be compared before trusting either.
 - **The bar is the suite's own noise**: +0.006 on the suite mean, no benchmark down by more
   than its own seed noise, MMLU-Pro within 0.030. Per-seed sd is 0.011–0.016 on a single
   benchmark, so single-benchmark differences smaller than that are not findings.
-- **The released checkpoint is seed 17**, fixed in advance as primary, not the best of the
-  four.
+- **The released checkpoint is seed 17**, fixed in advance as primary rather than chosen
+  for scoring best.
 - **Numbers only compare within one kernel stack.** Every record carries a
   `linear_attn_kernel` stamp; see [`rsijev/README.md`](rsijev/README.md).
 - **A checkpoint is re-scored from disk** before publication and must reproduce its
@@ -113,12 +124,12 @@ numbers should be compared before trusting either.
 
 | command | what it prints |
 |---|---|
-| `python scripts/bench.py --model v2.0-2b` | speed: the fixed cost of reading a document and the marginal cost of one more decision, fitted over 1–32 questions at three document lengths |
-| `python scripts/calibration.py --model v2.0-2b --cases 400` | all 2,000 decisions binned by the probability the model gave them, against how often that bin was right |
+| `python scripts/bench.py --model v2.1-2b` | speed: the fixed cost of reading a document and the marginal cost of one more decision, fitted over 1–32 questions at three document lengths |
+| `python scripts/calibration.py --model v2.1-2b --cases 400` | all 2,000 decisions binned by the probability the model gave them, against how often that bin was right |
 | `python scripts/routing.py --cases 400` | accuracy against coverage when you act only on the top slice by confidence, and whether a small-model-first cascade earns its place. Runs v1.0's two sizes, the only release with two |
 | `python scripts/load_release.py --ckpt DIR --verify` | re-scores a checkpoint against the run that produced it |
 
-`--model` takes `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
+`--model` takes `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
 
 Speed moves with GPU load — up to ±20% between runs — so measure on your own
 hardware before depending on a figure. Each release's record names the machine its

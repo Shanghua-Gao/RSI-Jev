@@ -69,9 +69,24 @@ class FitConfig:
     rl: RLConfig = field(default_factory=RLConfig)
     log_every: int = 50
 
+    # v2.1: decoder layers 0..lower_layers_n-1 train at lr_base * lower_layers_lr_scale,
+    # in their own param group on the same schedule. n=0 / scale 1.0 is v1.0 and v2.0.
+    lower_layers_n: int = 0
+    lower_layers_lr_scale: float = 1.0
+
 
 def _param_groups(model, cfg: FitConfig):
-    head, mix, base = [], [], []
+    """One group per role, plus an optional slower group for the lowest layers.
+
+    v2.1's only optimiser change: decoder layers `0 .. lower_layers_n - 1` get their
+    own group at `lr_base * lower_layers_lr_scale`, on the same schedule as the rest of
+    the tower. It matters because fitting a decision objective through every layer at one
+    rate overwrites the representation the model's general knowledge sits in -- and
+    freezing those layers instead costs decision accuracy, because they do have to adapt.
+    """
+    import re
+    head, mix, base, lower = [], [], [], []
+    pat = re.compile(r"(?:^|\.)layers\.(\d+)\.")
     for n, p in model.named_parameters():
         if not p.requires_grad:
             continue
@@ -80,13 +95,23 @@ def _param_groups(model, cfg: FitConfig):
         elif n.startswith("scorer"):
             head.append(p)
         else:
-            base.append(p)
+            m = pat.search(n) if cfg.lower_layers_n else None
+            if m and "visual" not in n and int(m.group(1)) < cfg.lower_layers_n:
+                lower.append(p)
+            else:
+                base.append(p)
     groups = [{"params": head, "lr": cfg.lr_head, "name": "head",
                "weight_decay": cfg.head_weight_decay}]
     if mix:
         groups.append({"params": mix, "lr": cfg.lr_mix, "name": "mix"})
     if base:
         groups.append({"params": base, "lr": cfg.lr_base, "name": "base"})
+    if lower:
+        groups.append({"params": lower, "lr": cfg.lr_base * cfg.lower_layers_lr_scale,
+                       "name": "base_lower"})
+        print(f"    lower_layers_n={cfg.lower_layers_n}: "
+              f"{sum(p.numel() for p in lower):,} params at lr x{cfg.lower_layers_lr_scale}",
+              flush=True)
     return groups
 
 
