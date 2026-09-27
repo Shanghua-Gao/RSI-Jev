@@ -49,7 +49,7 @@ from .targets import load_mmlu_pro_1k, load_typed_decisions
 
 
 # jaredpalmer/kev at commit 569ea449b1033c5aa8f149ec5e20d0c7a296d24a (Apache-2.0),
-# cloned by tool-2 into pool_v2/_refs. Override with KEV_ROOT.
+# vendored locally as a checkout. Override the location with KEV_ROOT.
 class _Unset:
     """A root that was never configured, which explains itself when something uses it.
 
@@ -738,7 +738,7 @@ SUITE: dict[str, Bench] = {
 }
 
 
-# Recommended suite (tool-5): weights sum to 1. The metric per benchmark is pooled
+# The recommended suite: weights sum to 1. The metric per benchmark is pooled
 # top-1; nimble_public and jev_style_panel report the MACRO over their subsets
 # (Case.source), as Nimble and chaoliangUNSW do. typed_decisions_test and
 # mmlu_pro_1k are read in canonical and reversed order; everything else canonical only.
@@ -748,14 +748,15 @@ RECOMMENDED: dict[str, float] = {
     "kev_devtools_v1": 0.05, "nimble_holdout": 0.05, "procedural_test": 0.04, "open_jev_ood": 0.04,
 }
 MACRO_OVER_SOURCE = {"nimble_public", "jev_style_panel"}
-# Eval cases that overlap training data we hold (tool-5 overlap report); dropped at load time.
+# Eval cases that overlap training data we hold, per the decontamination report;
+# dropped at load time.
 DECONTAM = _root("SUITE_DECONTAM", "the decontamination report naming eval cases that "
                  "overlap training data, dropped at load time")
 
 
 def load_suite(names=None, *, decontam: bool = True) -> dict[str, list[Case]]:
     """Load benchmarks (default: the recommended suite), minus the eval cases the
-    tool-5 overlap check found in training data."""
+    decontamination check found in training data."""
     names = list(RECOMMENDED) if names is None else list(names)
     drop = json.loads(DECONTAM.read_text())["drop"] if decontam else {}
     out = {}
