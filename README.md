@@ -154,6 +154,22 @@ deletes a branch nobody has to pay for again.
 Your report becomes a registered prediction with a null floor measured against it, and ships as
 a version — pass or fail. [`CONTRIBUTING.md`](CONTRIBUTING.md) is what happens in between.
 
+## Human in the loop
+
+The loop runs its own experiments and retires its own champions, but it does not decide what is
+worth measuring, and it does not notice on its own when a number is technically true and
+practically misleading. People do that, and it has changed both the experiments this project
+runs and the rules it judges them by. Two of the rules in
+[`BENCHMARKS.md`](BENCHMARKS.md#how-a-result-becomes-a-result) exist because someone pushed
+back: the MMLU-Pro guard was widened rather than letting a near-miss be discarded, and the seed
+requirement now scales with the effect size instead of spending four seeds on every difference.
+v2.1 itself started as a refusal to drop an arm that had failed one guard.
+
+Thank you to the people who have sent that feedback:
+
+- Shanghua Gao
+- Sufian
+
 ## Read more
 
 | | |
