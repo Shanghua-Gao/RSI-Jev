@@ -168,7 +168,7 @@ v2.1 itself started as a refusal to drop an arm that had failed one guard.
 Thank you to the people who have sent that feedback:
 
 - **Shanghua Gao** · [@gasvn](https://github.com/gasvn)
-- **Sufian**
+- **Sufian** · [@SufianTA](https://github.com/SufianTA)
 
 ## Read more
 
