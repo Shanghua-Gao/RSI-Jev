@@ -336,3 +336,169 @@ recipe v2.0 shipped
 | `tool-suite-v2` | tool | tool | — | — | a 13-benchmark suite; retired unapplied, because folding the held-out sets into the routine suite would have spent them |
 | `final-report-rcA-vs-v1` | control | control | — | — | the single sanctioned read of the held-out set for v2.0 |
 | `rc-B-cand1a-cal4b` | control | control | **0.7291** | **0.3830** | **the released v2.1 checkpoint**: the recipe + v2.0's confidence head, seed 17 |
+
+## jevtr_v1, continued — from v2.1 to v3.0 (2026-09-27/28)
+
+Same loop, one new evaluator: a 15-benchmark suite (v2.1's three held-out benchmarks joined it)
+and a new held-out set, eval_final_v2, whose mean is the **final** column below. The suite decided
+every keep. Final was read along the way as a consistency check, so it is held out from training,
+not sealed from the search. Arms are counted one per run record, a rerun counting once:
+**120 arms**, 33 of them short RL pilots with no suite read.
+
+**Two wins built v3.0: more data, and the first RL stage that beat its supervised control.**
+
+| axis | arms | best | what it was |
+|---|---|---|---|
+| data | 26 | **+0.011 suite** (+0.013 on a fresh seed) | 84k more questions from emotion, NLI, tasksource and Open-Jev: the v3.0 corpus |
+| reinforcement learning | 41 | **hippo R@1 +0.052 over SFT on the same rows** (z 3.9) | a listwise NDCG reward for reranking; the RL stage of v3.0 |
+| model | 20 | +0.002 suite, twice | an MLP to combine option cross-attention; 0.8B, context-length and scorer-depth sweeps |
+| stack / vision | 4 | image eval 0.809 vs 0.796 | the first image arm; and a stack of every kept data component, below the bar |
+| control / tooling | 29 | — | matched controls, evaluator smokes, length bucketing (adopted) |
+
+### What worked
+
+| what | effect | notes |
+|---|---|---|
+| **More coverage**: emotion / SST-5 / ANLI, 30k tasksource, 10k Open-Jev | suite 0.748 → **0.759** | confirmed on a fresh seed; the whole suite gain of this release |
+| **Listwise reranking RL**, KL penalty only | hippo per-candidate R@1 **+0.052** over pointwise SFT on the same rows | on v3.0's own parent: 0.192 → **0.308**, suite −0.003 |
+| MLP combine for option cross-attention | +0.002 suite, twice | small, method-only, and the held-out set agreed |
+| Length bucketing (64) | suite-neutral | cheaper training; every later arm uses it |
+
+### What didn't
+
+- **Every per-item RL objective** — RLCD reconstructions (binary, proper-score, RLCR, bandit),
+  decision-utility and confidence-ranking objectives — tied or lost to SFT on the same labels.
+  [`docs/rl.md`](docs/rl.md) has the matrix and why.
+- **Selecting hard items** (the ones v2.1 gets wrong) did worse on its own targets than random
+  items from the same pool.
+- **An option-joint head**, **general-knowledge coverage for MMLU-Pro** and **more Open-Jev** moved
+  the suite a little and the held-out set the other way.
+- **The failure-type data factory**, first two rounds: its probes moved, the suite did not. The
+  data portfolio after it (bounded choices, wide label sets, abstention) found components worth
+  keeping, but their stack stayed under the +0.006 bar.
+- **0.8B:** coverage helped the suite by +0.02 and cost BFCL 0.08; repairs did not recover it.
+
+### Every arm
+
+| arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
+|---|---|---|---|---|---|---|
+| `arch-fix-1b-xattn-bilinear` | model | failed | — | — | — | bilinear option cross-attention combine; crashed before scoring |
+| `ctl-08b-champ-v2` (+ `ctl-08b-champ-v2-mo160`) | control | control | 0.6782 | — | 0.2520 | 0.8B champion on the v2 suite (reference for s08b-3) |
+| `s08b-3-proc-only` (+ `s08b-3-proc-only-mo160`) | model | kept (0.8B line) | 0.6919 / 0.6912 | — | 0.2650 / 0.2600 | 0.8B + procedural train split: +0.014 vs its reference, confirmed s97 |
+| `arch-fix-1a-xattn-mlp` (+ `arch-fix-1a-xattn-mlp-mo160`) | model | kept | 0.7333 | — | 0.3640 | xattn_combine=mlp: +0.002, all 5 OOD targets up ; became part of v3.0 |
+| `rlcd-1a-laya-soft` (+ `rlcd-1a-laya-soft-mo160`) | RL | rejected | 0.7308 | — | 0.3600 | RLCD reproduction, soft Laya reward (vs rlcd-1c); calibration-only effect |
+| `data-scale-1-baseline-v2` (+ `data-scale-1-baseline-v2-mo160`) | control | control | 0.7313 | — | 0.3630 | v2.1 recipe rerun on the 15-benchmark suite (0.7313: the base of the first batch) |
+| `arith-1-verif-6k` (+ `arith-1-verif-6k-mo160`) | data | rejected | 0.7315 | — | 0.3440 | 6k verification/arithmetic items: net 0 (scienthoon +.026, mmlu -.019) |
+| `rlcd-1c-ctl-ce` (+ `rlcd-1c-ctl-ce-mo160`) | control | control | 0.7281 | — | 0.3580 | CE control for rlcd-1a/1b |
+| `rlcd-1b-outcome` (+ `rlcd-1b-outcome-mo160`) | RL | rejected | 0.7294 | — | 0.3630 | RLCD reproduction, outcome reward (vs rlcd-1c) |
+| `rl-weak-1-ctl-sft` (+ `rl-weak-1-ctl-sft-mo160`) | control | control | 0.7302 | — | 0.3690 | SFT on the 4.5k weak pool (control for rl-weak-1-rl) |
+| `rl-weak-1-rl` (+ `rl-weak-1-rl-mo160`) | RL | rejected | 0.7295 | — | 0.3600 | RL on the weak pool: -0.001 vs its SFT control |
+| `data-scale-1-a-cap6k` (+ `data-scale-1-a-cap6k-mo160`) | data | rejected | 0.7323 | — | 0.3470 | train-split caps 3k -> 6k |
+| `data-scale-1-b-cap6k-ts30k-oj10k` (+ `data-scale-1-b-cap6k-ts30k-oj10k-mo160`) | data | improved, not kept | 0.7453 | — | 0.3690 | + tasksource 30k + open_jev 10k |
+| `arch-fix-1b2-xattn-bilinear-norm` (+ `arch-fix-1b2-xattn-bilinear-norm-mo160`) | model | rejected | 0.7317 | — | 0.3620 | bilinear combine with norm: +0.000, dominated by the mlp combine |
+| `data-scale-1-c-plus-cov1k` (+ `data-scale-1-c-plus-cov1k-mo160`) | data | kept | 0.7456 / 0.7485 | — | 0.3560 / 0.3580 | + 10 coverage sources x 1k = D*; the base of v3.0 (suite 0.7456 / 0.7485 on s17/s97) |
+| `smoke-v2-eval` | tooling | smoke | 0.4327 | — | 0.1610 | 20-step evaluator smoke |
+| `bucket-1-lb64-mo160` | tooling | adopted | 0.7322 | — | 0.3640 | length_bucket=64 (cheaper training, suite-neutral); used by every later arm |
+| `ctl-08b-v3` | control | control | 0.6834 | 0.5766 | 0.2720 | 0.8B reference on the new evaluator |
+| `s08b-4` | model | rejected (0.8B) | 0.7047 / 0.7089 | 0.5867 / 0.5688 | 0.2550 / 0.2490 | 0.8B + D* sources: suite +.021/+.026, bfcl -.080/-.111 (not a release candidate while BFCL is down) |
+| `arch-2-joint` | model | rejected | 0.7508 | 0.6338 | 0.3660 | option-joint head (2-layer transformer over options): +.001 vs stack-1, final -.011 |
+| `d-star-ref` | control | control | 0.7476 | 0.6399 | 0.3540 | D* rerun on the new evaluator: the reference for the arms after it |
+| `stack-1-xmlp` | model | kept | 0.7498 | 0.6447 | 0.3620 | D* + xattn mlp: +.0022 suite, +.0048 final (2nd measurement) |
+| `mmlu-cov-1` | data | rejected | 0.7449 | 0.6295 | 0.3670 | 20k general-knowledge MC recast to 10 options: mmlu +.013, suite -.0027, final -.0104 |
+| `mine-1-ctl` | data | subsumed | 0.7510 | 0.6426 | 0.3420 | random tasksource/open_jev adds from the mine_1 pool; subsumed by data-scale-2 |
+| `mine-1` | data | rejected | 0.7526 | 0.6362 | 0.3800 | on-policy hard mining (items v2.1 gets wrong): +.0016 vs its control, final -.0064 |
+| `fac-r1` | data | rejected | 0.7457 | 0.6410 | 0.3430 | factory round 1 (5 failure types, 30k q): suite -.0019 vs D*; probes in-template |
+| `data-scale-2` | data | kept | 0.7586 / 0.7605 | 0.6474 / 0.6442 | 0.3690 / 0.3670 | +84k q (jsg emotion/sst5/anli, tasksource 30k, open_jev 10k): +.0110/+.0129 vs D*, confirmed |
+| `long-state-8k` (+ `long-state-8k-r2`, `long-state-8k-r3`) | model | use-case (not kept) | 0.7481 | 0.6490 | 0.3620 | 8k context training on long_state (r2 OOM, r3 on H200): suite +.0005, final +.009 |
+| `v3-stack-ds2-xmlp` | stack | kept (v3.0 SFT parent) | 0.7589 | 0.6512 | 0.3730 | data-scale-2 corpus + xattn mlp: suite .7589, final .6512 |
+| `s08b-5-rep` | model | rejected (0.8B) | 0.7015 | 0.5707 | 0.2570 | near-miss repair of 0.8B nimble/bfcl: nimble repaired, bfcl not |
+| `v3-ds2-rep-a-nojsg` | data | rejected | 0.7545 | 0.6410 | 0.3540 | ds2 minus jsg: jev_style gain lost |
+| `v3-ds2-rep-b-jsg3k` | data | preferred variant | 0.7603 | 0.6482 | 0.3680 | ds2 with jsg capped 3k: +.0014 vs stack, ECE -.046 (needed a second seed) |
+| `v3-data-scale-3` | data | rejected | 0.7605 | 0.6445 | 0.3640 | +15.9k open_jev: +.0016 vs stack, final -.0067 |
+| `fac-r2` | data | held | 0.7564 | 0.6431 | 0.3530 | factory r2 (3 types x 3k): suite -.0025, probes in-template |
+| `v4-rep-b-s97` | data | confirmation | 0.7559 | 0.6490 | 0.3550 | rep-b fresh seed 97: .7559 |
+| `v4-rep-b-s17ck` | data | checkpoint | 0.7582 | 0.6434 | 0.3530 | rep-b s17 rerun with --save-ckpt: .7582 (parent of the data-portfolio arms) |
+| `v4-08b-bfcl-anchor` | model | rejected (0.8B) | 0.6963 | 0.5523 | 0.2320 | 0.8B bfcl repair (devtools x2 anchor) |
+| `v4-08b-bfcl-drop` | model | rejected (0.8B) | 0.7011 | 0.5726 | 0.2530 | 0.8B bfcl repair (drop cov_massive_multi) |
+| `dp-ct-smoke-load0` | tooling | smoke | 0.7589 | 0.6512 | 0.3730 | continued-training load check: 0 flips, exact |
+| `dp-ct-smoke-20` | tooling | smoke | 0.7527 | 0.6402 | 0.3650 | continued-training 20-step smoke |
+| `rl2-smoke-select-cal` | tooling | smoke | 0.7271 | 0.6700 | 0.3000 | RL-loop GPU smoke |
+| `rl2p-b-k0` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-c-k01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-b-k01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-afull` | control | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-c-k0` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-d-l01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-d-l03` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-a-replay` | control | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-d-l03-k01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-d-l1` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-e-l01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-e-l03-k01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-e-l03` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-e-l1` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-eg-l03` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-eg-l1-k01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-eg-l1` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-eg-l3` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-eprime` | control | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `dp-r1-gk` | data | rejected | 0.7596 | 0.6410 | 0.3740 | portfolio r1: MMLU-Pro aspect sources (vs dp-r1-ctl) |
+| `dp-r1-bnd` | data | kept as component | 0.7577 | 0.6397 | 0.3630 | portfolio r1: bounded choice / tier sources: probe pool +.050 |
+| `dp-r1-ctl` | control | control | 0.7601 | 0.6381 | 0.3630 | portfolio r1 replay-only control |
+| `dp-r1-kev` | data | rejected | 0.7578 | 0.6506 | 0.3530 | portfolio r1: kev rules/arithmetic |
+| `rl2m-a-replay` | control | control | 0.7562 | 0.6522 | 0.3580 | RLCD matrix A: replay only |
+| `rl2m-afull` | control | control | 0.7566 | 0.6482 | 0.3670 | RLCD matrix A-full: CE on full labels |
+| `rl2m-b-binary` | RL | rejected | 0.7509 | 0.6525 | 0.3510 | RLCD matrix B: binary reward |
+| `rl2m-c-proper` | RL | rejected | 0.5861 | 0.5245 | 0.2690 | C: proper-score reward; diverged (suite .586) |
+| `dp-r1-ts` | data | rejected | 0.7573 | 0.6418 | 0.3590 | portfolio r1: tasksource noise |
+| `cr-r1-noce` (+ `cr2-r1-noce`) | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `rl2m-d-rlcr` | RL | rejected | 0.7565 | 0.6472 | 0.3730 | D: RLCR |
+| `cr-r10` (+ `cr2-r10`) | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `cr-r1` (+ `cr2-r1`) | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `rl2m-e-bandit` | RL | rejected | 0.7487 | 0.6546 | 0.3630 | E: bandit RLCD; killed vs E' |
+| `cr-r3` (+ `cr2-r3`) | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `rl2m-eg-bandit-grad` | RL | rejected | 0.7535 | 0.6490 | 0.3620 | E-grad; killed vs E' |
+| `rl2m-eprime-bandit-sup` | control | control | 0.7545 | 0.6490 | 0.3720 | E': supervised use of the same bandit outcome |
+| `rl2p-x-gauss005` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-x-gauss01` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `rl2p-x-gauss02` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `dp-r2-bnd-noomp` | data | kept as component | 0.7588 | 0.6410 | 0.3820 | portfolio r2: bnd without omp sources |
+| `dp-r2-bnd` | data | kept as component | 0.7569 | 0.6431 | 0.3680 | portfolio r2: bnd at protected replay dose |
+| `long-ctx-32k` | model | report-only | 0.7553 | 0.6437 | 0.3580 | 32k-context arm |
+| `rl2p-x-temp15` | RL | pilot | — | — | — | RLCD matrix pilot (300 steps, dev metrics only) |
+| `sel-t98` | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `dp-r2-ctl` | control | control | 0.7570 | 0.6415 | 0.3520 | portfolio r2 control |
+| `sel-t9` | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `vis-ct-1-ctl` | control | control | 0.7576 | 0.6434 | 0.3760 | replay-only control for vis-ct-1 |
+| `vis-ct-1` | vision | kept (vision candidate) | 0.7609 | 0.6480 | 0.3630 | first image arm: image eval .809 vs ctl .796, suite .761 |
+| `dp-r3-ctl` | control | control | 0.7590 | 0.6407 | 0.3570 | portfolio r3/r4 control |
+| `dp-r3-sci` | data | rejected | 0.7579 | 0.6453 | 0.3600 | sci yes/no sources: probe -.028 |
+| `dp-r3-wide` | data | partly kept | 0.7541 | 0.6453 | 0.3620 | 90-130-option label sets: probe +.080 |
+| `dp-r3-inj` | data | rejected | 0.7566 | 0.6439 | 0.3650 | prompt-injection sources: probe -.049 |
+| `dp-r4-rebal` | data | rejected as source | 0.7559 | 0.6455 | 0.3650 | escalation rebalance: esc -.014, suite -.003 |
+| `rl3-pointwise` | control | control | 0.7544 | 0.6528 | 0.3590 | pointwise CE control |
+| `rl3-packet` | RL | rejected | 0.7527 | 0.6514 | 0.3530 | packet exact-split RL: loses to CE -.047 |
+| `rl3-packet-ce` | control | control | 0.7526 | 0.6509 | 0.3540 | packet CE control |
+| `rl3-listwise` | RL | not a win | 0.7537 | 0.6496 | 0.3540 | listwise NDCG RL, KL gate on: +.014 vs pointwise (z 1.3) |
+| `s2-cr-noce` | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `s2-afull` | control | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `s2-cr-r1` | RL | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `s2-a-replay` | control | pilot | — | — | — | wave-2 decision-objective pilot (confrank / select), dev metrics only; judged NOT MET |
+| `lt-16` | model | report-only | 0.7209 | 0.6210 | 0.3400 | scorer tap at layer 16 (cost sweep) |
+| `lt-18` | model | report-only | 0.7200 | 0.6255 | 0.3410 | tap 18 |
+| `lt-20` | model | report-only | 0.7194 | 0.6226 | 0.3380 | tap 20 |
+| `lt-23` | model | report-only | 0.7221 | 0.6258 | 0.3520 | tap 23 (current) |
+| `dp-r4-abst` | data | kept as component | 0.7594 | 0.6410 | 0.3660 | abstention sources: KoBBQ unknown .448 -> .918, disambiguated .803 -> .636 |
+| `rl4-packet-ce` | control | control | 0.7547 | 0.6455 | 0.3560 | packet CE control |
+| `rl4-pointwise` | control | control | 0.7536 | 0.6541 | 0.3570 | pointwise CE control |
+| `rl4-packet` | RL | rejected | 0.7532 | 0.6455 | 0.3620 | packet RL gate off: -.010 vs CE |
+| `rl4-listwise` | RL | kept | 0.7546 | 0.6509 | 0.3560 | listwise RL, gate off: hippo pc R@1 .246 vs .194 (+.052, z 3.9) |
+| `vis-ct-2-ctl` | control | control | 0.7529 | 0.6389 | 0.3720 | control for vis-ct-2 |
+| `vis-ct-2` | vision | rejected | 0.7539 | 0.6485 | 0.3520 | second image portfolio: image eval .8026 vs vis-ct-1 .8088 |
+| `r3-16-nr` | model | report-only | 0.7214 | 0.6151 | 0.3420 | tap 16, no LM retention |
+| `r3-23-nr` | model | report-only | 0.7221 | 0.6258 | 0.3520 | tap 23, no retention |
+| `r3-16-ret` | model | report-only | 0.7201 | 0.6186 | 0.3310 | tap 16 + retention KL .5 |
+| `r3-23-ret` | model | report-only | 0.7192 | 0.6268 | 0.3270 | tap 23 + retention KL .5 |
+| `dp-r5-stack-ctl` | control | control | 0.7586 | 0.6402 | 0.3690 | control for dp-r5-stack |
+| `dp-r5-stack` | stack | no KEEP (product candidate) | 0.7622 | 0.6450 | 0.3770 | stack of every kept dp component: +.0036 vs ctl, below the +.006 bar; KoBBQ gate fails |
+| `rl5-listwise-rcC` | RL | kept = v3.0 | 0.7561 | 0.6490 | 0.3640 | rl4 recipe on the v3.0 SFT parent: hippo pc R@1 .192 -> .308 |

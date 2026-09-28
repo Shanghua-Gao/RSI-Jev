@@ -65,8 +65,9 @@ one forward pass with nothing generated, so there is no reasoning trace to read.
 arms ask whether a decision-tuned tower can be given its words back without giving up the
 decision, and whether an explanation it produces is the reason or a plausible story.
 
-Ten arms out of the ninety-two run since v1.0 got from one release to the next, each ruling
-something out:
+Of the 204 arms run since v1.0, these are the ones that got from one release to the next, each
+ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
+"ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
 | where it went | result | what it established |
 |---|---|---|
@@ -91,44 +92,50 @@ v1.0
 
 ## RSI-Jev models
 
-| model | download | 12-benchmark suite | calibration (ECE) | per decision |
-|---|---|---|---|---|
-| **RSI-Jev-v2.1-2B** | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) | **0.7291** | **0.0556** | ~10 ms |
-| RSI-Jev-v2.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) | 0.7056 | 0.0546 | ~10 ms |
-| RSI-Jev-v1.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) | 0.609 | 0.0921 | ~10 ms |
-| RSI-Jev-v1.0-0.8B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) | – | – | ~10 ms |
+| model | download | 15-benchmark suite | held-out (eval_final_v2) | calibration (ECE) | per decision |
+|---|---|---|---|---|---|
+| **RSI-Jev-v3.0-2B** | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) | **0.756** | **0.649** | 0.066 | ~10 ms |
+| RSI-Jev-v2.1-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) | 0.736 | 0.633 | 0.059 | ~10 ms |
+| RSI-Jev-v2.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) | – | – | – | ~10 ms |
+| RSI-Jev-v1.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) | 0.622 | 0.604 | – | ~10 ms |
+| RSI-Jev-v1.0-0.8B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) | – | – | – | ~10 ms |
 
-| benchmark | **v2.1** | v1.0 | v2.1 ECE |
+v3.0, v2.1 and v1.0 were scored in one job by the same evaluator; v2.0 and the 0.8B were not
+re-scored on this suite, and their own cards have their numbers on the earlier twelve-benchmark
+one. v1.0 ships no calibration, so it has no calibrated ECE.
+
+| benchmark | **v3.0** | v2.1 | v3.0 ECE |
 |---|---|---|---|
-| typed-decisions | **0.7905** | 0.659 | 0.063 |
-| Nimble public | **0.8068** | 0.677 | 0.017 |
-| MMLU-Pro 1k | **0.383** | 0.351 | 0.065 |
-| Jev-Style panel | **0.7493** | 0.734 | 0.052 |
-| Kev transfer | **0.7546** | 0.665 | 0.068 |
-| Kev hard | **0.6976** | 0.393 | 0.040 |
-| JevBench | **0.7217** | 0.663 | 0.062 |
-| Kev documents | **0.8632** | 0.714 | 0.069 |
-| Kev devtools | **0.7151** | 0.579 | 0.079 |
-| Nimble holdout | **0.7469** | 0.565 | 0.088 |
-| procedural | **0.8728** | 0.647 | 0.032 |
-| Open-Jev OOD | **0.6513** | 0.600 | 0.085 |
-| **suite mean** | **0.7291** | 0.609 | **0.0556** |
+| typed-decisions | 0.791 | 0.791 | 0.091 |
+| Nimble public | 0.801 | **0.806** | 0.026 |
+| MMLU-Pro 1k | 0.364 | **0.383** | 0.144 |
+| Jev-Style panel | **0.835** | 0.750 | 0.011 |
+| Kev transfer | **0.792** | 0.754 | 0.048 |
+| Kev hard | **0.760** | 0.697 | 0.029 |
+| JevBench | 0.700 | **0.722** | 0.129 |
+| tasksource | **0.701** | 0.618 | 0.036 |
+| SemIf external | **0.921** | 0.885 | 0.076 |
+| scienthoon OOD | 0.705 | **0.774** | 0.076 |
+| Nimble holdout | **0.778** | 0.747 | 0.090 |
+| Kev documents | **0.869** | 0.859 | 0.074 |
+| Kev devtools | 0.715 | **0.716** | 0.056 |
+| procedural | 0.871 | **0.873** | 0.027 |
+| Open-Jev OOD | **0.838** | 0.651 | 0.048 |
+| **suite mean** | **0.756** | 0.736 | **0.066** |
 
-**v2.1 is ahead on all twelve.** It is also the first release whose gains are not only on the
-benchmarks it trained for: on three benchmarks frozen before any of this work began, and in no
-training corpus, it beats v1.0 by +0.039, +0.036 and +0.060 — v2.0 beat it on none of them.
+**v3.0 is ahead of v2.1 on a new held-out set, +0.016 (*p* = 0.011)**, and
+on the suite, 0.736 → 0.756. The suite gains are largest where new training data landed —
+Open-Jev, Jev-Style, tasksource — so treat those as in-domain; ten of the fifteen benchmarks
+contribute train-split data, and none of these figures is zero-shot. Pick v1.0 if you need a
+zero-shot number or the 0.8B size.
 
-**The calibration is still the part to act on.** v2.1 says 0.9 or better on 519 of
-typed-decisions' 2,000 questions and is right on 98.1% of them; v1.0 was that confident about
-only 29. So over a quarter of the workload can be decided automatically, and it costs nothing —
-same ~10 ms, and rescaling never changes which option wins.
-
-Eleven of the twelve benchmarks contributed train-split data, so treat those figures as
-in-domain and not as zero-shot: pick v1.0 if you need a zero-shot number or the 0.8B size.
+**The reason for this release is reranking**: its RL stage puts the right memory first 60% more
+often than the same model without it (LongMemEval through hippo-memory, R@1 0.192 → 0.308).
+[`docs/rl.md`](docs/rl.md) is how the loop found a reward that works.
 
 Architecture, training recipe and limitations are on each model card.
 [`BENCHMARKS.md`](BENCHMARKS.md) is what these numbers mean and how to re-run them;
-[`versions/v2.1.md`](versions/v2.1.md) is the full record, every figure with its caveats.
+[`versions/v3.0.md`](versions/v3.0.md) is the full record, every figure with its caveats.
 
 To run them:
 
