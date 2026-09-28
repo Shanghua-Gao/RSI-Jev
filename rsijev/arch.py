@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -72,6 +73,43 @@ class ArchConfig:
     # Cross-attention readout only.
     xattn_heads: int = 4
     xattn_dim: int | None = None          # defaults to the tower's hidden size
+    # How option_xattn combines each option's value v_k with the attended context
+    # ctx (arch-fix-1). "sum" (default, every arm so far): proj(v_k + ctx). proj is
+    # linear, so proj(ctx) is the SAME constant for all K options and cancels in
+    # the softmax: the cross-attention and the decision query contribute nothing.
+    #   "mlp":      MLP([v_k, v_k*ctx, v_k-ctx]) -> 1   (variant a)
+    #   "bilinear": proj(v_k) + <W v_k, ctx>, W zero-initialised, so the arm starts
+    #               exactly at the "sum" model (variant b)
+    # Checkpoint layout: q/k/v/attn/proj keep their names; "mlp" adds comb.*,
+    # "bilinear" adds bil.weight.
+    #   "bilinear_norm": as "bilinear" on RMS-normalised v_k and ctx, divided by d.
+    #               Unscaled, one Adam step moves all d^2 entries of W by ~lr and the
+    #               term by ~lr*|v|_1*|ctx|_1 (CPU 0.8B check: loss 1.04 -> 17.4 at
+    #               lr_head 1e-3); normalised, a worst-case step is ~lr*d.
+    xattn_combine: Literal["sum", "mlp", "bilinear", "bilinear_norm"] = "sum"
+    xattn_mlp_hidden: int = 512
+    # arch-2 readout designs, layered ON TOP of the base option scorer above (so
+    # they compose with any xattn_combine). Each starts at the base scorer: the
+    # correction's output layer or gate is zero-initialised, or (per_mode) the
+    # three heads are copies of one initialisation. Still one tower pass.
+    #   "none":     the base scorer alone (every arm so far)
+    #   "joint":    + a small transformer over [decision; options] (no position
+    #               encoding, so option-order equivariant); per-option linear out
+    #               (zero-init). Options attend to each other before the logit.
+    #   "ordinal":  + for SCORE rows only, a cumulative-link term: location
+    #               s in [0, K-1] and dispersion tau from the decision state,
+    #               P(y<=k) = sigmoid((k + 0.5 - s) / tau); added as gate*log P
+    #               (gate init 0). Levels are canonical option indices (score
+    #               options are "0".."K-1"), read through option_perm.
+    #   "per_mode": three copies of the base scorer, one per mode (choice/noul/
+    #               score), selected by mode_id.
+    # Checkpoint layout (scorer.safetensors): base keys move under "base." for
+    # joint/ordinal and "heads.<m>." for per_mode; joint adds jin/jtype/jenc/jout,
+    # ordinal adds oloc/odisp/ogate.
+    head_design: Literal["none", "joint", "ordinal", "per_mode"] = "none"
+    joint_dim: int = 512
+    joint_layers: int = 2
+    joint_heads: int = 8
     # Encode the state once and answer K questions from it, questions blind to
     # each other. This is how the reference service is described as behaving.
     pack_questions: bool = False
@@ -116,7 +154,43 @@ class ArchConfig:
     # whatever the question actually uses, so raising this grows ONLY that arm --
     # another reason readout arms must report their trainable parameter counts.
     max_options: int = 80
+    # mmlu-keep-1 (c): freeze the lower fraction of the tower's decoder layers
+    # (embeddings are frozen separately by the runner). 0 = train every layer,
+    # which is the champion's behaviour. 1/3 at 2B freezes layers 0-7 of 24.
+    freeze_lower_frac: float = 0.0
 
+
+class _RowGradScale(torch.autograd.Function):
+    """Identity forward; multiplies the gradient of row b by scale[b] backward.
+
+    mmlu-keep-1 (b): applied to the hidden states the scorer reads, it scales a
+    row's gradient into the TOWER only; the scorer still sees the full loss.
+    """
+
+    @staticmethod
+    def forward(ctx, x, scale):
+        ctx.save_for_backward(scale)
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, g):
+        (scale,) = ctx.saved_tensors
+        return g * scale.to(g.dtype).view(-1, *([1] * (g.dim() - 1))), None
+
+
+def _decoder_layers(tower: nn.Module):
+    """The text tower's decoder-layer ModuleList (Qwen3.5: `.layers`, or
+    `.language_model.layers` on the multimodal wrapper)."""
+    for path in ("layers", "language_model.layers", "model.layers"):
+        m = tower
+        try:
+            for part in path.split("."):
+                m = getattr(m, part)
+        except AttributeError:
+            continue
+        if isinstance(m, nn.ModuleList):
+            return m
+    raise ValueError("could not locate the tower's decoder layers")
 
 class OptionScorer(nn.Module):
     """Turns hidden states into one logit per option.
@@ -139,6 +213,14 @@ class OptionScorer(nn.Module):
             self.v = nn.Linear(hidden, d)
             self.attn = nn.MultiheadAttention(d, cfg.xattn_heads, batch_first=True)
             self.proj = nn.Linear(d, 1)
+            if cfg.xattn_combine == "mlp":
+                self.comb = nn.Sequential(nn.Linear(3 * d, cfg.xattn_mlp_hidden), nn.GELU(),
+                                          nn.Linear(cfg.xattn_mlp_hidden, 1))
+            elif cfg.xattn_combine in ("bilinear", "bilinear_norm"):
+                self.bil = nn.Linear(d, d, bias=False)
+                nn.init.zeros_(self.bil.weight)
+            elif cfg.xattn_combine != "sum":
+                raise ValueError(f"xattn_combine {cfg.xattn_combine!r}")
         else:
             raise ValueError(cfg.readout)
 
@@ -150,8 +232,12 @@ class OptionScorer(nn.Module):
 
     def forward(self, *, decision_h: torch.Tensor,
                 option_h: torch.Tensor | None = None,
-                option_mask: torch.Tensor | None = None) -> torch.Tensor:
+                option_mask: torch.Tensor | None = None,
+                mode_id: torch.Tensor | None = None,
+                option_perm: torch.Tensor | None = None) -> torch.Tensor:
         """
+        mode_id, option_perm: accepted for the arch-2 designs (DesignedScorer);
+        the base scorer ignores them.
         decision_h : (B, H)          hidden state at the decision position
         option_h   : (B, K, H)       one hidden state per option span, or None
         option_mask: (B, K) bool     True where an option exists
@@ -181,12 +267,102 @@ class OptionScorer(nn.Module):
             ctx, _ = self.attn(q, k, v, key_padding_mask=pad, need_weights=False)
             # score each option against the attended context, so the logit for an
             # option depends on the whole option SET, not on that option alone.
-            logits = self.proj(v + ctx).squeeze(-1)              # (B, K)
+            if cfg.xattn_combine == "sum":
+                logits = self.proj(v + ctx).squeeze(-1)          # (B, K); ctx cancels (see ArchConfig)
+            elif cfg.xattn_combine == "mlp":
+                c = ctx.expand_as(v)
+                logits = self.comb(torch.cat([v, v * c, v - c], dim=-1)).squeeze(-1)
+            elif cfg.xattn_combine == "bilinear":
+                logits = self.proj(v).squeeze(-1) + (self.bil(v) * ctx).sum(-1)
+            else:  # bilinear_norm
+                def _rms(x):
+                    return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                bil = (self.bil(_rms(v)) * _rms(ctx)).sum(-1) / v.shape[-1]
+                logits = self.proj(v).squeeze(-1) + bil
         if option_mask is not None:
             logits = logits.masked_fill(~option_mask, float("-inf"))
         return logits
 
 
+class DesignedScorer(nn.Module):
+    """arch-2 readout designs around a base OptionScorer (see ArchConfig.head_design).
+
+    Same interface as OptionScorer: one logit per option in PRESENTED order,
+    -inf where masked. Every design equals the base scorer at initialisation.
+    """
+
+    def __init__(self, hidden: int, cfg: ArchConfig):
+        super().__init__()
+        self.cfg = cfg
+        design = cfg.head_design
+        if design == "per_mode":
+            one = OptionScorer(hidden, cfg)
+            self.heads = nn.ModuleList([copy.deepcopy(one) for _ in MODES])
+            return
+        self.base = OptionScorer(hidden, cfg)
+        if design == "joint":
+            dj = cfg.joint_dim
+            self.jin = nn.Linear(hidden, dj)
+            self.jtype = nn.Parameter(torch.zeros(2, dj))          # 0 = decision, 1 = option
+            layer = nn.TransformerEncoderLayer(dj, cfg.joint_heads, dim_feedforward=2 * dj,
+                                               dropout=0.0, batch_first=True, norm_first=True,
+                                               activation="gelu")
+            self.jenc = nn.TransformerEncoder(layer, cfg.joint_layers, enable_nested_tensor=False)
+            self.jout = nn.Linear(dj, 1)
+            nn.init.zeros_(self.jout.weight)
+            nn.init.zeros_(self.jout.bias)
+        elif design == "ordinal":
+            self.oloc = nn.Linear(hidden, 1)
+            self.odisp = nn.Linear(hidden, 1)
+            self.ogate = nn.Parameter(torch.zeros(()))
+        else:
+            raise ValueError(f"head_design {design!r}")
+
+    def zero_init_output(self) -> None:
+        for m in (self.heads if self.cfg.head_design == "per_mode" else [self.base]):
+            m.zero_init_output()
+
+    def forward(self, *, decision_h, option_h=None, option_mask=None,
+                mode_id=None, option_perm=None):
+        design = self.cfg.head_design
+        kw = dict(decision_h=decision_h, option_h=option_h, option_mask=option_mask)
+        if design == "per_mode":
+            if mode_id is None:
+                raise ValueError("per_mode heads need mode_id in the batch")
+            all_l = torch.stack([h(**kw) for h in self.heads])     # (M, B, K)
+            b = torch.arange(decision_h.shape[0], device=decision_h.device)
+            return all_l[mode_id.long(), b]
+        logits = self.base(**kw)
+        if option_mask is None:
+            raise ValueError(f"head_design {design!r} needs option_mask")
+        if design == "joint":
+            x = torch.cat([self.jin(decision_h).unsqueeze(1) + self.jtype[0],
+                           self.jin(option_h) + self.jtype[1]], dim=1)   # (B, 1+K, dj)
+            pad = torch.cat([torch.zeros_like(option_mask[:, :1]), ~option_mask], dim=1)
+            y = self.jenc(x, src_key_padding_mask=pad)
+            corr = self.jout(y[:, 1:]).squeeze(-1)                  # (B, K)
+            logits = logits + corr.masked_fill(~option_mask, 0.0)
+        else:  # ordinal
+            if mode_id is None or option_perm is None:
+                raise ValueError("the ordinal head needs mode_id and option_perm in the batch")
+            k = option_mask.sum(-1, keepdim=True).float()           # levels per question
+            s = torch.sigmoid(self.oloc(decision_h)) * (k - 1)      # (B, 1) location
+            tau = F.softplus(self.odisp(decision_h)) + 0.05         # (B, 1) dispersion
+            kmax = option_mask.shape[1]
+            lev = torch.arange(kmax, device=decision_h.device).float().unsqueeze(0)
+            # cdf at the upper edge of each level; the last real level closes at 1
+            cdf = torch.sigmoid((lev + 0.5 - s) / tau)
+            cdf = torch.where(lev >= k - 1, torch.ones_like(cdf), cdf)
+            lower = torch.cat([torch.zeros_like(cdf[:, :1]), cdf[:, :-1]], dim=1)
+            logp = torch.log((cdf - lower).clamp_min(1e-9))         # canonical level order
+            logp_pres = logp.gather(1, option_perm.long().clamp(0, kmax - 1))
+            is_score = (mode_id == MODES.index("score")).unsqueeze(1)
+            ok = option_mask & is_score
+            logits = logits + torch.where(ok, self.ogate * logp_pres, torch.zeros_like(logits))
+        return logits.masked_fill(~option_mask, float("-inf"))
+
+
+# ---- post-hoc calibration (cal-4b, ported from rc-B's arch) ----------------
 CAL_PCA_DIM = 16          # hidden-state directions the confidence head reads
 CAL_N_SCALAR = 7          # p_top, top-2 logit gap, normalised entropy, log K, mode one-hot (3)
 CAL_LOGT_CLAMP = 3.0      # |log tau| <= 3: tau in [0.05, 20]
@@ -194,10 +370,7 @@ CAL_LOGT_CLAMP = 3.0      # |log tau| <= 3: tau in [0.05, 20]
 
 def cal_features(logits: torch.Tensor, decision_h: torch.Tensor, mode_id: torch.Tensor | None,
                  pca_mean: torch.Tensor, pca_W: torch.Tensor) -> torch.Tensor:
-    """Input features of the confidence head, all from the SAME forward pass:
-    the uncalibrated option distribution's shape, the question's mode and option
-    count, and a low-rank projection of the decision hidden state (the only
-    feature that can tell an in-distribution question from an OOD one)."""
+    """Input features of the confidence head, all from the SAME forward pass."""
     z = logits.float()
     finite = torch.isfinite(z)
     k = finite.sum(-1).clamp_min(2).float()
@@ -222,7 +395,8 @@ class DecisionModel(nn.Module):
         super().__init__()
         self.tower = tower
         self.cfg = cfg
-        self.scorer = OptionScorer(hidden, cfg)
+        self.scorer = (OptionScorer(hidden, cfg) if cfg.head_design == "none"
+                       else DesignedScorer(hidden, cfg))
         self.lm_head = lm_head
         self.mix_logits = None
         # Post-hoc calibration (the cal-1 / cal-4 arms). Buffers only, never
@@ -232,14 +406,14 @@ class DecisionModel(nn.Module):
         # forward pass then rescales the logits it already computed, so a
         # decision is still ONE forward pass.
         self.cal_mode = "none"            # "none" | "temp" | "temp_mode" | "oof_head" | "oof_head_scorefloor"
-        k = CAL_PCA_DIM
+        k_ = CAL_PCA_DIM
         self.register_buffer("cal_logT", torch.zeros(()))
         self.register_buffer("cal_logT_mode", torch.zeros(len(MODES)))
         self.register_buffer("cal_pca_mean", torch.zeros(hidden))
-        self.register_buffer("cal_pca_W", torch.zeros(hidden, k))
-        self.register_buffer("cal_feat_mu", torch.zeros(k + CAL_N_SCALAR))
-        self.register_buffer("cal_feat_sd", torch.ones(k + CAL_N_SCALAR))
-        self.register_buffer("cal_w", torch.zeros(k + CAL_N_SCALAR))
+        self.register_buffer("cal_pca_W", torch.zeros(hidden, k_))
+        self.register_buffer("cal_feat_mu", torch.zeros(k_ + CAL_N_SCALAR))
+        self.register_buffer("cal_feat_sd", torch.ones(k_ + CAL_N_SCALAR))
+        self.register_buffer("cal_w", torch.zeros(k_ + CAL_N_SCALAR))
         self.register_buffer("cal_b", torch.zeros(()))
         if cfg.layer_mix:
             cands = list(cfg.layer_mix)
@@ -276,6 +450,16 @@ class DecisionModel(nn.Module):
         if cfg.freeze_base:
             for p in self.tower.parameters():
                 p.requires_grad_(False)
+        self.frozen_lower_layers = 0
+        if cfg.freeze_lower_frac and not cfg.freeze_base:
+            layers = _decoder_layers(self.tower)
+            n_freeze = int(round(len(layers) * float(cfg.freeze_lower_frac)))
+            for layer in list(layers)[:n_freeze]:
+                for p in layer.parameters():
+                    p.requires_grad_(False)
+            self.frozen_lower_layers = n_freeze
+            print(f"    freeze_lower_frac={cfg.freeze_lower_frac}: froze decoder layers "
+                  f"0-{n_freeze - 1} of {len(layers)}", flush=True)
         if cfg.embedding in ("frozen", "sliced", "replaced"):
             emb = getattr(self.tower, "get_input_embeddings", lambda: None)()
             if emb is not None:
@@ -336,7 +520,8 @@ class DecisionModel(nn.Module):
             h = torch.einsum("cbth,bc->bth", stack.to(w.dtype), w)
             return self._readout(h, final, b, decision_index, option_index,
                                  option_span_start, option_span_end,
-                                 option_token_ids, option_mask, want_base)
+                                 option_token_ids, option_mask, want_base,
+                                 mode_id=mode_id, option_perm=option_perm)
         layer = self.cfg.readout_layer
         if isinstance(layer, dict):
             raise ValueError("hidden_states() is single-layer; a per-mode readout "
@@ -361,7 +546,8 @@ class DecisionModel(nn.Module):
                  option_perm: torch.Tensor | None = None,
                  past_key_values=None,
                  position_ids: torch.Tensor | None = None,
-                 want_base: bool = False):
+                 want_base: bool = False,
+                 row_grad_scale: torch.Tensor | None = None):
         """One tower pass, returning (logits, base logits or None).
 
         The base term and the correction both come from this single pass. A
@@ -382,10 +568,12 @@ class DecisionModel(nn.Module):
             stack = torch.stack([hs[_norm_layer(int(c), n)] for c in self._mix_candidates])
             w = torch.softmax(self.mix_logits, dim=-1)[mode_id]      # (B, C)
             h = torch.einsum("cbth,bc->bth", stack.to(w.dtype), w)
+            if row_grad_scale is not None:
+                h = _RowGradScale.apply(h, row_grad_scale)
             return self._readout(h, final, b, decision_index, option_index,
                                  option_span_start, option_span_end,
                                  option_token_ids, option_mask, want_base,
-                                 mode_id=mode_id)
+                                 mode_id=mode_id, option_perm=option_perm)
         layer = self.cfg.readout_layer
         if isinstance(layer, dict):
             if mode_id is None:
@@ -400,14 +588,16 @@ class DecisionModel(nn.Module):
                 h[rows] = hs[_norm_layer(layer[name], len(hs))][rows]
         else:
             h = hs[layer]
+        if row_grad_scale is not None:
+            h = _RowGradScale.apply(h, row_grad_scale)
         return self._readout(h, final, b, decision_index, option_index,
                              option_span_start, option_span_end,
                              option_token_ids, option_mask, want_base,
-                             mode_id=mode_id)
+                                 mode_id=mode_id, option_perm=option_perm)
 
     def _readout(self, h, final, b, decision_index, option_index,
                  option_span_start, option_span_end, option_token_ids,
-                 option_mask, want_base, mode_id=None):
+                 option_mask, want_base, mode_id=None, option_perm=None):
         decision_h = h[b, decision_index]                        # (B, H)
         option_h = None
         if option_span_start is not None and self.cfg.option_pool == "mean":
@@ -440,7 +630,8 @@ class DecisionModel(nn.Module):
         # autocast, never spiked. The scorer is 7 M parameters: fp32 is free.
         with torch.autocast(decision_h.device.type, enabled=False):
             logits = self.scorer(decision_h=decision_h, option_h=option_h,
-                                 option_mask=option_mask)
+                                 option_mask=option_mask, mode_id=mode_id,
+                                 option_perm=option_perm)
         if self.cfg.logit_cap:
             c = float(self.cfg.logit_cap)
             logits = c * torch.tanh(logits / c)

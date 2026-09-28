@@ -1,0 +1,230 @@
+{
+ "sft_corpus": "v3-stack-ds2-xmlp",
+ "rl_corpus": "rl2-b5 (= the SFT files + rl_hrr.jsonl)",
+ "files": {
+  "cov_ambigqa.jsonl": {
+   "sha256": "5fc260e435462dae10b272383d0aff0a6b1e5b736da5addce7cfadcc09837960",
+   "bytes": 506119,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_condaqa.jsonl": {
+   "sha256": "e226d28a652c5e5426ec01629c4500351177d40ad73dfbcb9fb7769b7bd07bc0",
+   "bytes": 1255074,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_cuad.jsonl": {
+   "sha256": "4b59142c3d2547fc4d2d97bf4a56684fc658dd0339a9cbc33bf7d1eee8afff4c",
+   "bytes": 5431009,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_finqa.jsonl": {
+   "sha256": "391dbd06b6b88467343910b82fbda198e14cd17628d3e6d49c6281cf98c06c08",
+   "bytes": 4424918,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_gsm8k.jsonl": {
+   "sha256": "729a95ba880da7b7a1dd3ea8d0921f0828b6fc4bb829255b3ec10a3ecd8821f6",
+   "bytes": 580666,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_hotpotqa.jsonl": {
+   "sha256": "b47080e2857a4290a3111eef256e1c27f2ccb1479276a30ff593fa29d36e1fd9",
+   "bytes": 3362008,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_massive_multi.jsonl": {
+   "sha256": "d711d7b3c6d91890d14b6a42c62ab1c65a3e426e3dd6f53d9b53dbbacfee7409",
+   "bytes": 1884311,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_musique.jsonl": {
+   "sha256": "3c7eb50889fa27a732fe2822990ff52f57f577ca4b09c5de1c0cdcd41ad2ee53",
+   "bytes": 3398625,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_open_jev.jsonl": {
+   "sha256": "dfcf6367f95614d9e72857fc7d81dd0d535f29c9554f133c8f2626bb24021585",
+   "bytes": 28326031,
+   "cases": 10000,
+   "questions": 10000
+  },
+  "cov_privacyqa.jsonl": {
+   "sha256": "9ff3412b521b64143d62e4a43266fdbe8028811f4fd01045be67450f4e6bbcaa",
+   "bytes": 681231,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_tabfact.jsonl": {
+   "sha256": "91ef8796b9a5bcb0f1d0a7abcb59de96824ad15d783f530827068640e9027e94",
+   "bytes": 1615982,
+   "cases": 1000,
+   "questions": 1000
+  },
+  "cov_tasksource_jev.jsonl": {
+   "sha256": "a69e7888b5f5998652073168ed287a098f670ace75ed399b851807d5a46c885f",
+   "bytes": 34684515,
+   "cases": 30000,
+   "questions": 30000
+  },
+  "ds2_open_jev.jsonl": {
+   "sha256": "51849c3ca1d7193470057510a93edc7438727a819b89c247008ed8f2a21188f6",
+   "bytes": 26942597,
+   "cases": 10000,
+   "questions": 10000
+  },
+  "ds2_tasksource_jev.jsonl": {
+   "sha256": "dc8b86bd6f937019bb549877a454a670a277c18a686faa03da02604312c18d54",
+   "bytes": 35192062,
+   "cases": 30000,
+   "questions": 30000
+  },
+  "jsg_anli.jsonl": {
+   "sha256": "d1b840ca9b62178dcaa8c121a0f124286ec9608398ea5c0dee31c5aedef81f7b",
+   "bytes": 20445616,
+   "cases": 19998,
+   "questions": 19998
+  },
+  "jsg_emotion.jsonl": {
+   "sha256": "f1241d40b0863e22a5dccf728fbc2a87df8b2bbc9d9cead6853aa4b25d15b01e",
+   "bytes": 8427267,
+   "cases": 15873,
+   "questions": 15873
+  },
+  "jsg_sst5.jsonl": {
+   "sha256": "66ec5b5d5f98c7f69efe2281f34a91f8d73271d819a2fd9d177c2b92c12c6fba",
+   "bytes": 4066209,
+   "cases": 8511,
+   "questions": 8511
+  },
+  "mc_replay.jsonl": {
+   "sha256": "09437f648cf35f4f28ce49a9dab3f4a5a2336fbdcdf4093b286f863333cbeac6",
+   "bytes": 8342963,
+   "cases": 7468,
+   "questions": 7468
+  },
+  "mc_replay_extra.jsonl": {
+   "sha256": "865343a4cc6c2fef5f2e926ba498377f08ff59530a94d049382b42f6eecd795e",
+   "bytes": 8337508,
+   "cases": 7735,
+   "questions": 7735
+  },
+  "st_aegis2.jsonl": {
+   "sha256": "325d760b75fb193dd79dd4d782f692267e90ff3900ce47fe202d2b4964a8f36d",
+   "bytes": 5178565,
+   "cases": 3965,
+   "questions": 3965
+  },
+  "st_boolq.jsonl": {
+   "sha256": "422a59dd82f233b1b0b29fe9d6a22b167b3dcde2432648e564aed3133ef23279",
+   "bytes": 4364853,
+   "cases": 3830,
+   "questions": 3830
+  },
+  "st_civil_comments.jsonl": {
+   "sha256": "872bc11ea03e23675597760221cf36dc26f1d0e97ba58749765c8e443a64e260",
+   "bytes": 3603300,
+   "cases": 3999,
+   "questions": 3999
+  },
+  "st_helpsteer2.jsonl": {
+   "sha256": "0d766c3971c6ef52af7d9af3bbc2541170a8dfa0a6034d7692d08b9636fa530f",
+   "bytes": 12656495,
+   "cases": 3990,
+   "questions": 3990
+  },
+  "st_kev_devtools_v1.jsonl": {
+   "sha256": "20e6f0b343a4058f9c259da3c9d3bf96cccb3833a9b0aa7aa1a7c28e5c5278bd",
+   "bytes": 6968034,
+   "cases": 5166,
+   "questions": 6781
+  },
+  "st_kev_documents_v1.jsonl": {
+   "sha256": "49f9d05f6ab6f532baf7838b61a62230df3f60e086187111ae09074ceec54f68",
+   "bytes": 25359267,
+   "cases": 5879,
+   "questions": 10851
+  },
+  "st_kev_hard_v1.jsonl": {
+   "sha256": "aa91ebbdc44cff090ae4f69e602d267b82862a08a0751720c290c15b7007f004",
+   "bytes": 14838125,
+   "cases": 5548,
+   "questions": 8662
+  },
+  "st_massive-de-DE.jsonl": {
+   "sha256": "e2df5acb068dd327f6b8d205337559d59337d59db45055e02116a3636d0df929",
+   "bytes": 3601209,
+   "cases": 1995,
+   "questions": 1995
+  },
+  "st_massive-en-US.jsonl": {
+   "sha256": "29659ac70c4897395bfa77aa6918b699a627df0675c96ef013bd7b0ab929d781",
+   "bytes": 3588330,
+   "cases": 1996,
+   "questions": 1996
+  },
+  "st_multinli.jsonl": {
+   "sha256": "31ba757aec5979438e75f8a9309bfa58f9cda6d0424c712260a8c252b3b19af7",
+   "bytes": 3117142,
+   "cases": 3998,
+   "questions": 3998
+  },
+  "st_nimble_train.jsonl": {
+   "sha256": "cbdcf46d0002e624d12d8a28d16ca897cdc6fe547b9807606482c15a06ae244b",
+   "bytes": 5600281,
+   "cases": 2403,
+   "questions": 2403
+  },
+  "st_paws.jsonl": {
+   "sha256": "f98c9e2dd10c113ab6daadd7edbef5206f82115d105fc7bd95b17174a776408b",
+   "bytes": 3466886,
+   "cases": 3998,
+   "questions": 3998
+  },
+  "st_procedural_train.jsonl": {
+   "sha256": "de0580a9afb650b4474b4eecc5dd81dfb685e1159486a43e302486f9d154bb66",
+   "bytes": 7332411,
+   "cases": 3000,
+   "questions": 9761
+  },
+  "st_squad2.jsonl": {
+   "sha256": "e9cbcb4cf3bf6a3f953248665bee230dba7f04767fda953733f3741a82fc8b43",
+   "bytes": 6146708,
+   "cases": 4000,
+   "questions": 4000
+  },
+  "st_vitaminc.jsonl": {
+   "sha256": "957bb1311df0168a3ac5908bfbb9f4ca5f8be866d3f4323079f9462b284fb9ab",
+   "bytes": 4045126,
+   "cases": 3997,
+   "questions": 3997
+  },
+  "synth.jsonl": {
+   "sha256": "69bd724bb74ebc7abf46c328908ca6ccd94bad20bb0755a7760ce1dad1f92e22",
+   "bytes": 16618804,
+   "cases": 6977,
+   "questions": 24320
+  },
+  "td_train.jsonl": {
+   "sha256": "4eff9a656d31942056160b000ef42b2af8dfa2106f0a57754b604a1d81c2f467",
+   "bytes": 11130417,
+   "cases": 3600,
+   "questions": 18000
+  }
+ },
+ "rl_files": {
+  "rl_hrr.jsonl": {
+   "sha256": "7385e5de3f49f73b5834bac0f8b64f59194c2d00b3de360e7bb53db0aa1115f8",
+   "bytes": 32328679,
+   "cases": 29879,
+   "questions": 29879
+  }
+ }
+}

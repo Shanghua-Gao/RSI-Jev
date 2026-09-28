@@ -54,7 +54,7 @@ where nearly all the error lived.
   MMLU-Pro agreement is 0.999 or better but not always exactly 1, because a few of that
   benchmark's answers turn on a logit margin below 0.001 and flip with floating-point
   summation order — reported rather than rounded, in
-  [`versions/v2.1.md`](versions/v2.1.md#3-checkpoints).
+  [`versions/v2.1.md`](versions/v2.1.md#3-checkpoints) and [`versions/v3.0.md`](versions/v3.0.md#3-checkpoints).
 - **Failures ship**, including the ones that killed our own champion.
 
 What that buys: the bug behind v1.0 took **seven registered negatives** to find. Each was an

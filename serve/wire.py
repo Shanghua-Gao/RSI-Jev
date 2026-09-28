@@ -42,7 +42,8 @@ from typing import Any
 from rsijev.contract import Prediction, Question
 
 MAX_QUESTIONS = 64
-MAX_ANSWERS = 64                       # options per choice question / levels per score
+MAX_ANSWERS = 160                      # options per choice question / levels per score;
+                                        # v3.0 trains and evaluates with max_options 160
 NOUL_OPTIONS = ("false", "true")       # this project's contract order; the wire is key-based
 NOUL_DEFAULTS = {"true": "Yes", "false": "No"}
 CHAT_ROLES = {"system", "user", "assistant", "tool"}

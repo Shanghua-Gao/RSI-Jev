@@ -92,7 +92,7 @@ def test_questions_are_independent(client):
     assert [q.key for q in questions] == ["a", "b"]
 
 
-@pytest.mark.parametrize("count,expected", [(1, 422), (2, 200), (64, 200), (65, 422)])
+@pytest.mark.parametrize("count,expected", [(1, 422), (2, 200), (160, 200), (161, 422)])
 def test_choice_option_limits(client, count, expected):
     criteria = {f"k{i}": f"description {i}" for i in range(count)}
     r = client.post("/v1/systemone", json=body(q={**CHOICE, "criteria": criteria}))
@@ -124,6 +124,20 @@ def test_unknown_model_uses_the_error_envelope(client):
     r = client.post("/v1/systemone",
                     json={"model": "other", "state": "s", "questions": {"q": NOUL}})
     assert r.json() == {"error": {"message": "Unknown model: other"}}
+
+
+def test_accepted_model_names_answer_but_never_impersonate():
+    app = create_app(fake_scorer, served_model_name=MODEL, accept_models=["jev-1.13.0"])
+    c = TestClient(app)
+    r = c.post("/v1/systemone", json={"model": "jev-1.13.0", "state": "s", "questions": {"q": NOUL}})
+    assert r.status_code == 200, r.text
+    assert r.json()["model"] == MODEL                  # our own name, not the borrowed one
+    assert r.headers["x-rsijev-model"] == MODEL
+    r = c.post("/v1/systemone", json={"model": "jev-latest", "state": "s", "questions": {"q": NOUL}})
+    assert r.json()["model"] == "jev-latest"           # our own alias is echoed as before
+    r = c.post("/v1/systemone", json={"model": "jev-1.12.0", "state": "s", "questions": {"q": NOUL}})
+    assert r.status_code == 422                         # only the listed names
+    assert c.get("/v1/limits").json()["accepted_model_names"] == ["jev-1.13.0"]
 
 
 def test_served_name_is_accepted_too(client):
@@ -216,7 +230,7 @@ def test_models_limits_and_health(client):
 
     lim = client.get("/v1/limits").json()
     assert lim["max_questions"] == 64
-    assert lim["max_answers_per_question"] == 64
+    assert lim["max_answers_per_question"] == 160
     # This deployment shows option keys to the model; the reference hides them.
     assert lim["option_keys_visible_to_model"] is True
 

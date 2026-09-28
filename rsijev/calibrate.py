@@ -49,6 +49,7 @@ GROUP_WEIGHTS = {
     "kev_docs": 0.05,      # kev_documents_v1
     "kev_devtools": 0.05,  # kev_devtools_v1
     "synth": 0.14,         # jevbench_public 0.06 + procedural_test 0.04 + open_jev_ood 0.04
+    "ts": 0.08,            # tasksource_jev_test (v3 suite; cov_*/ds2_* sources)
 }
 
 

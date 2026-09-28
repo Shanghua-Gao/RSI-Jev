@@ -9,7 +9,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal, Sequence
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -84,7 +84,13 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
-               calibration: str = "none") -> FastAPI:
+               calibration: str = "none", accept_models: Sequence[str] = ()) -> FastAPI:
+    # Apps built on Jev often pin a Jev version ("jev-1.13.0") in their requests.
+    # `accept_models` lets a deployment answer those names without code changes in
+    # the app. The response still names THIS model: echoing a borrowed name would
+    # tell the client it was answered by a model it was not.
+    own = {alias, served_model_name}
+    borrowed = set(accept_models) - own
     app = FastAPI(title="RSI-Jev", version=version,
                   description="A Jev-compatible typed-decision API served by a "
                               "trained decision model. See GET /v1/limits for the "
@@ -116,7 +122,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
 
     @app.post("/v1/systemone", tags=["System One"])
     def systemone(req: SystemOneRequest) -> JSONResponse:
-        if req.model not in {alias, served_model_name}:
+        if req.model not in own | borrowed:
             raise RequestError(f"Unknown model: {req.model}")
         t0 = time.perf_counter()
         questions = _wire_questions(req)
@@ -129,7 +135,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         infer_ms = (time.perf_counter() - t1) * 1000
 
         answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
-        body = {"model": req.model,
+        body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers,
                 # This path generates no tokens: one readout per question, and no
                 # warm-up token. The reference reports N+1 because it decodes one
@@ -156,7 +162,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # may ship a fitted calibration, and then the probabilities in an answer are
         # rescaled. The chosen option is the same either way, the numbers are not.
         return {**limits(), "served_model_name": served_model_name, "version": version,
-                "calibration": calibration}
+                "calibration": calibration, "accepted_model_names": sorted(borrowed)}
 
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:
