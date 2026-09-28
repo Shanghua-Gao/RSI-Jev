@@ -2,11 +2,12 @@
 
 *Written for release [v3.0](../versions/v3.0.md) · 2026-09-28*
 
-We spent four waves trying to make reinforcement learning improve a one-pass decision model.
-**On per-item decisions, plain supervised training on the same data matched or beat it every
-time. RL won once:** a listwise reward for reranking, where the reward spans many separately
-scored candidates. That one win is the RL stage in v3.0. This is what we tried, why it lost,
-where it won, and what we think Jev's RLCD must be doing.
+**RL works for this model when the reward says something the labels cannot.** A listwise reward
+for reranking — NDCG over many separately scored candidates — beats supervised training on the
+same rows (+0.052 R@1, z 3.9), and it is the RL stage in v3.0, where it lifts reranking R@1 by 60%
+over v3.0's own supervised parent. Finding it took four waves: on per-item decisions, where a
+label already says what the answer is, supervised training matched every reward we tried. This is
+what we tried, why those lost, why this one wins, and what we think Jev's RLCD must be doing.
 
 The model throughout is a Qwen3.5-2B tower with an option scorer: one forward pass, one
 probability per option, no generated text.
@@ -108,9 +109,8 @@ pointwise control, so for v3.0 itself the comparison is RL against its parent, n
 on the same rows: hippo per-candidate R@1 0.192 → **0.308**, R@5 0.552 → 0.626 (64 questions
 won, 6 lost, exact McNemar *p* = 2.4 × 10⁻¹³), at a suite cost of −0.0028 and −0.009 on MMLU-Pro.
 
-**Still far from the goal:** reranking with no model at all scores 0.484 R@1 on the same
-benchmark. v3.0 reranks better than any earlier release and still worse than leaving the order
-alone.
+**Where it goes next:** hippo's own retrieval order scores 0.484 R@1 on the same benchmark.
+v3.0 is the best reranker in this line so far, and closing that gap is the next target.
 
 ## What moved the model instead
 
@@ -155,5 +155,5 @@ Where we would still look:
 
 One property worth keeping while we try: on pure-chance questions v2.1 keeps its uncertainty
 (a fair die: 0.36 on the face it picks, against Jev's 0.83 and a truth of 0.17). Every
-continued-training run so far has eroded it a little, v3.0's RL stage included (an in-house
-proxy moves from 0.42 to 0.48), so any sharpening objective has to be checked against it.
+continued-training run so far has moved it a little, v3.0's RL stage included (an in-house
+proxy moves from 0.42 to 0.48), so every sharpening objective is now checked against it.

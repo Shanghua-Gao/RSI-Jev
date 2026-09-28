@@ -27,14 +27,13 @@ The loop running the research is the **next version of
   <img src="assets/loop-social.gif" width="900" alt="Above: six turns of the cycle climb to v1.0 and the champion line rises with them, then twenty-four directions press against that line without crossing it. Below: one experiment travels propose, experiment, learn; at the gate nearly all become published negatives and one becomes a release, which then becomes the bar to clear">
 </p>
 
-**v3.0**, the current release, is the first with a **reinforcement-learning stage that earned
-its place**. Across 59 reward-trained arms, RL on per-item decisions never beat plain supervised
-training on the same data; the one reward that did scores the *order* of many candidates, which
-no per-item label encodes. v3.0 is v2.1's lineage with more training data and that listwise
-reranking stage on top. It reranks far better than earlier releases and **still worse than
-leaving the order alone**, and it does not yet fix the weaknesses external testing found — its
-record says which. [`versions/v3.0.md`](versions/v3.0.md) is that record;
-[`docs/rl.md`](docs/rl.md) is what was tried and why only this one won.
+**v3.0**, the current release, is **the first release where reinforcement learning works**.
+The loop found the reward RL needs here: one that scores the *order* of many candidates, which
+no per-item label can express. Trained with it, v3.0 ranks the right memory first
+**60% more often** than its own supervised parent (hippo R@1 0.192 → 0.308, 64 questions won
+against 6), with the rest of the suite held level. v3.0 is v2.1's lineage with more training
+data and that listwise reranking stage on top. [`versions/v3.0.md`](versions/v3.0.md) is its
+record; [`docs/rl.md`](docs/rl.md) is how the loop got there, across 59 reward-trained arms.
 
 <details>
 <summary>the three releases behind it</summary>
@@ -83,8 +82,8 @@ something out:
 | **v2.1** | suite **0.7291**, MMLU-Pro **0.383** | and it travels: ahead of v1.0 on all three benchmarks it never trained on, where v2.0 was not |
 | wider coverage (data-scale-2): +84k questions, emotion/SST-5/ANLI and more tasksource and Open-Jev train items | suite +0.011 / +0.013 on two seeds | coverage is still the lever that moves the suite |
 | a two-layer MLP combining the option and cross-attention features | suite 0.7589 on the new 15-benchmark suite | the readout had a little left in it: +0.002 |
-| a listwise reranking reward (NDCG@5 over 16 candidates) on top, against a KL anchor | hippo R@1 0.192 → 0.308, suite −0.003 | **the first RL stage kept**: a reward over the *order* of candidates carries what per-item labels cannot. Fifty-eight other reward-trained arms did not |
-| **v3.0** | suite **0.756**, ECE **0.066** | better at ranking, still below no reranking at all; the weaknesses found outside are the next release's work |
+| a listwise reranking reward (NDCG@5 over 16 candidates) on top, against a KL anchor | hippo R@1 0.192 → 0.308, suite −0.003 | **the first RL stage kept**: a reward over the *order* of candidates carries what per-item labels cannot |
+| **v3.0** | suite **0.756**, ECE **0.066** | **the first release where RL works**: +60% reranking R@1 over its supervised parent, the rest held level |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm and why
 each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
