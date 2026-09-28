@@ -8,7 +8,7 @@ retire their own champions when the evidence says to.
 [![License](https://img.shields.io/badge/code-MIT-black)](LICENSE)
 [![Weights](https://img.shields.io/badge/weights-🤗%20Hugging%20Face-black)](https://huggingface.co/shgao)
 [![API](https://img.shields.io/badge/API-Jev%20compatible-black)](serve/README.md)
-[![Release](https://img.shields.io/badge/release-v2.1-black)](versions/v2.1.md)
+[![Release](https://img.shields.io/badge/release-v3.0-black)](versions/v3.0.md)
 
 Ask one of these models a typed question about a document — yes/no, pick-one-of-*k*,
 rate-on-a-rubric — and a single forward pass returns a probability for every option instead of
@@ -27,15 +27,22 @@ The loop running the research is the **next version of
   <img src="assets/loop-social.gif" width="900" alt="Above: six turns of the cycle climb to v1.0 and the champion line rises with them, then twenty-four directions press against that line without crossing it. Below: one experiment travels propose, experiment, learn; at the gate nearly all become published negatives and one becomes a release, which then becomes the bar to clear">
 </p>
 
-**v2.1**, the current release, is the first one that is better *everywhere it was checked*.
-v2.0 was much stronger on the benchmarks whose train splits it had seen, and no better than
-v1.0 on three benchmarks it had never trained on. v2.1 beats v1.0 on those three as well —
-and it recovers the general knowledge v2.0 had traded away, by a route nobody predicted:
-**not more data, but a smaller learning rate on the bottom third of the tower**.
-[`versions/v2.1.md`](versions/v2.1.md) is its record.
+**v3.0**, the current release, is the first with a **reinforcement-learning stage that earned
+its place**. Across 59 reward-trained arms, RL on per-item decisions never beat plain supervised
+training on the same data; the one reward that did scores the *order* of many candidates, which
+no per-item label encodes. v3.0 is v2.1's lineage with more training data and that listwise
+reranking stage on top. It reranks far better than earlier releases and **still worse than
+leaving the order alone**, and it does not yet fix the weaknesses external testing found — its
+record says which. [`versions/v3.0.md`](versions/v3.0.md) is that record;
+[`docs/rl.md`](docs/rl.md) is what was tried and why only this one won.
 
 <details>
-<summary>the two releases behind it</summary>
+<summary>the three releases behind it</summary>
+
+**v2.1** is the first release better *everywhere it was checked*: ahead of v1.0 on three
+benchmarks it never trained on, and it recovers the general knowledge v2.0 had traded away by
+training the bottom third of the tower at a tenth of the learning rate.
+[`versions/v2.1.md`](versions/v2.1.md).
 
 **v2.0** trains on the *train* splits of the decision benchmarks it is measured on — never
 their test splits — and adds a small confidence head that rescales every answer without
@@ -74,6 +81,10 @@ something out:
 | **freeze** the tower's lower third instead | MMLU-Pro 0.339 | holding those layers still does recover some of it — and breaks three of the decision benchmarks, because they do need to adapt |
 | the bottom 8 layers at **one tenth** the learning rate | MMLU-Pro 0.359 | it was never a data problem. Fitting decisions through the whole tower at one rate was overwriting what the knowledge sat in — frozen layers cannot adapt, slow ones can |
 | **v2.1** | suite **0.7291**, MMLU-Pro **0.383** | and it travels: ahead of v1.0 on all three benchmarks it never trained on, where v2.0 was not |
+| wider coverage (data-scale-2): +84k questions, emotion/SST-5/ANLI and more tasksource and Open-Jev train items | suite +0.011 / +0.013 on two seeds | coverage is still the lever that moves the suite |
+| a two-layer MLP combining the option and cross-attention features | suite 0.7589 on the new 15-benchmark suite | the readout had a little left in it: +0.002 |
+| a listwise reranking reward (NDCG@5 over 16 candidates) on top, against a KL anchor | hippo R@1 0.192 → 0.308, suite −0.003 | **the first RL stage kept**: a reward over the *order* of candidates carries what per-item labels cannot. Fifty-eight other reward-trained arms did not |
+| **v3.0** | suite **0.756**, ECE **0.066** | better at ranking, still below no reranking at all; the weaknesses found outside are the next release's work |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm and why
 each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
@@ -174,8 +185,9 @@ Thank you to the people who have sent that feedback:
 
 | | |
 |---|---|
-| [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
+| [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v3.0.md`](versions/v3.0.md), [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
 | [`EXPLORE.md`](EXPLORE.md) | **what the loop tried and rejected** between releases |
+| [`docs/rl.md`](docs/rl.md) | **where RL beat supervised training, and where it didn't** — 59 reward-trained arms, one kept |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | **what each number means** and how to reproduce it |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | **what to send and what happens to it** |
 | [`serve/README.md`](serve/README.md) | **the HTTP API** — copied from Jev exactly, except where stated |

@@ -22,6 +22,7 @@ move a protected file is a change to the task, and goes through a human.
 | **PROTECTED** | `evaluate.py`, `metrics.py`, `targets.py` | what is scored, how, and on which splits |
 | **PROTECTED** | `encode.py` | position and padding bookkeeping (the *layout* is an `arch.py` choice) |
 | **mixed** | `fit.py` | the loop: bookkeeping protected, configuration editable |
+| **EDITABLE** | `rl2.py` | continued training with a reward instead of a label (v3.0's listwise reranking stage: Plackett-Luce rankings scored by NDCG@k, leave-one-out baseline, KL penalty to the parent). `fit.py` hands over to it when `FitConfig.rl2` is set |
 
 Entry points are in `scripts/`, and each one says what it is on its first line
 (`head -1 scripts/*.py`). The three that matter here:
@@ -45,6 +46,10 @@ deliberately **not** evaluation targets.
 | `build_specialist_replay_corpus.py` | adds the general-knowledge replay at a given share of questions |
 | `build_suite_train_corpus.py` | the suite benchmarks' train splits, converted and decontaminated against their test splits, capped per source |
 | `corpus_gate.py` | refuses a corpus whose label distribution has drifted from `corpus_reference_stats.json` |
+| `build_ds2_addons.py` | v3.0's data-scale-2 additions (emotion, SST-5, ANLI, tasksource and Open-Jev train items) on top of a base corpus |
+| `build_hippo_rr.py` | v3.0's reranking corpus: MS MARCO / TopiOCQA / FiQA train queries with BM25 hard negatives, in the hippo request shape |
+| `build_rl2_sources.py` | the RL stage's source files from that corpus (`rl_hrr.jsonl`: one query group per case) |
+| `fit_release_calibration.py` | fits a release's confidence head on the held-out tenth of its parent's corpus |
 
 Each takes every root as an argument. None has a default path, and
 `tests/test_corpus_builders.py` fails if one appears.

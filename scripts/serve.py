@@ -39,6 +39,10 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--served-model-name", default=None)
     ap.add_argument("--alias", default="jev-latest")
+    ap.add_argument("--accept-model", action="append", default=[], metavar="NAME",
+                    help="also answer requests naming this model (repeatable), e.g. "
+                         "jev-1.13.0 for an app that pins a Jev version; responses still "
+                         "carry this server's own model name")
     ap.add_argument("--api-key", default=os.environ.get("RSIJEV_API_KEY"))
     ap.add_argument("--device", default=None)
     ap.add_argument("--dtype", default=None, choices=["bf16", "fp32"],
@@ -81,6 +85,7 @@ def main() -> int:
     found = re.search(r"v\d+\.\d+", Path(a.ckpt).resolve().name)
     served_version = a.version or (found.group(0) if found else None)
     app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
+                     accept_models=a.accept_model,
                      calibration=meta.get("calibration", "none"),
                      **({"version": served_version} if served_version else {}))
     print(f"serving {a.ckpt} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "

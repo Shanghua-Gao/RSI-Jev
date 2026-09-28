@@ -59,7 +59,12 @@ threshold to a release rather than to a host.
 | `GET /v1/limits` | admission limits, and how this deployment differs |
 | `GET /health`, `GET /health/live` | readiness and liveness, never authenticated |
 
-`jev-latest` is accepted as an alias for the served checkpoint. Set
+`jev-latest` is accepted as an alias for the served checkpoint. Apps built on Jev
+often pin a version (`"model": "jev-1.13.0"`); `--accept-model jev-1.13.0` (repeatable)
+answers those requests too, so switching such an app over is a configuration change.
+The answer's `model` field then carries **this** server's model name, not the borrowed
+one, because echoing it would claim the answer came from Jev — so an app that checks the
+returned name against the one it sent will need that check relaxed. Set
 `--api-key` (or `RSIJEV_API_KEY`) to require `Authorization: Bearer …` on
 everything except the health routes.
 
@@ -79,7 +84,7 @@ Taken from `reference/openjev-sglang`, which implements
   adds `legend` and reports the probability-weighted **zero-based** index;
 - `confidence` = (K·p_max − 1)/(K − 1), clamped to [0, 1] — the **peak** statistic, which
   TypeSafe documents for three options as "(3 x largest probability - 1) / 2";
-- limits of 1–64 questions and 2–64 options, rejected before the model runs;
+- a limit of 1–64 questions per request, rejected before the model runs;
 - error envelopes: `{"error": {"message": …}}` for domain errors, FastAPI's
   `{"detail": […]}` for schema failures, `Retry-After` on 429/503/529;
 - `x-typesafe-request-id` on every answered request.
@@ -107,6 +112,18 @@ inference procedures despite receiving equivalent payloads."*
 - **`usage.output_tokens`.** This path generates nothing; it reports one readout
   per question. The reference reports N+1 because it decodes one token per
   question plus a prefix warm-up.
+- **Up to 160 options per question** (from v3.0; 64 before), because v3.0 trains and
+  evaluates with 160. The reference admits 64.
+- **Criteria must be strings (or `null`).** Jev also accepts a structured criterion —
+  an object such as `{"what": …, "includes": […]}` — and this server rejects it with 422.
+  No release so far was trained on a rendering of structured criteria, and serving one the
+  model never saw would be guessing; it arrives together with a model trained on it.
+- **A state longer than the model's context is cut from the start.** The encoder keeps the
+  question, the options and the answer cue whole and drops the *beginning* of the state
+  until the request fits (2,048 tokens for v1.0–v3.0; `rsijev/encode.py`). Nothing reports
+  that it happened. So a request that puts its query first — `"Query: …"` followed by long
+  candidates — loses the query, and the answer is about text the model never saw the
+  question for. Keep states under the limit, or put what matters last.
 
 ## Layout
 

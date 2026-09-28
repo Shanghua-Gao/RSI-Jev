@@ -167,7 +167,7 @@ weighted suite mean. The two groups are not comparable, so they are listed apart
 | `tool-1-validate-q35-4b-thinking-traces` | tool | tool | — | — | — | validated a reasoning teacher: 0.677 zero-shot, 0.964 where it is confident |
 | `training-10-distill-reasonteacher-sft` | training | rejected | 0.6514 | 0.341 | — | supervised distillation from that teacher, mixed with the synth target |
 | `data-14-trace-distill-pure-t3` | data | rejected | 0.6458 | 0.327 | — | the same, on the teacher's labels alone |
-| `data-15-trace-surgical-correct` | data | rejected | 0.6482 | 0.331 | — | the same, only on items the champion got wrong |
+| `data-15-trace-surgical-correct` | data | rejected | 0.6482 | 0.331 | — | the reasoning teacher's labels only where it disagrees with the benchmark's teacher (2,775 of 24,320 questions) |
 | `training-9-rl-reasonteacher-reward` | training | rejected | 0.6552 | 0.349 | — | the teacher's agreement as an RL reward |
 | `tool-2-collect-all-decision-data` | tool | tool | — | — | — | inventoried 2.48M public decision questions, 34 sources, licences recorded |
 | `tool-4-generation-pipeline` | tool | tool | — | — | — | a writer/judge pipeline for new cases, with grounding checks |

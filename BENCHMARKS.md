@@ -124,12 +124,12 @@ numbers should be compared before trusting either.
 
 | command | what it prints |
 |---|---|
-| `python scripts/bench.py --model v2.1-2b` | speed: the fixed cost of reading a document and the marginal cost of one more decision, fitted over 1–32 questions at three document lengths |
-| `python scripts/calibration.py --model v2.1-2b --cases 400` | all 2,000 decisions binned by the probability the model gave them, against how often that bin was right |
+| `python scripts/bench.py --model v3.0-2b` | speed: the fixed cost of reading a document and the marginal cost of one more decision, fitted over 1–32 questions at three document lengths |
+| `python scripts/calibration.py --model v3.0-2b --cases 400` | all 2,000 decisions binned by the probability the model gave them, against how often that bin was right |
 | `python scripts/routing.py --cases 400` | accuracy against coverage when you act only on the top slice by confidence, and whether a small-model-first cascade earns its place. Runs v1.0's two sizes, the only release with two |
 | `python scripts/load_release.py --ckpt DIR --verify` | re-scores a checkpoint against the run that produced it |
 
-`--model` takes `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
+`--model` takes `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
 
 Speed moves with GPU load — up to ±20% between runs — so measure on your own
 hardware before depending on a figure. Each release's record names the machine its
