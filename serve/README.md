@@ -158,6 +158,29 @@ first requests compile, which takes about 40 s. Against the bf16 tower: 99.9% / 
 of answers agree on the release verify sets, and suite ECE after calibration moves by
 +0.0001.
 
+**vLLM backend** (`--backend vllm`). vLLM runs the tower as a pooling model and returns
+per-token hidden states; the scorer and calibration run here, unchanged. Concurrent requests
+share engine steps instead of queueing behind one lock. It needs vLLM in its own environment
+(on a GB10: `uv venv` + `uv pip install vllm==0.29.0 datasets`, the PyPI aarch64/CUDA 13
+wheel), and builds the HF-format tower it loads under `~/.cache/rsijev/vllm` on first start.
+Against the bf16 tower: 99.7% / 99.9% / 99.2% of answers agree on the release verify sets,
+roundtrip agreement is 0.995, and suite ECE after calibration moves by +0.0007.
+
+It does not read a document once per request. Each question is its own sequence, and vLLM
+shares only whole 544-token blocks of a document between them (on this hybrid model a block
+must hold one DeltaNet state). So it is faster only for many single-question requests on
+short documents. Closed-loop clients on one GB10, requests per second:
+
+| request | 1 client | 8 clients | 32 clients |
+|---|---|---|---|
+| 1 question, 80-token doc: default / vLLM | 34.5 / 34.5 | 34.4 / 71.3 | 34.4 / 84.0 |
+| 8 questions, 80-token doc | 13.2 / 11.2 | 13.3 / 12.4 | 13.3 / 12.3 |
+| 1 question, 1,052-token doc | 11.2 / 10.6 | 11.5 / 14.8 | 11.4 / 14.8 |
+| 8 questions, 1,052-token doc | 6.9 / 2.6 | 7.0 / 2.9 | 7.0 / 2.9 |
+
+It also scores a whole benchmark about three times faster (`serve.vllm_backend.load_vllm_release`
+returns a model `evaluate.predict` accepts). It serves the final-layer readout only, in bf16.
+
 ## Layout
 
 | file | role |
@@ -165,6 +188,7 @@ of answers agree on the release verify sets, and suite ECE after calibration mov
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
 | `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
 | `accel.py` | the opt-in compile switch |
+| `vllm_backend.py` | the optional vLLM tower: builds its model dir, runs the engine, feeds our scorer |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `../scripts/serve.py` | loads a release checkpoint and runs uvicorn |
 

@@ -6,6 +6,7 @@ contract can be tested without a GPU; `scripts/serve.py` supplies the real one.
 """
 from __future__ import annotations
 
+import contextlib
 import secrets
 import threading
 import time
@@ -84,7 +85,8 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
-               calibration: str = "none", accept_models: Sequence[str] = ()) -> FastAPI:
+               calibration: str = "none", accept_models: Sequence[str] = (),
+               serialize: bool = True) -> FastAPI:
     # Apps built on Jev often pin a Jev version ("jev-1.13.0") in their requests.
     # `accept_models` lets a deployment answer those names without code changes in
     # the app. The response still names THIS model: echoing a borrowed name would
@@ -97,7 +99,9 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
                               "ways this deployment differs from the reference.")
     # One GPU, one pass at a time. Endpoints are sync so Starlette runs them in a
     # threadpool; the lock keeps concurrent requests from interleaving on the model.
-    gpu = threading.Lock()
+    # `serialize=False` is for a scorer that batches concurrent requests itself
+    # (the vLLM backend): there the lock would throw that batching away.
+    gpu = threading.Lock() if serialize else contextlib.nullcontext()
 
     def error(message: str, status: int) -> JSONResponse:
         headers = {"Retry-After": "1"} if status in {429, 503, 529} else {}
