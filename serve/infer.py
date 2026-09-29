@@ -39,6 +39,13 @@ DEFAULT_MAX_OPTIONS = 80
 #
 # 480 is the smallest saving we have actually measured a win at (161 tokens over
 # four questions), not an extrapolation toward zero.
+#
+# The fused kernels alone do not move a GB10 into the A100's regime. With `fla`
+# on a GB10 the tower pass is still the larger cost, and break-even sits at the
+# same ~400-480 saved tokens as the fallback: 0.75x at 280, 1.06x at 400, 1.28x
+# at 480, 1.97x at 1,200. The A100 threshold there would give up 1.3-2x on
+# every request between 480 and 2,048 saved tokens. So the fused threshold
+# applies only on the data-centre GPUs it was measured on.
 MIN_SAVED_TOKENS_FUSED = 2048
 MIN_SAVED_TOKENS_FALLBACK = 480
 
@@ -50,7 +57,15 @@ def default_min_saved_tokens() -> int:
     if override is not None:
         return int(override)
     fused = importlib.util.find_spec("fla") is not None
-    return MIN_SAVED_TOKENS_FUSED if fused else MIN_SAVED_TOKENS_FALLBACK
+    return MIN_SAVED_TOKENS_FUSED if fused and _datacentre_gpu() else MIN_SAVED_TOKENS_FALLBACK
+
+
+def _datacentre_gpu() -> bool:
+    """An A100/H100-class GPU (compute capability 8.0 or 9.x), where the fused
+    tower pass is cheap enough that the A100 threshold holds."""
+    if not torch.cuda.is_available():
+        return False
+    return torch.cuda.get_device_capability() in {(8, 0), (9, 0)}
 
 
 MIN_SAVED_TOKENS = default_min_saved_tokens()

@@ -109,7 +109,8 @@ def test_the_gate_is_chosen_for_the_machine(monkeypatch):
     stack, not of the model: with fused kernels a tower pass is cheap and the
     cache has to amortise a large fixed cost, without them the tower pass IS the
     cost and caching pays far sooner. Shipping one constant meant a GB10 refused
-    a measured 2.0x speed-up at 404 tokens."""
+    a measured 2.0x speed-up at 404 tokens -- and keying on `fla` alone did the
+    same again once the GB10 had fla."""
     import importlib.util
 
     from serve import infer
@@ -119,7 +120,13 @@ def test_the_gate_is_chosen_for_the_machine(monkeypatch):
 
     monkeypatch.setattr(importlib.util, "find_spec",
                         lambda n, *a, **k: object() if n == "fla" else real(n, *a, **k))
+    monkeypatch.setattr(infer.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(infer.torch.cuda, "get_device_capability", lambda *a: (8, 0))
     assert infer.default_min_saved_tokens() == infer.MIN_SAVED_TOKENS_FUSED
+
+    # fla on a GB10 is still tower-bound: its break-even stays at the fallback's.
+    monkeypatch.setattr(infer.torch.cuda, "get_device_capability", lambda *a: (12, 1))
+    assert infer.default_min_saved_tokens() == infer.MIN_SAVED_TOKENS_FALLBACK
 
     monkeypatch.setattr(importlib.util, "find_spec",
                         lambda n, *a, **k: None if n == "fla" else real(n, *a, **k))
