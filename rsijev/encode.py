@@ -14,6 +14,7 @@ bookkeeping stays fixed.
 """
 from __future__ import annotations
 
+import json
 import random
 from dataclasses import dataclass
 from typing import Literal, Sequence
@@ -80,12 +81,36 @@ def option_permutation(q: Question, cfg: EncodeConfig,
     return order
 
 
+def criterion_text(c) -> str:
+    """One option's description as text. A string is returned unchanged, so string
+    criteria encode byte-identically to before. A structured description is rendered
+    deterministically: {"what": ..., "includes": [...], "excludes": [...]} ->
+    "<what>. Includes: a; b. Excludes: c." Other keys follow in their given order as
+    "<Key>: <value>"; lists join with "; "; numbers and booleans as JSON; None -> ""."""
+    if isinstance(c, str):
+        return c
+    if c is None:
+        return ""
+    if isinstance(c, (list, tuple)):
+        return "; ".join(t for t in (criterion_text(x) for x in c) if t)
+    if isinstance(c, dict):
+        first = [k for k in ("what", "includes", "excludes") if k in c]
+        parts = []
+        for k in first + [k for k in c if k not in first]:
+            v = criterion_text(c[k]).strip()
+            if v:
+                v = v if k == "what" else f"{str(k)[:1].upper()}{str(k)[1:]}: {v}"
+                parts.append(v if v[-1] in ".!?" else v + ".")
+        return " ".join(parts)
+    return json.dumps(c, ensure_ascii=False)
+
+
 def render(state: str, q: Question, cfg: EncodeConfig,
            order: Sequence[int] | None = None) -> tuple[str, list[str]]:
     """Return the prompt prefix and the per-option blocks, in PRESENTED order."""
     order = list(range(len(q.options))) if order is None else list(order)
     blocks = [
-        f"- {q.options[i]}: {q.criteria[q.options[i]]}"
+        f"- {q.options[i]}: {criterion_text(q.criteria[q.options[i]])}"
         if cfg.include_criteria and q.criteria.get(q.options[i]) else f"- {q.options[i]}"
         for i in order
     ]

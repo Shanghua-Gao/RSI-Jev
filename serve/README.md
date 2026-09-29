@@ -125,6 +125,42 @@ inference procedures despite receiving equivalent payloads."*
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.
 
+## Structured criteria and abstention
+
+**Structured criteria.** A choice option's description can be an object, as Jev accepts it:
+
+```json
+"criteria": {
+  "spam":  {"what": "Unsolicited bulk email", "includes": ["ads from strangers", "lottery scams"],
+            "excludes": ["newsletters the recipient signed up for"]},
+  "legitimate": "Email the recipient expects"
+}
+```
+
+`what` is text; `includes` and `excludes` are text or lists of text; other fields are rejected (422).
+Strings, `null` and objects can be mixed. The object is rendered by the same function the training
+data used (`rsijev.encode.criterion_text`): `Unsolicited bulk email. Includes: ads from strangers;
+lottery scams. Excludes: newsletters the recipient signed up for.` String criteria encode exactly as
+before.
+
+**Abstention (choice only).** Set `"allow_abstain": true` on a choice question. The model then also
+scores a reserved option, "Not enough information", in the same forward pass. The answer keeps its
+usual fields over the real options (probabilities renormalized to sum to 1) and adds two:
+
+```json
+{"type": "choice", "choice": "billing", "probabilities": {"billing": 0.8, "technical": 0.2},
+ "confidence": 0.6, "unknown_probability": 0.12, "abstained": false}
+```
+
+- `unknown_probability`: the reserved option's probability.
+- `abstained`: `unknown_probability >= tau`. `tau` comes from the checkpoint's `abstain.json`,
+  a split-conformal threshold fitted on a dev set of answerable questions (at most `alpha` of
+  them are flagged), or `--abstain-tau`. `GET /v1/limits` reports `tau` and where it came from.
+- With `allow_abstain`, a choice question takes at most one option fewer than the usual cap,
+  and the key "Not enough information" is reserved. It is an ordinary key when abstention is off.
+- noul and score questions return 422 with `allow_abstain: true`.
+- Without `allow_abstain`, requests and answers are unchanged.
+
 ## Layout
 
 | file | role |

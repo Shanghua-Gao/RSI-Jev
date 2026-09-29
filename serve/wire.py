@@ -39,6 +39,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from rsijev.abstain import (ABSTAIN_KEY, is_abstain_question, split_abstain,
+                            with_abstain)
 from rsijev.contract import Prediction, Question
 
 MAX_QUESTIONS = 64
@@ -47,6 +49,8 @@ MAX_ANSWERS = 160                      # options per choice question / levels pe
 NOUL_OPTIONS = ("false", "true")       # this project's contract order; the wire is key-based
 NOUL_DEFAULTS = {"true": "Yes", "false": "No"}
 CHAT_ROLES = {"system", "user", "assistant", "tool"}
+CRITERION_FIELDS = ("what", "includes", "excludes")
+DEFAULT_ABSTAIN_TAU = 0.5              # used only when the checkpoint carries no calibrated tau
 
 
 class RequestError(ValueError):
@@ -111,6 +115,9 @@ def to_question(key: str, spec: dict[str, Any]) -> Question:
     text = serialize(instructions)
     criteria = spec.get("criteria")
 
+    if spec.get("allow_abstain", False) is not False and qtype in ("noul", "score"):
+        _abstain(key, spec, None)                     # raises for anything but false
+
     if qtype == "noul":
         # Wire keys are "true"/"false" with "Yes"/"No" defaults. The contract
         # fixes the option ORDER as ("false", "true"); p(true) is read by key,
@@ -134,9 +141,15 @@ def to_question(key: str, spec: dict[str, Any]) -> Question:
         options = tuple(criteria)                       # insertion order is the option order
         # A null description means "the key is its own meaning"; the encoder
         # already falls back to the bare key when a description is empty.
-        described = {k: ("" if v is None else serialize(v)) for k, v in criteria.items()}
-        return Question(key=key, mode="choice", instructions=text,
-                        options=options, criteria=described)
+        # A structured description {what, includes, excludes} is passed through as
+        # an object: rsijev.encode.criterion_text renders it deterministically, the
+        # same renderer training used, so there is one rendering rule, not two.
+        described = {k: (criterion_object(key, k, v) if isinstance(v, dict)
+                         else "" if v is None else serialize(v))
+                     for k, v in criteria.items()}
+        q = Question(key=key, mode="choice", instructions=text,
+                     options=options, criteria=described)
+        return _abstain(key, spec, q)
 
     if qtype == "score":
         if not isinstance(criteria, list):
@@ -150,6 +163,49 @@ def to_question(key: str, spec: dict[str, Any]) -> Question:
                         options=options, criteria=described)
 
     raise RequestError(f"questions.{key}: unknown question type {qtype!r}")
+
+
+def criterion_object(qkey: str, option: str, value: dict[str, Any]) -> dict[str, Any]:
+    """Validate one structured description: `what` (text) and optional `includes` /
+    `excludes` (text or a list of texts). Unknown fields and empty objects are
+    rejected, so a typo cannot silently drop part of a definition."""
+    where = f"questions.{qkey}.criteria.{option}"
+    extra = set(value) - set(CRITERION_FIELDS)
+    if extra:
+        raise RequestError(f"{where}: unknown fields {sorted(extra)}")
+    out: dict[str, Any] = {}
+    for f in CRITERION_FIELDS:
+        if f not in value or value[f] is None:
+            continue
+        v = value[f]
+        if f == "what":
+            if not isinstance(v, str):
+                raise RequestError(f"{where}.what: must be a string")
+        elif isinstance(v, list):
+            if not all(isinstance(x, str) for x in v):
+                raise RequestError(f"{where}.{f}: must be a string or a list of strings")
+        elif not isinstance(v, str):
+            raise RequestError(f"{where}.{f}: must be a string or a list of strings")
+        out[f] = v
+    if not any(out.get(f) for f in CRITERION_FIELDS):
+        raise RequestError(f"{where}: a structured description needs what, includes or excludes")
+    return out
+
+
+def _abstain(key: str, spec: dict[str, Any], q: Question | None) -> Question | None:
+    flag = spec.get("allow_abstain", False)
+    if not isinstance(flag, bool):
+        raise RequestError(f"questions.{key}.allow_abstain: must be a boolean")
+    if not flag:
+        return q                  # the reserved key is only reserved when abstention is on
+    if q is None or q.mode != "choice":
+        raise RequestError(f"questions.{key}: allow_abstain is supported for choice questions only")
+    if ABSTAIN_KEY in q.options:
+        raise RequestError(f"questions.{key}: option key {ABSTAIN_KEY!r} is reserved")
+    if len(q.options) >= MAX_ANSWERS:
+        # the reserved option takes one of the MAX_ANSWERS slots the readout was built for
+        raise RequestError(f"questions.{key}: with allow_abstain, choice takes 2-{MAX_ANSWERS - 1} options")
+    return with_abstain(q)
 
 
 def parse_questions(questions: Any) -> list[Question]:
@@ -181,12 +237,27 @@ def confidence(probs: list[float]) -> float:
     return min(1.0, max(0.0, (k * max(probs) - 1) / (k - 1)))
 
 
-def to_answer(q: Question, probs: list[float]) -> dict[str, Any]:
+def to_answer(q: Question, probs: list[float],
+              abstain_tau: float = DEFAULT_ABSTAIN_TAU,
+              abstain: bool | None = None) -> dict[str, Any]:
     """One distribution -> one Jev answer.
 
     The scalar readouts come from `Prediction`, where the contract defines them
     once, so this wrapper cannot quietly use a different rule than the evaluator.
+    A question that allowed abstention reports the real options renormalized, plus
+    `unknown_probability` and `abstained`; its reserved option never appears as a
+    `choice` or in `probabilities`.
     """
+    if abstain is None:
+        abstain = is_abstain_question(q)
+    if abstain:
+        full = list(Prediction(tuple(probs)).probs)
+        real, unknown = split_abstain(full)
+        base = Question(key=q.key, mode=q.mode, instructions=q.instructions,
+                        options=q.options[:-1],
+                        criteria={k: v for k, v in q.criteria.items() if k != ABSTAIN_KEY})
+        return {**to_answer(base, real), "unknown_probability": unknown,
+                "abstained": unknown >= abstain_tau}
     pred = Prediction(tuple(probs))
     p = list(pred.probs)                                 # normalized by the contract
     if q.mode == "noul":
@@ -204,7 +275,12 @@ def to_answer(q: Question, probs: list[float]) -> dict[str, Any]:
             "confidence": confidence(p)}
 
 
-def limits() -> dict[str, Any]:
+def limits(abstain_tau: float = DEFAULT_ABSTAIN_TAU,
+           abstain_calibration: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"max_answers_per_question": MAX_ANSWERS,
             "max_questions": MAX_QUESTIONS,
-            "option_keys_visible_to_model": True}
+            "option_keys_visible_to_model": True,
+            "structured_criteria": list(CRITERION_FIELDS),
+            "abstain": {"question_types": ["choice"], "reserved_option_key": ABSTAIN_KEY,
+                        "threshold": abstain_tau,
+                        "calibration": abstain_calibration or {"source": "default, uncalibrated"}}}

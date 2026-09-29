@@ -52,6 +52,9 @@ def main() -> int:
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
+    ap.add_argument("--abstain-tau", type=float, default=None,
+                    help="threshold on unknown_probability for `abstained` (default: the "
+                         "checkpoint's abstain.json, a dev-set calibrated tau; else 0.5)")
     a = ap.parse_args()
 
     import torch
@@ -84,9 +87,18 @@ def main() -> int:
     # per release would be told the wrong one.
     found = re.search(r"v\d+\.\d+", Path(a.ckpt).resolve().name)
     served_version = a.version or (found.group(0) if found else None)
+    import json
+    from serve.wire import DEFAULT_ABSTAIN_TAU
+    cal_path = Path(a.ckpt) / "abstain.json"
+    abstain_cal = json.loads(cal_path.read_text()) if cal_path.exists() else None
+    tau = (a.abstain_tau if a.abstain_tau is not None
+           else abstain_cal["tau"] if abstain_cal else DEFAULT_ABSTAIN_TAU)
+    if a.abstain_tau is not None:
+        abstain_cal = {"source": "--abstain-tau"}
     app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
                      accept_models=a.accept_model,
                      calibration=meta.get("calibration", "none"),
+                     abstain_tau=tau, abstain_calibration=abstain_cal,
                      **({"version": served_version} if served_version else {}))
     print(f"serving {a.ckpt} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {meta['base_model']}, kernel {meta['linear_attn_kernel']}, "

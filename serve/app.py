@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from rsijev.contract import Question
-from serve.wire import (MAX_ANSWERS, MAX_QUESTIONS, RequestError, limits,
+from serve.wire import (DEFAULT_ABSTAIN_TAU, MAX_ANSWERS, MAX_QUESTIONS, RequestError, limits,
                         parse_questions, state_to_text, to_answer)
 
 # A scorer answers every question about one state and reports the prompt tokens
@@ -41,22 +41,36 @@ class NoulCriteria(StrictModel):
     no: str = Field(default="No", alias="false")
 
 
+class CriterionObject(StrictModel):
+    # A structured option description, as Jev accepts it: {what, includes[, excludes]}.
+    # Rendered by rsijev.encode.criterion_text, the renderer training used.
+    what: str | None = None
+    includes: str | list[str] | None = None
+    excludes: str | list[str] | None = None
+
+
 class NoulQuestion(StrictModel):
     type: Literal["noul"]
     instructions: Content
     criteria: NoulCriteria = Field(default_factory=NoulCriteria)
+    allow_abstain: bool = False           # accepted for a clear 422 below; choice only
 
 
 class ChoiceQuestion(StrictModel):
     type: Literal["choice"]
     instructions: Content
-    criteria: dict[str, str | None] = Field(min_length=2, max_length=MAX_ANSWERS)
+    criteria: dict[str, str | None | CriterionObject] = Field(min_length=2,
+                                                              max_length=MAX_ANSWERS)
+    # Adds the reserved "cannot tell" option; the answer then carries
+    # unknown_probability and abstained. Off by default: the encoding is unchanged.
+    allow_abstain: bool = False
 
 
 class ScoreQuestion(StrictModel):
     type: Literal["score"]
     instructions: Content
     criteria: list[str] = Field(min_length=2, max_length=MAX_ANSWERS)
+    allow_abstain: bool = False           # accepted for a clear 422 below; choice only
 
 
 QuestionModel = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion,
@@ -76,15 +90,23 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
         spec: dict[str, Any] = {"type": q.type, "instructions": q.instructions}
         if isinstance(q, NoulQuestion):
             spec["criteria"] = {"true": q.criteria.yes, "false": q.criteria.no}
+        elif isinstance(q, ChoiceQuestion):
+            spec["criteria"] = {k: (v.model_dump(exclude_none=True)
+                                    if isinstance(v, CriterionObject) else v)
+                                for k, v in q.criteria.items()}
         else:
             spec["criteria"] = q.criteria
+        if q.allow_abstain:
+            spec["allow_abstain"] = True
         out.append(spec)
     return parse_questions(dict(zip(req.questions, out)))
 
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
-               calibration: str = "none", accept_models: Sequence[str] = ()) -> FastAPI:
+               calibration: str = "none", accept_models: Sequence[str] = (),
+               abstain_tau: float = DEFAULT_ABSTAIN_TAU,
+               abstain_calibration: dict[str, Any] | None = None) -> FastAPI:
     # Apps built on Jev often pin a Jev version ("jev-1.13.0") in their requests.
     # `accept_models` lets a deployment answer those names without code changes in
     # the app. The response still names THIS model: echoing a borrowed name would
@@ -134,7 +156,9 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
             probs, prompt_tokens = scorer(state, questions)
         infer_ms = (time.perf_counter() - t1) * 1000
 
-        answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
+        abstaining = {k for k, q in req.questions.items() if q.allow_abstain}
+        answers = {q.key: to_answer(q, p, abstain_tau, abstain=q.key in abstaining)
+                   for q, p in zip(questions, probs)}
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers,
                 # This path generates no tokens: one readout per question, and no
@@ -161,7 +185,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # `calibration` is part of what a client needs to know: from v2.0 a checkpoint
         # may ship a fitted calibration, and then the probabilities in an answer are
         # rescaled. The chosen option is the same either way, the numbers are not.
-        return {**limits(), "served_model_name": served_model_name, "version": version,
+        return {**limits(abstain_tau, abstain_calibration), "served_model_name": served_model_name, "version": version,
                 "calibration": calibration, "accepted_model_names": sorted(borrowed)}
 
     @app.get("/health", tags=["Health"])
