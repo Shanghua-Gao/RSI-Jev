@@ -125,12 +125,46 @@ inference procedures despite receiving equivalent payloads."*
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.
 
+## Speed
+
+**Install `fla`.** Without it, the DeltaNet layers of the Qwen3.5 tower run on a plain
+PyTorch fallback. With `flash-linear-attention` and `fla-core` 0.5.2 installed, a GB10 runs
+about twice as fast. Its release verify still agrees 1.0000 with the training record on
+all three sets.
+
+The document is read once per request and every question continues from that read. Below
+about 480 saved tokens, reading it once per question is faster, and the server picks the
+faster path. `RSIJEV_MIN_SAVED_TOKENS` overrides the threshold.
+
+Two switches, both off by default. Measured on one GB10 with v3.0-2B, a bf16 tower and fla,
+p50 for 1 / 8 / 32 questions:
+
+| path | 80-token doc | 1,052-token doc |
+|---|---|---|
+| default | 24 / 67 / 189 ms | 75 / 127 / 286 ms |
+| `RSIJEV_DOC_CACHE=1`, same state again | 23 / 49 / 188 ms | 25 / 63 / 240 ms |
+| `RSIJEV_COMPILE=1` | 21 / 62 / 164 ms | 60 / 107 / 243 ms |
+
+**Document cache** (`RSIJEV_DOC_CACHE=1`), for agent loops that ask again about the same or
+a growing state. Reads are kept across requests, keyed on the exact token ids and the
+weights. A repeated state skips the read. A state that extends a cached one reads only the
+new tail. An agent transcript growing by 50–200 tokens per step drops from 78–84 to
+48–54 ms per step for one question. The results match a fresh read (every argmax is equal;
+`tests/test_doc_cache.py`). A cold single question costs one extra pass: 49 ms instead of
+31 ms. Limits are `RSIJEV_DOC_CACHE_ENTRIES` (32) and `RSIJEV_DOC_CACHE_MB` (2048).
+
+**Compile** (`RSIJEV_COMPILE=1`). torch.compile of each decoder layer and the scorer. The
+first requests compile, which takes about 40 s. Against the bf16 tower: 99.9% / 99.9% / 99.0%
+of answers agree on the release verify sets, and suite ECE after calibration moves by
++0.0001.
+
 ## Layout
 
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
-| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py` |
+| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
+| `accel.py` | the opt-in compile switch |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `../scripts/serve.py` | loads a release checkpoint and runs uvicorn |
 
