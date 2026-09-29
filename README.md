@@ -152,7 +152,7 @@ git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -
 | **Retrain** | `python scripts/release_train.py` | one H100, ~50 min per seed at 2B → [`rsijev/README.md`](rsijev/README.md) |
 | **Measure** | `bench.py`, `calibration.py`, `routing.py` | these tables, on your hardware → [`BENCHMARKS.md`](BENCHMARKS.md) |
 
-Runs on an **NVIDIA DGX Spark** (where it is developed), any CUDA GPU, Apple Silicon, or plain
+Runs on an **HP ZGX Nano** (NVIDIA GB10, where it is developed), any CUDA GPU, Apple Silicon, or plain
 CPU — per-machine costs in [`versions/v1.0.md`](versions/v1.0.md#7-what-it-costs-to-run).
 
 ## What the next version is
@@ -201,7 +201,8 @@ Thank you to the people who have sent that feedback:
 
 ## Acknowledgements
 
-Thanks to **NVIDIA** for providing the **DGX Spark** used for inference testing.
+Thanks to **HP** and **NVIDIA** for providing the **HP ZGX Nano AI Station**, powered by the
+**NVIDIA GB10 Grace Blackwell Superchip**.
 
 ## License
 
