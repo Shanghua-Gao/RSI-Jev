@@ -125,12 +125,77 @@ inference procedures despite receiving equivalent payloads."*
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.
 
+## Opt-in speed paths
+
+Three switches, all off by default. Measured on one GB10 (sm_121, torch 2.13, CUDA 13,
+fla 0.5.2), RSI-Jev-v3.0-2B, bf16 tower, serve path (`score_questions_cached`), p50 of 20.
+The bf16 baseline was measured in the same session.
+
+| path | 80-token doc, 1 / 8 / 32 q | 1,052-token doc, 1 / 8 / 32 q | verdict |
+|---|---|---|---|
+| bf16 (default) | 24 / 67 / 189 ms | 75 / 127 / 286 ms | |
+| `RSIJEV_DOC_CACHE=1`, same state again | 23 / 49 / 188 ms | 25 / 63 / 240 ms | exact; kept, off by default |
+| `RSIJEV_COMPILE=1` | 21 / 62 / 164 ms | 60 / 107 / 243 ms | passed the gates; kept, off by default |
+| `RSIJEV_FP8=1` | 45 / 99 / 265 ms | 106 / 169 / 373 ms | failed: slower, and more flips |
+| `RSIJEV_FP8=1` + compile | 24 / 59 / 151 ms | 48 / 91 / 223 ms | failed the roundtrip bar |
+
+**Document cache** (`RSIJEV_DOC_CACHE=1`). Keeps document caches across requests, keyed on
+the exact token ids and a fingerprint of the weights. A repeated state skips the document
+pass. A state whose token ids extend a cached one runs only the new tail. If the tokenizer
+re-merges tokens across the old/new boundary, the state is read in full. The last
+`RSIJEV_DOC_CACHE_HOLDBACK` tokens (default 8) are re-read with each question, so that a
+transcript whose closing bracket becomes a comma still matches. Bounded by
+`RSIJEV_DOC_CACHE_ENTRIES` (32) and `RSIJEV_DOC_CACHE_MB` (2048). A cold single question costs
+a second pass: 49 ms instead of 31 ms for a 260-token state. An agent transcript growing
+from about 260 to 1,880 tokens gives these per-step p50s:
+
+| growth per step | 1 q | 4 q | 8 q |
+|---|---|---|---|
+| +50 tokens | 78 → 48 ms | 112 → 64 ms | 134 → 89 ms |
+| +100 tokens | 79 → 50 ms | 113 → 67 ms | 135 → 91 ms |
+| +200 tokens | 84 → 54 ms | 116 → 70 ms | 139 → 96 ms |
+
+The same 1,815-token state asked again: 134 → 27 ms for 1 question, 197 → 77 ms for 8.
+`tests/test_doc_cache.py` checks repeated and extended states against a fresh read in fp32:
+every argmax is equal, and the worst probability difference is 1.6e-6 on CPU and 4.6e-4 on
+the GPU with fla.
+
+**Gates for FP8 and compile.** Each was checked against the bf16 tower on the same items:
+the release verify (typed decisions in both orders, MMLU-Pro 1k), the 200-question roundtrip
+against the training record, and ECE after the release calibration. Suite ECE here covers 9
+of the 12 suite benchmarks (weight 0.70). nimble_public, jev_style_panel, nimble_holdout and
+eval_final_v2 were not available on this machine, and no decontamination report was
+applied. The ECE bar was ±0.003 of bf16. The roundtrip bar was ≥ 0.99 argmax agreement;
+bf16 itself gets 0.995.
+
+| path | top-1 typed can. / rev. / MMLU-Pro | agreement with bf16 | roundtrip | suite ECE (9/12) |
+|---|---|---|---|---|
+| bf16 | 0.790 / 0.7945 / 0.366 | — | 0.995 | 0.0790 |
+| compile | 0.7895 / 0.7945 / 0.364 | 0.9985 / 0.999 / 0.990 | 0.995 | 0.0791 (+0.0001) |
+| FP8 | 0.7875 / 0.793 / 0.367 | 0.9795 / 0.9755 / 0.921 | 0.985 | 0.0798 (+0.0008) |
+| FP8 + compile | 0.785 / 0.7965 / 0.367 | 0.9745 / 0.9725 / 0.919 | 0.975 | 0.0796 (+0.0006) |
+
+- **Compile** compiles each decoder layer and the scorer, with
+  `dynamic=True`. `RSIJEV_COMPILE_MODE` takes `max-autotune-no-cudagraphs`, but on the GB10
+  inductor reports too few SMs for GEMM autotuning. `reduce-overhead` is refused. The first
+  requests compile: about 13 s for the first shape and 23 s more for the first batched one,
+  and about 5 minutes with FP8. `RSIJEV_COMPILE_SCOPE=blocks` (MLP and full attention only,
+  DeltaNet mixers eager) gave 24 / 67 / 186 ms at 80 tokens, which is barely a change.
+- **FP8** uses torchao 0.18 dynamic float8 (per-row activation and weight scales) on the
+  tower's Linear layers with both dimensions ≥ 128. Embeddings, the DeltaNet gate
+  projections, the conv, the fla kernels and the scorer are left as they were. In eager mode
+  its quantize kernels cost more than the FP8 GEMMs save, even though a bare FP8 GEMM here is
+  about 2x a bf16 one. Padded positions reach the projections as zero rows, and a zero amax
+  gave NaN until the amax got a floor of 1e-12. NVFP4, tried for speed only, was 2.5–4x
+  slower than bf16 in eager mode (torchao without its MSLK kernels). It was not gated.
+
 ## Layout
 
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
-| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py` |
+| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
+| `accel.py` | the opt-in FP8 and compile switches |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `../scripts/serve.py` | loads a release checkpoint and runs uvicorn |
 

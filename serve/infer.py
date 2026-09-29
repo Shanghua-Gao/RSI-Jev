@@ -266,7 +266,7 @@ class DocCache:
     @torch.no_grad()
     def get(self, model, ids: Sequence[int], device):
         """The cache for exactly `ids`, built, extended or reused. Read-only."""
-        fp = f"{model_fingerprint(model)}|{device}"
+        fp = f"{model_fingerprint(model)}|{getattr(model, '_rsijev_numerics', 'eager')}|{device}"
         ids = tuple(int(i) for i in ids)
         key = (fp, ids)
         with self._lock:
