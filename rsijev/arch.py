@@ -480,6 +480,20 @@ class DecisionModel(nn.Module):
             return self.tower(input_ids=input_ids, attention_mask=attention_mask,
                               use_cache=True).past_key_values
 
+    def extend_prefix(self, cache, input_ids: torch.Tensor, start: int):
+        """Continue a prefix cache over `input_ids`, which follow token `start - 1`.
+
+        Mutates and returns `cache`: the attention layers append keys and values,
+        the DeltaNet layers carry their convolution and recurrent state forward.
+        Under a causal mask this computes what `encode_prefix` would on the joined
+        ids, so a caller holding a cache it must keep passes a copy.
+        """
+        with torch.no_grad():
+            pos = torch.arange(start, start + input_ids.shape[1],
+                               device=input_ids.device).unsqueeze(0).expand(input_ids.shape[0], -1)
+            return self.tower(input_ids=input_ids, past_key_values=cache, use_cache=True,
+                              position_ids=pos).past_key_values
+
     def _run_tower(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
                    all_states: bool = False, past_key_values=None,
                    position_ids: torch.Tensor | None = None):

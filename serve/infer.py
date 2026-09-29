@@ -13,8 +13,11 @@ drift apart silently.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
+import threading
+from collections import OrderedDict
 from typing import Sequence
 
 import torch
@@ -144,46 +147,167 @@ def _replicate(cache, rows: int, device):
     return replica
 
 
-@torch.no_grad()
-def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Question],
-                           enc: EncodeConfig, *, max_options: int | None = None,
-                           device: str = "cuda", batch_size: int = 16,
-                           temperature: float = 1.0,
-                           min_saved_tokens: int | None = None):
-    """`score_questions`, but the state is encoded once instead of per question.
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no", "off")
 
-    Only when that pays. Uncached costs Q*(P+S) and cached costs P + Q*S plus a
-    fixed cost -- a second sequential pass and replicating the cache across the
-    batch -- so the saving is (Q-1)*P and it has to clear that fixed cost.
-    Whether that pays depends on the machine, so the default threshold is chosen
-    per machine -- see MIN_SAVED_TOKENS above. With fused kernels on an A100 and
-    five questions: 98 tokens is 0.55x (a real loss), 402 is break-even, 1,022 is
-    2.3x. On the torch fallback on a GB10 with four questions, caching won
-    everywhere measured: 2.02x at 404 tokens, 3.10x at 1,052. Pass
-    `min_saved_tokens` (or set RSIJEV_MIN_SAVED_TOKENS) to override.
 
-    Falls back whenever the prefix is not provably shared, so a caller always
-    gets an answer. Returns (predictions, prompt_tokens), where prompt_tokens
-    counts the prefix once, because it is computed once.
+def model_fingerprint(model) -> str:
+    """Identify the weights a cache was computed with.
+
+    Names, shapes, dtypes and tensor types of every parameter and buffer, plus a
+    float64 sum and the leading values of each. Computed once per model object
+    and kept on it; anything that changes the weights in place (FP8 conversion,
+    say) drops `_rsijev_fingerprint` so it is recomputed.
     """
-    model.eval()
-    if min_saved_tokens is None:
-        min_saved_tokens = default_min_saved_tokens()
-    if max_options is None:
-        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
-    encoded = [encode_question(tokenizer, state, q, enc) for q in questions]
-    prefix = _shared_prefix(tokenizer, state, enc, encoded)
-    if prefix is not None and (len(questions) - 1) * len(prefix) < min_saved_tokens:
-        prefix = None                      # real, but too small to pay for itself
-    if prefix is None or len(questions) < 2:
-        return score_questions(model, tokenizer, state, questions, enc,
-                               max_options=max_options, device=device,
-                               batch_size=batch_size, temperature=temperature)
+    fp = getattr(model, "_rsijev_fingerprint", None)
+    if fp is not None:
+        return fp
+    h = hashlib.sha256()
+    sums = []
+    with torch.no_grad():
+        for name, t in model.state_dict().items():
+            h.update(f"{name}|{tuple(t.shape)}|{t.dtype}|{type(t).__name__};".encode())
+            x = t.dequantize() if type(t) is not torch.Tensor and hasattr(t, "dequantize") else t
+            x = x.detach()
+            if x.numel() == 0:
+                continue
+            if not x.is_floating_point():
+                x = x.to(torch.float32)
+            sums.append(torch.sum(x, dtype=torch.float64).reshape(1).cpu())
+            sums.append(x.reshape(-1)[:256].to(torch.float64).cpu())
+    h.update(torch.cat(sums).numpy().tobytes())
+    fp = h.hexdigest()[:24]
+    model._rsijev_fingerprint = fp
+    return fp
 
-    npfx = len(prefix)
-    pids = torch.tensor([prefix], dtype=torch.long, device=device)
-    cache = model.encode_prefix(pids)
 
+def _cache_nbytes(cache) -> int:
+    n = 0
+    for layer in cache.layers:
+        for attr in ("keys", "values", "conv_states", "recurrent_states"):
+            t = getattr(layer, attr, None)
+            if isinstance(t, torch.Tensor):
+                n += t.numel() * t.element_size()
+    return n
+
+
+class DocCache:
+    """Document caches that outlive a request, for agents that ask about the same
+    state again and again, or about a state that only grows.
+
+    Keyed on (model fingerprint, exact token ids) -- never on text, because two
+    texts can tokenize the same and one text can tokenize differently in context.
+    A repeated state reuses its cache with no document pass. A state whose ids
+    strictly extend a cached state's ids runs only the new tail, on a copy of the
+    cached cache: attention keys and values and the DeltaNet recurrent and
+    convolution state all continue exactly. If the tokenizer re-merged across the
+    old/new boundary the ids are no longer a prefix, and the state is read in full.
+
+    `holdback` tokens at the end of each state are left out of the cached ids and
+    re-read with every question. The state is followed by a blank line and the
+    question, and a growing state changes its own last few tokens (a closing
+    bracket that becomes a comma); holding them back is what lets the next, longer
+    state still find this one as a token prefix. It costs `holdback` tokens per
+    question and does not affect exactness, which the token-prefix check alone
+    guarantees.
+
+    Bounded in entries and in bytes (RSIJEV_DOC_CACHE_ENTRIES, RSIJEV_DOC_CACHE_MB,
+    RSIJEV_DOC_CACHE_HOLDBACK). Entries are never mutated: callers get a cache to
+    read and must `_replicate` it before running anything on it, as the question
+    pass already does.
+    """
+
+    def __init__(self, max_entries: int | None = None, max_bytes: int | None = None,
+                 holdback: int | None = None):
+        env = os.environ.get
+        self.max_entries = int(max_entries if max_entries is not None
+                               else env("RSIJEV_DOC_CACHE_ENTRIES", 32))
+        self.max_bytes = int(max_bytes if max_bytes is not None
+                             else float(env("RSIJEV_DOC_CACHE_MB", 2048)) * 2**20)
+        self.holdback = int(holdback if holdback is not None
+                            else env("RSIJEV_DOC_CACHE_HOLDBACK", 8))
+        self._entries: OrderedDict = OrderedDict()      # (fp, ids) -> (cache, nbytes)
+        self._bytes = 0
+        self._lock = threading.Lock()
+        self.stats = {"hit": 0, "extend": 0, "miss": 0, "extended_tokens": 0,
+                      "read_tokens": 0, "evicted": 0}
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    @property
+    def nbytes(self) -> int:
+        return self._bytes
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+            self._bytes = 0
+
+    def _longest_prefix(self, fp: str, ids: tuple):
+        best = None
+        for key in self._entries:
+            kfp, kids = key
+            if kfp == fp and len(kids) < len(ids) and ids[:len(kids)] == kids:
+                if best is None or len(kids) > len(best[1]):
+                    best = key
+        return best
+
+    def _store(self, key, cache, nbytes: int) -> None:
+        if nbytes > self.max_bytes or self.max_entries < 1:
+            return                                         # too big to keep: use once
+        self._entries[key] = (cache, nbytes)
+        self._bytes += nbytes
+        while len(self._entries) > self.max_entries or self._bytes > self.max_bytes:
+            _, (_, b) = self._entries.popitem(last=False)
+            self._bytes -= b
+            self.stats["evicted"] += 1
+
+    @torch.no_grad()
+    def get(self, model, ids: Sequence[int], device):
+        """The cache for exactly `ids`, built, extended or reused. Read-only."""
+        fp = f"{model_fingerprint(model)}|{device}"
+        ids = tuple(int(i) for i in ids)
+        key = (fp, ids)
+        with self._lock:
+            got = self._entries.get(key)
+            if got is not None:
+                self._entries.move_to_end(key)
+                self.stats["hit"] += 1
+                return got[0]
+            base = self._longest_prefix(fp, ids)
+            if base is not None:
+                self._entries.move_to_end(base)
+                start = len(base[1])
+                cache = _replicate(self._entries[base][0], 1, device)
+                tail = torch.tensor([ids[start:]], dtype=torch.long, device=device)
+                cache = model.extend_prefix(cache, tail, start)
+                self.stats["extend"] += 1
+                self.stats["extended_tokens"] += len(ids) - start
+            else:
+                cache = model.encode_prefix(torch.tensor([ids], dtype=torch.long, device=device))
+                self.stats["miss"] += 1
+                self.stats["read_tokens"] += len(ids)
+            self._store(key, cache, _cache_nbytes(cache))
+            return cache
+
+
+_DOC_CACHE: DocCache | None = None
+
+
+def default_doc_cache() -> DocCache | None:
+    """The process-wide cache when RSIJEV_DOC_CACHE=1, else None (off by default)."""
+    global _DOC_CACHE
+    if not _flag("RSIJEV_DOC_CACHE"):
+        return None
+    if _DOC_CACHE is None:
+        _DOC_CACHE = DocCache()
+    return _DOC_CACHE
+
+
+def _score_on_cache(model, tokenizer, questions, encoded, cache, npfx: int, *,
+                    max_options: int, device, batch_size: int, temperature: float):
+    """Continue every question from a prefix cache of its first `npfx` tokens."""
     # Re-index onto the suffix: the cache supplies everything before it.
     suffix = [{**e,
                "input_ids": e["input_ids"][npfx:],
@@ -207,6 +331,64 @@ def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Que
         probs = F.softmax(logits, dim=-1)
         for r, q in enumerate(chunk):
             out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
+    return out, suffix
 
-    tokens = npfx + sum(len(e["input_ids"]) for e in suffix)
-    return out, tokens
+
+@torch.no_grad()
+def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Question],
+                           enc: EncodeConfig, *, max_options: int | None = None,
+                           device: str = "cuda", batch_size: int = 16,
+                           temperature: float = 1.0,
+                           min_saved_tokens: int | None = None,
+                           doc_cache: "DocCache | bool | None" = None):
+    """`score_questions`, but the state is encoded once instead of per question.
+
+    Only when that pays. Uncached costs Q*(P+S) and cached costs P + Q*S plus a
+    fixed cost -- a second sequential pass and replicating the cache across the
+    batch -- so the saving is (Q-1)*P and it has to clear that fixed cost.
+    Whether that pays depends on the machine, so the default threshold is chosen
+    per machine -- see MIN_SAVED_TOKENS above. With fused kernels on an A100 and
+    five questions: 98 tokens is 0.55x (a real loss), 402 is break-even, 1,022 is
+    2.3x. On the torch fallback on a GB10 with four questions, caching won
+    everywhere measured: 2.02x at 404 tokens, 3.10x at 1,052. Pass
+    `min_saved_tokens` (or set RSIJEV_MIN_SAVED_TOKENS) to override.
+
+    `doc_cache` keeps document caches across calls (see DocCache). None means the
+    process-wide one if RSIJEV_DOC_CACHE=1 and none otherwise; False turns it off.
+    With a doc cache the state always goes through it, whatever the threshold,
+    because the point is the next request, not this one.
+
+    Falls back whenever the prefix is not provably shared, so a caller always
+    gets an answer. Returns (predictions, prompt_tokens), where prompt_tokens
+    counts the prefix once, because it is computed once.
+    """
+    model.eval()
+    if doc_cache is None:
+        doc_cache = default_doc_cache()
+    elif doc_cache is False:
+        doc_cache = None
+    if min_saved_tokens is None:
+        min_saved_tokens = default_min_saved_tokens()
+    if max_options is None:
+        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
+    encoded = [encode_question(tokenizer, state, q, enc) for q in questions]
+    prefix = _shared_prefix(tokenizer, state, enc, encoded)
+    kw = dict(max_options=max_options, device=device, batch_size=batch_size,
+              temperature=temperature)
+
+    if doc_cache is not None and prefix is not None and len(prefix) > doc_cache.holdback:
+        npfx = len(prefix) - doc_cache.holdback
+        cache = doc_cache.get(model, prefix[:npfx], device)
+        out, suffix = _score_on_cache(model, tokenizer, questions, encoded, cache, npfx, **kw)
+        return out, npfx + sum(len(e["input_ids"]) for e in suffix)
+
+    if prefix is not None and (len(questions) - 1) * len(prefix) < min_saved_tokens:
+        prefix = None                      # real, but too small to pay for itself
+    if prefix is None or len(questions) < 2:
+        return score_questions(model, tokenizer, state, questions, enc, **kw)
+
+    npfx = len(prefix)
+    pids = torch.tensor([prefix], dtype=torch.long, device=device)
+    cache = model.encode_prefix(pids)
+    out, suffix = _score_on_cache(model, tokenizer, questions, encoded, cache, npfx, **kw)
+    return out, npfx + sum(len(e["input_ids"]) for e in suffix)
