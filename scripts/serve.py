@@ -68,8 +68,8 @@ def main() -> int:
     dtype_name = a.dtype or ("bf16" if device == "cuda" else "fp32")
     dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(a.ckpt, device, infer_dtype=dtype)
-    # Opt-in speed paths (RSIJEV_FP8, RSIJEV_COMPILE); off unless asked for. The
-    # document cache (RSIJEV_DOC_CACHE) lives in serve.infer and needs nothing here.
+    # Opt-in speed paths, off unless asked for: RSIJEV_COMPILE here; the document
+    # cache (RSIJEV_DOC_CACHE) lives in serve.infer and needs nothing here.
     from serve.accel import apply_env
     for applied in apply_env(model):
         print(f"speed path: {applied}", flush=True)

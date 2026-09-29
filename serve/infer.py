@@ -156,7 +156,7 @@ def model_fingerprint(model) -> str:
 
     Names, shapes, dtypes and tensor types of every parameter and buffer, plus a
     float64 sum and the leading values of each. Computed once per model object
-    and kept on it; anything that changes the weights in place (FP8 conversion,
+    and kept on it; anything that changes the weights in place (quantization,
     say) drops `_rsijev_fingerprint` so it is recomputed.
     """
     fp = getattr(model, "_rsijev_fingerprint", None)
