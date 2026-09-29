@@ -154,6 +154,36 @@ git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -
 
 Runs on an **HP ZGX Nano** (NVIDIA GB10, where it is developed), any CUDA GPU, Apple Silicon, or plain
 CPU — per-machine costs in [`versions/v1.0.md`](versions/v1.0.md#7-what-it-costs-to-run).
+[`space/`](space/README.md) is a Gradio demo of v3.0 that runs on CPU or GPU.
+
+### Apple Silicon (MLX)
+
+[`rsijev_mlx/`](rsijev_mlx) runs v3.0 on MLX, without PyTorch. The tower is mlx-lm's
+Qwen3.5 model; the option scorer and calibration are ported from `rsijev/arch.py`.
+
+```bash
+pip install mlx mlx-lm transformers huggingface_hub
+python -c "
+from rsijev_mlx import load, decide
+model, tok, meta = load('shgao/rsi-jev-v3.0-qwen3.5-2b')
+print(decide(model, tok, meta, 'I was charged twice. Please refund.',
+             {'refund': {'type': 'noul', 'instructions': 'Does the user request a refund?'}}))"
+```
+
+`decide` returns the body `POST /v1/systemone` returns. `python -m rsijev_mlx.convert`
+writes a single self-contained MLX directory (`--dtype bfloat16` halves it).
+
+Against the PyTorch fp32 model, on 125 typed-decisions questions, fp32 MLX picks the same
+option every time, and the largest probability difference is 4e-6 (PyTorch CPU against
+PyTorch CUDA differ by 5e-6). That was measured with MLX's CUDA backend on a GB10, not on a Mac.
+bf16 MLX agreed on 124 of 125; the one flip had a 0.02 gap between the top two options.
+To check a Mac:
+
+```bash
+RSIJEV_CKPT=shgao/rsi-jev-v3.0-qwen3.5-2b python -m pytest tests/test_mlx.py -q
+```
+
+Mac speed is not measured yet; we have no Mac to run it on.
 
 ## What the next version is
 

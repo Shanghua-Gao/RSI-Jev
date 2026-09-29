@@ -1,0 +1,6 @@
+# A Space installs these on top of the Gradio SDK image. CPU wheels are enough for
+# a CPU Space; a GPU or ZeroGPU Space gets CUDA torch from the same line.
+torch>=2.13
+transformers>=5.17,<6
+safetensors
+huggingface_hub

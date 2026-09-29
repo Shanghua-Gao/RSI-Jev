@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Literal, Sequence
-
-import torch
+from typing import TYPE_CHECKING, Literal, Sequence
 
 from .contract import MODES, Case, Question
+
+# torch is imported inside the three functions that build tensors, so the text
+# side (render, encode_question) also serves the MLX port, which has no torch.
+if TYPE_CHECKING:
+    import torch
 
 Layout = Literal["state_first", "options_first"]
 
@@ -139,6 +142,7 @@ def encode_question(tokenizer, state: str, q: Question, cfg: EncodeConfig,
 def collate(tokenizer, examples: Sequence[dict], max_options: int,
             device: str | torch.device = "cpu") -> dict[str, torch.Tensor]:
     """Right-pad. Positions are explicit, so padding side cannot shift them."""
+    import torch
     pad = tokenizer.pad_token_id
     if pad is None:
         pad = tokenizer.eos_token_id
@@ -182,6 +186,7 @@ def collate(tokenizer, examples: Sequence[dict], max_options: int,
 
 def gold_tensor(cases: Sequence[Case], keys: Sequence[str], max_options: int,
                 device: str | torch.device = "cpu") -> torch.Tensor:
+    import torch
     g = torch.zeros((len(cases), max_options))
     for r, (c, k) in enumerate(zip(cases, keys)):
         v = c.gold[k]
@@ -208,6 +213,7 @@ def unpermute_logits(logits: torch.Tensor, option_perm: torch.Tensor,
     than levels and the gold would be compared against the wrong option. This is
     the single point where the permutation is undone.
     """
+    import torch
     k = logits.shape[1]
     # Padded slots carry option_perm = 0, so a plain scatter sends every one of
     # them to canonical index 0 and overwrites a real option. Send them to a
