@@ -27,6 +27,9 @@ dependencies = [
 # that was verified. causal-conv1d is left out on purpose: it needs an nvcc build
 # and measured little; install it yourself if you want it.
 fast = ["flash-linear-attention>=0.5.2,<0.6", "fla-core>=0.5.2,<0.6"]
+# A faster HTTP front: orjson encodes the answers, uvicorn picks up uvloop and
+# httptools on its own when they are installed. Same answers, same API.
+http = ["orjson>=3.10", "uvloop>=0.21; sys_platform != 'win32'", "httptools>=0.6"]
 test = ["pytest", "httpx"]
 
 [project.scripts]

@@ -6,19 +6,39 @@ contract can be tested without a GPU; `serve/server.py` supplies the real one.
 """
 from __future__ import annotations
 
+import asyncio
+import math
 import secrets
-import threading
 import time
+from itertools import chain
 from typing import Annotated, Any, Callable, Literal, Sequence
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from rsijev.contract import Question
+from serve.batcher import CallRunner, GpuWorker
 from serve.wire import (MAX_ANSWERS, MAX_QUESTIONS, RequestError, limits,
                         parse_questions, state_to_text, to_answer)
+
+try:                                     # the `http` extra; the stdlib encoder otherwise
+    import orjson
+except ImportError:                      # pragma: no cover - depends on the install
+    orjson = None
+
+
+class FastJSONResponse(JSONResponse):
+    """JSONResponse, encoded by orjson when it is installed (5-10x faster than the
+    stdlib encoder on an answer body). The bytes differ only in how a float is
+    spelled (1e-05 against 1e-5); every value parses back to the same double."""
+
+    def render(self, content: Any) -> bytes:
+        if orjson is None:
+            return super().render(content)
+        return orjson.dumps(content)
 
 # A scorer answers every question about one state and reports the prompt tokens
 # it encoded: (state_text, questions) -> (list[list[float]] probabilities, tokens).
@@ -82,14 +102,33 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
     return parse_questions(dict(zip(req.questions, out)))
 
 
+def prepare(req: SystemOneRequest) -> tuple[list[Question], str]:
+    """A validated request -> (questions, state text). Raises RequestError (422)."""
+    return _wire_questions(req), state_to_text(req.state)
+
+
+def finish(questions: list[Question], probs, prompt_tokens: int):
+    """Probabilities -> (answers, usage)."""
+    # A non-finite probability used to fail inside the stdlib JSON encoder
+    # (allow_nan=False) as a 500; orjson would write null instead. Keep the 500.
+    if not all(map(math.isfinite, chain.from_iterable(probs))):
+        raise ValueError("the model returned a non-finite probability")
+    answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
+    # This path generates no tokens: one readout per question, and no warm-up
+    # token. The reference reports N+1 because it decodes one token per question
+    # plus a prefix warm-up.
+    usage = {"input_tokens": prompt_tokens, "output_tokens": len(questions)}
+    return answers, usage
+
+
 def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
     """One validated request -> (answers, usage, prepare_ms, infer_ms).
 
-    The route and `serve.decider.Decider` both call this, so the Python API and
-    the HTTP API cannot give different answers to the same request."""
+    `serve.decider.Decider` calls this, and the route runs the same `prepare` and
+    `finish` around the same scorer, so the Python API and the HTTP API cannot give
+    different answers to the same request."""
     t0 = time.perf_counter()
-    questions = _wire_questions(req)
-    state = state_to_text(req.state)
+    questions, state = prepare(req)
     prepared_ms = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
@@ -100,11 +139,7 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
             probs, prompt_tokens = scorer(state, questions)
     infer_ms = (time.perf_counter() - t1) * 1000
 
-    answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
-    # This path generates no tokens: one readout per question, and no warm-up
-    # token. The reference reports N+1 because it decodes one token per question
-    # plus a prefix warm-up.
-    usage = {"input_tokens": prompt_tokens, "output_tokens": len(questions)}
+    answers, usage = finish(questions, probs, prompt_tokens)
     return answers, usage, prepared_ms, infer_ms
 
 
@@ -121,9 +156,12 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
                   description="A Jev-compatible typed-decision API served by a "
                               "trained decision model. See GET /v1/limits for the "
                               "ways this deployment differs from the reference.")
-    # One GPU, one pass at a time. Endpoints are sync so Starlette runs them in a
-    # threadpool; the lock keeps concurrent requests from interleaving on the model.
-    gpu = threading.Lock()
+    # One GPU, one thread driving it. The route is async: it parses and validates on
+    # the event loop, plans (tokenizes) in the threadpool, and queues the plan for
+    # the worker thread, which runs requests one at a time in arrival order -- or,
+    # given a worker with a batch window, several at once (serve/batcher.py).
+    worker = scorer if isinstance(scorer, GpuWorker) else GpuWorker(CallRunner(scorer))
+    plan_off_loop = not isinstance(worker.runner, CallRunner)
 
     def error(message: str, status: int) -> JSONResponse:
         headers = {"Retry-After": "1"} if status in {429, 503, 529} else {}
@@ -147,13 +185,23 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         return await call_next(request)
 
     @app.post("/v1/systemone", tags=["System One"])
-    def systemone(req: SystemOneRequest) -> JSONResponse:
+    async def systemone(req: SystemOneRequest) -> FastJSONResponse:
         if req.model not in own | borrowed:
             raise RequestError(f"Unknown model: {req.model}")
-        answers, usage, prepared_ms, infer_ms = answer_request(scorer, req, lock=gpu)
+        t0 = time.perf_counter()
+        questions, state = prepare(req)
+        prepared_ms = (time.perf_counter() - t0) * 1000
+        t1 = time.perf_counter()
+        if plan_off_loop:
+            plan = await run_in_threadpool(worker.plan, state, questions)
+        else:
+            plan = worker.plan(state, questions)
+        probs, prompt_tokens = await asyncio.wrap_future(worker.enqueue(plan))
+        infer_ms = (time.perf_counter() - t1) * 1000
+        answers, usage = finish(questions, probs, prompt_tokens)
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}
-        return JSONResponse(body, headers={
+        return FastJSONResponse(body, headers={
             "x-typesafe-request-id": uuid4().hex,
             "x-rsijev-model": served_model_name,
             "x-rsijev-version": version,
