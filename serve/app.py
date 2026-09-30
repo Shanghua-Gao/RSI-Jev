@@ -2,7 +2,7 @@
 
 Routes and shapes follow `reference/openjev-sglang`, which implements
 https://docs.typesafe.ai/api. The app takes a `scorer` callable so the wire
-contract can be tested without a GPU; `scripts/serve.py` supplies the real one.
+contract can be tested without a GPU; `serve/server.py` supplies the real one.
 """
 from __future__ import annotations
 
@@ -82,6 +82,32 @@ def _wire_questions(req: SystemOneRequest) -> list[Question]:
     return parse_questions(dict(zip(req.questions, out)))
 
 
+def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
+    """One validated request -> (answers, usage, prepare_ms, infer_ms).
+
+    The route and `serve.decider.Decider` both call this, so the Python API and
+    the HTTP API cannot give different answers to the same request."""
+    t0 = time.perf_counter()
+    questions = _wire_questions(req)
+    state = state_to_text(req.state)
+    prepared_ms = (time.perf_counter() - t0) * 1000
+
+    t1 = time.perf_counter()
+    if lock is None:
+        probs, prompt_tokens = scorer(state, questions)
+    else:
+        with lock:
+            probs, prompt_tokens = scorer(state, questions)
+    infer_ms = (time.perf_counter() - t1) * 1000
+
+    answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
+    # This path generates no tokens: one readout per question, and no warm-up
+    # token. The reference reports N+1 because it decodes one token per question
+    # plus a prefix warm-up.
+    usage = {"input_tokens": prompt_tokens, "output_tokens": len(questions)}
+    return answers, usage, prepared_ms, infer_ms
+
+
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
                calibration: str = "none", accept_models: Sequence[str] = ()) -> FastAPI:
@@ -124,23 +150,9 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
     def systemone(req: SystemOneRequest) -> JSONResponse:
         if req.model not in own | borrowed:
             raise RequestError(f"Unknown model: {req.model}")
-        t0 = time.perf_counter()
-        questions = _wire_questions(req)
-        state = state_to_text(req.state)
-        prepared_ms = (time.perf_counter() - t0) * 1000
-
-        t1 = time.perf_counter()
-        with gpu:
-            probs, prompt_tokens = scorer(state, questions)
-        infer_ms = (time.perf_counter() - t1) * 1000
-
-        answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
+        answers, usage, prepared_ms, infer_ms = answer_request(scorer, req, lock=gpu)
         body = {"model": served_model_name if req.model in borrowed else req.model,
-                "answers": answers,
-                # This path generates no tokens: one readout per question, and no
-                # warm-up token. The reference reports N+1 because it decodes one
-                # token per question plus a prefix warm-up.
-                "usage": {"input_tokens": prompt_tokens, "output_tokens": len(questions)}}
+                "answers": answers, "usage": usage}
         return JSONResponse(body, headers={
             "x-typesafe-request-id": uuid4().hex,
             "x-rsijev-model": served_model_name,

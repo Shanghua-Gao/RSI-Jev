@@ -30,7 +30,11 @@ from serve.infer import score_questions, score_questions_cached  # noqa: E402
 CHECKED = {"load_release": load_release,
            "score_questions": score_questions,
            "score_questions_cached": score_questions_cached}
-SCRIPTS = sorted(p for p in (ROOT / "scripts").glob("*.py"))
+# The installed `rsi-jev` command runs code in serve/, and scripts/serve.py and
+# scripts/bench.py are now thin fronts for it, so both trees are checked.
+SCRIPTS = sorted(p for p in (ROOT / "scripts").glob("*.py")) + \
+    sorted(p for p in (ROOT / "serve").glob("*.py"))
+MUST_LOAD = {"scripts/calibration.py", "scripts/routing.py", "serve/server.py", "serve/bench.py"}
 
 
 def _calls(tree):
@@ -40,7 +44,7 @@ def _calls(tree):
             yield node
 
 
-@pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: p.name)
+@pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: f"{p.parent.name}/{p.name}")
 def test_every_call_matches_the_real_signature(script):
     tree = ast.parse(script.read_text())
     seen = 0
@@ -56,5 +60,12 @@ def test_every_call_matches_the_real_signature(script):
             pytest.fail(f"{script.name}:{call.lineno} calls "
                         f"{call.func.id}{sig} and does not fit: {e}")
         seen += 1
-    if script.name in {"bench.py", "calibration.py", "routing.py", "serve.py"}:
+    if f"{script.parent.name}/{script.name}" in MUST_LOAD:
         assert seen, f"{script.name} is supposed to load a release and does not"
+
+
+@pytest.mark.parametrize("script", ["serve.py", "bench.py"])
+def test_the_script_entry_points_run_the_package_code(script):
+    """`python scripts/serve.py` and `rsi-jev serve` must be one code path."""
+    text = (ROOT / "scripts" / script).read_text()
+    assert f"from serve.{'server' if script == 'serve.py' else 'bench'} import main" in text

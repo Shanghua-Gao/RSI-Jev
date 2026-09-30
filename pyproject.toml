@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rsi-jev"
+version = "3.0.0"
+description = "RSI-Jev typed-decision models: a Jev-compatible server, a Python API and the training code"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+# The same loose runtime set as requirements.txt, which stays the way to install
+# from a clone. The torch floor is the first version clear of all published torch
+# advisories, and the one the test suite is run against.
+dependencies = [
+    "torch>=2.13",
+    "transformers>=5.17,<6",
+    "safetensors",
+    "huggingface_hub",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+# Fused DeltaNet kernels (Triton, CUDA only): about 2x on a GB10, and the release
+# verify agrees 1.0000 with the training record with them. 0.5.2 is the version
+# that was verified. causal-conv1d is left out on purpose: it needs an nvcc build
+# and measured little; install it yourself if you want it.
+fast = ["flash-linear-attention>=0.5.2,<0.6", "fla-core>=0.5.2,<0.6"]
+test = ["pytest", "httpx"]
+
+[project.scripts]
+rsi-jev = "serve.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Shanghua-Gao/RSI-Jev"
+Weights = "https://huggingface.co/shgao"
+
+[tool.setuptools]
+packages = ["rsijev", "serve"]
+
+[tool.setuptools.package-data]
+serve = ["ui.html", "examples.json"]

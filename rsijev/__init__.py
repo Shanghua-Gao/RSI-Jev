@@ -9,3 +9,13 @@ it is scored. `rsijev/README.md` has the table.
     EDITABLE    arch.py      data.py    train.py     (fit.py: bookkeeping is not)
 """
 __all__ = ["contract", "metrics", "arch", "data", "train"]
+
+
+def __getattr__(name):
+    # `from rsijev import Decider` is the one-line way in. It lives with the server
+    # (serve/decider.py) because it IS the server's code path; imported lazily so
+    # that training and evaluation never pull in the HTTP stack.
+    if name == "Decider":
+        from serve.decider import Decider
+        return Decider
+    raise AttributeError(f"module 'rsijev' has no attribute {name!r}")
