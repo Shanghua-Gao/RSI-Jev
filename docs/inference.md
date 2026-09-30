@@ -167,7 +167,8 @@ the benchmark above.
 | one request at a time | `rsi-jev serve <id>` | 1 question: 27 ms (80-token doc), 91 ms (1,052 tokens). 32 questions: 195 / 303 ms |
 | an agent asking again about the same or a growing state | `--profile agent` | same state again: 26 ms. Growing by 101 tokens a step: 53 ms per step, 1 question |
 | a long-running server | `--profile server` | 32 questions on 1,052 tokens: 254 ms. Warm-up at startup: 60 s |
-| many concurrent clients, one short question each | vLLM backend, **experimental**, on the unreleased `vllm-backend` branch | 84 requests/s at 32 clients, against 34–37 for this server |
+| many concurrent clients, one short question each | `--batch-window-ms 0` | 72 requests/s at 8 and 32 clients, against 32–35 without it (vLLM backend, experimental: 84) |
+| questions of very different lengths in one request | `RSIJEV_SORT_ROWS=1 RSIJEV_TRIM_OPTIONS=1` | 32 questions with 2–40 options: 1.7–1.8x. 32 uniform questions: 1.08–1.13x |
 | Python, no server | `Decider(...)` | the server's numbers minus HTTP |
 | CPU only | `--device cpu` (fp32) | on the GB10's Arm CPU: 1 question 733 ms, 3 questions 1.5 s, 32 questions on 1,052 tokens 16.7 s |
 | Apple Silicon | torch on MPS or CPU | not measured; an MLX port is in progress and not released |
@@ -235,7 +236,16 @@ default (`RSIJEV_DOC_CACHE_ENTRIES`, `RSIJEV_DOC_CACHE_MB`).
 
 ### Concurrency
 
-The server runs one forward pass at a time, so throughput stays flat as clients are added.
+By default the server runs one request at a time, so throughput stays flat as clients are
+added. With `--batch-window-ms 0`, the single questions of requests waiting at the same time
+share a forward pass (up to 1,280 padded tokens), and 1-question requests on an 80-token document
+go from 32 to 72 req/s at 8 and 32 clients. Long documents and multi-question requests are not
+batched, because on the GB10 they gain nothing from it. It is opt-in because batching moves
+probabilities slightly: agreement with unbatched serving is 1.000 / 1.000 / 0.990, and ECE
+moves +0.0016.
+`pip install "rsi-jev[http]"` adds orjson, uvloop and httptools, which the server uses when they
+are present.
+
 These figures come from an HTTP benchmark in an earlier session, with closed-loop clients:
 
 | request | 1 client | 8 clients | 32 clients |
@@ -303,6 +313,9 @@ roundtrip, and suite ECE within ±0.003 (see [the last section](#checks-every-sp
 | **document cache** | same state again: 3.0–3.6x faster than B on 1,052 tokens, 1.2–1.5x on 80; growing state 1.7–1.8x | every argmax equal to a fresh read; \|dp\| 1.6e-6 on CPU, 4.6e-4 on GPU | **shipped**, `--profile agent` |
 | **torch.compile** | 1.1–1.3x faster than B (benchmark above); 60 s warm-up | agreement 0.9985 / 0.999 / 0.990 with bf16, roundtrip 0.995, ECE +0.0001 | **shipped**, `--profile server` |
 | **bf16 tower** (scorer stays fp32) | 3.4–6.2x against fp32 (measured on an A100 slice) | 0.4–1.6% of single predictions flip; pooled top-1 moves ≤ 0.003 | **shipped**, default on CUDA; evaluation stays fp32 |
+| **one-pass tokenization, one GPU worker, orjson** | 32 questions on 1,052 tokens: 309 → 277 ms; tokenization 29 → 2.8 ms | bit-identical on all 12,389 verify, roundtrip and suite answers | **shipped**, default |
+| **micro-batching** | 1 short question, 8–32 clients: 32 → 72 req/s | agreement 1.000 / 1.000 / 0.990 with unbatched serving, roundtrip 0.990, ECE +0.0016 | passes; opt-in, `--batch-window-ms` |
+| **rows sorted by length, option slots trimmed** | mixed-length 32 questions: 1.7–1.8x; uniform: 1.08–1.13x | agreement 1.000 everywhere, roundtrip 0.990, ECE −0.00004 / ±0 | passes; opt-in, `RSIJEV_SORT_ROWS`, `RSIJEV_TRIM_OPTIONS` |
 | **CUDA graphs** | slower on the GB10. On an H100, 12.1 ms for one question on an unreleased branch | — | not on this machine; H100 path not released |
 | **batch size** | ±15% at most | — | unchanged (16): the GPU is compute-bound |
 | **FP8** weights and activations | slower eager: 45 ms against 24 ms for one question | agreement 0.9795 / 0.9755 / 0.921, roundtrip 0.985 (0.975 compiled) | **not shipped**: fails |
