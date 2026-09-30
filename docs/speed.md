@@ -144,7 +144,7 @@ and the GPU spends its time computing. Tricks aimed at other bottlenecks had lit
 | 4-bit and 8-bit weights | faster only for a single short question (28 → 19 ms with 4-bit), and they changed answers: 4-bit agreed with the full model on only 69–77% of MMLU-Pro questions |
 | FP8 | slower without compiling, and changed 3–8% of answers |
 | a faster kernel for the DeltaNet layers (FlashQLA) | 2–2.7x faster on its own, but those layers take about 9% of the time: 1–13% overall |
-| CUDA graphs | slower: they remove launch overhead, and the GPU was already busy computing |
+| CUDA graphs | slower on this machine as we set them up. Each pass still leaves the GPU idle for 4–16 ms between kernel launches, so a better-fitted version is worth another try |
 | vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions more than twice as fast; micro-batching (above) closed most of that gap |
 
 The agents held every change to one rule: **a faster answer must be the same answer.** People set
