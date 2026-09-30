@@ -127,10 +127,20 @@ It speaks Jev's API, so an existing Jev client only needs its base URL changed.
 
 ## What comes next
 
-The server side is now close to what this machine allows. Going further means changing the model:
-fewer layers per answer, a smaller distilled model, or training with low-bit weights in mind so
-that they keep the answers. On datacenter GPUs, CUDA graphs do help: one question takes 12.1 ms
-on an H100 in our tests, a path we have not released yet.
+The agents are testing the next round now, each held to the same rule:
+
+- **Less overhead per request.** Over HTTP, one question takes 27–38 ms, against 22–27 ms inside
+  the process. The difference is request parsing, JSON, tokenizing the document once per
+  question, and waiting on the GPU between steps. All of it can be cut without touching the model.
+- **Batching requests from many clients together.** The server answers one request at a time, so
+  throughput stays flat as clients are added. This is the one case where vLLM did better, and
+  merging requests that arrive within a few milliseconds should close that gap while keeping
+  several questions per request fast.
+- **Less padding.** Questions in one batch are padded to the longest one. Grouping questions of
+  similar length wastes less work when a request mixes short yes/no questions with long lists of
+  options.
+- **CUDA graphs on datacenter GPUs.** They did not help on the GB10, but on an H100 one question
+  drops to 12.1 ms in our tests.
 
 *Measured on an HP ZGX Nano AI Station with the NVIDIA GB10 Grace Blackwell Superchip, provided by
 HP and NVIDIA. Medians of 20 runs, one configuration per process, bf16 model; raw data in
