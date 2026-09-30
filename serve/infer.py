@@ -200,8 +200,12 @@ class DocCache:
     """Document caches that outlive a request, for agents that ask about the same
     state again and again, or about a state that only grows.
 
-    Keyed on (model fingerprint, exact token ids) -- never on text, because two
-    texts can tokenize the same and one text can tokenize differently in context.
+    Keyed on (model fingerprint, exact token ids, images) -- never on text, because
+    two texts can tokenize the same and one text can tokenize differently in
+    context. `images` is None for a text state; for an image state it is one key
+    per image the ids reach (a hash of the decoded pixels plus the grid and token
+    budget it was prepared at), because an image's tokens are all the same pad id
+    and the ids alone do not say which picture they hold.
     A repeated state reuses its cache with no document pass. A state whose ids
     strictly extend a cached state's ids runs only the new tail, on a copy of the
     cached cache: attention keys and values and the DeltaNet recurrent and
@@ -231,7 +235,7 @@ class DocCache:
                              else float(env("RSIJEV_DOC_CACHE_MB", 2048)) * 2**20)
         self.holdback = int(holdback if holdback is not None
                             else env("RSIJEV_DOC_CACHE_HOLDBACK", 8))
-        self._entries: OrderedDict = OrderedDict()      # (fp, ids) -> (cache, nbytes)
+        self._entries: OrderedDict = OrderedDict()      # (fp, ids, images) -> (cache, nbytes)
         self._bytes = 0
         self._lock = threading.Lock()
         self.stats = {"hit": 0, "extend": 0, "miss": 0, "extended_tokens": 0,
@@ -249,13 +253,20 @@ class DocCache:
             self._entries.clear()
             self._bytes = 0
 
-    def _longest_prefix(self, fp: str, ids: tuple):
+    def _longest_prefix(self, fp: str, ids: tuple, imgs: tuple | None):
         best = None
         for key in self._entries:
-            kfp, kids = key
-            if kfp == fp and len(kids) < len(ids) and ids[:len(kids)] == kids:
-                if best is None or len(kids) > len(best[1]):
-                    best = key
+            kfp, kids, kimgs = key
+            if kfp != fp or len(kids) >= len(ids) or ids[:len(kids)] != kids:
+                continue
+            # A text entry serves only text; an image entry only a request whose
+            # images it read, in the same order (the ids fix how many that is).
+            if (kimgs is None) != (imgs is None):
+                continue
+            if kimgs is not None and imgs[:len(kimgs)] != kimgs:
+                continue
+            if best is None or len(kids) > len(best[1]):
+                best = key
         return best
 
     def _store(self, key, cache, nbytes: int) -> None:
@@ -269,28 +280,40 @@ class DocCache:
             self.stats["evicted"] += 1
 
     @torch.no_grad()
-    def get(self, model, ids: Sequence[int], device):
-        """The cache for exactly `ids`, built, extended or reused. Read-only."""
+    def get(self, model, ids: Sequence[int], device, image: "_ImageState | None" = None):
+        """The cache for exactly `ids`, built, extended or reused. Read-only.
+
+        `image` makes it an image state's cache (see score_image_questions_cached):
+        the key then also holds the images read so far, and the tower runs on
+        embeddings with the image features and the sequence's M-RoPE positions. A
+        hit runs neither the tower nor the vision tower."""
         fp = f"{model_fingerprint(model)}|{getattr(model, '_rsijev_numerics', 'eager')}|{device}"
         ids = tuple(int(i) for i in ids)
-        key = (fp, ids)
+        imgs = None if image is None else image.keys_within(ids)
+        key = (fp, ids, imgs)
         with self._lock:
             got = self._entries.get(key)
             if got is not None:
                 self._entries.move_to_end(key)
                 self.stats["hit"] += 1
                 return got[0]
-            base = self._longest_prefix(fp, ids)
+            base = self._longest_prefix(fp, ids, None if image is None else image.keys)
+            start = 0 if base is None else len(base[1])
+            cache = None
             if base is not None:
                 self._entries.move_to_end(base)
-                start = len(base[1])
                 cache = _replicate(self._entries[base][0], 1, device)
+            if image is not None:
+                cache = image.run(model, ids, start, cache, device)
+            elif base is not None:
                 tail = torch.tensor([ids[start:]], dtype=torch.long, device=device)
                 cache = model.extend_prefix(cache, tail, start)
+            else:
+                cache = model.encode_prefix(torch.tensor([ids], dtype=torch.long, device=device))
+            if base is not None:
                 self.stats["extend"] += 1
                 self.stats["extended_tokens"] += len(ids) - start
             else:
-                cache = model.encode_prefix(torch.tensor([ids], dtype=torch.long, device=device))
                 self.stats["miss"] += 1
                 self.stats["read_tokens"] += len(ids)
             self._store(key, cache, _cache_nbytes(cache))
@@ -310,15 +333,19 @@ def default_doc_cache() -> DocCache | None:
     return _DOC_CACHE
 
 
+def _suffixes(encoded: list[dict], npfx: int) -> list[dict]:
+    """Re-index each question onto its suffix: a cache supplies the first `npfx`."""
+    return [{**e,
+             "input_ids": e["input_ids"][npfx:],
+             "option_index": [i - npfx for i in e["option_index"]],
+             "option_span": [(a - npfx, b - npfx) for a, b in e["option_span"]],
+             "decision_index": e["decision_index"] - npfx} for e in encoded]
+
+
 def _score_on_cache(model, tokenizer, questions, encoded, cache, npfx: int, *,
                     max_options: int, device, batch_size: int, temperature: float):
     """Continue every question from a prefix cache of its first `npfx` tokens."""
-    # Re-index onto the suffix: the cache supplies everything before it.
-    suffix = [{**e,
-               "input_ids": e["input_ids"][npfx:],
-               "option_index": [i - npfx for i in e["option_index"]],
-               "option_span": [(a - npfx, b - npfx) for a, b in e["option_span"]],
-               "decision_index": e["decision_index"] - npfx} for e in encoded]
+    suffix = _suffixes(encoded, npfx)
 
     out: list[Prediction] = []
     for i in range(0, len(questions), batch_size):
@@ -403,8 +430,11 @@ def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Que
 def score_image_questions(model, tokenizer, prep, state: str, images: Sequence,
                           questions: Sequence[Question], enc: EncodeConfig, *,
                           max_options: int | None = None, device: str = "cuda",
-                          batch_size: int = 16, temperature: float = 1.0):
-    """Answer every question about one state that carries images.
+                          batch_size: int = 16, temperature: float = 1.0,
+                          _prepared=None, _encoded=None):
+    """Answer every question about one state that carries images, each question
+    reading the whole state. The reference `score_image_questions_cached` is
+    gated against; the server calls that one.
 
     `enc` is the image encoder config (the text max_length plus the image-token
     budget). Each question is encoded with the state and its images on its own,
@@ -413,10 +443,6 @@ def score_image_questions(model, tokenizer, prep, state: str, images: Sequence,
     the image processor, and the vision tower's pass (its features are copied into
     every question's row).
 
-    Neither the prefix cache nor the document cache is used: both hold text-only
-    tower states, and an image request goes through `inputs_embeds` with M-RoPE
-    positions, which they do not cover. This path always reads the whole state.
-
     Returns (predictions, prompt_tokens), image tokens included. Raises
     ValueError when the state is so long that truncation would cut an image.
     """
@@ -424,9 +450,10 @@ def score_image_questions(model, tokenizer, prep, state: str, images: Sequence,
     model.eval()
     if max_options is None:
         max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
-    pv, grid, ntok = prep(images)
-    encoded = [encode_vision_question(tokenizer, prep, state, images, q, enc,
-                                      prepared=(pv, grid, ntok)) for q in questions]
+    pv, grid, ntok = _prepared if _prepared is not None else prep(images)
+    encoded = _encoded if _encoded is not None else [
+        encode_vision_question(tokenizer, prep, state, images, q, enc, prepared=(pv, grid, ntok))
+        for q in questions]
     feats = model.image_embeds(pv.to(device), grid.to(device))
     out: list[Prediction] = []
     prompt_tokens = 0
@@ -445,3 +472,144 @@ def score_image_questions(model, tokenizer, prep, state: str, images: Sequence,
         for r, q in enumerate(chunk):
             out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
     return out, prompt_tokens
+
+
+def image_keys(images: Sequence, grid: torch.Tensor, tokens_per_image: int) -> tuple:
+    """One key per image for the document cache: a hash of the decoded pixels
+    (mode, size, bytes) and of how they were prepared (grid, token budget), so
+    the same picture sent as PNG or as a data URL keys the same, and a picture
+    prepared at another resolution does not."""
+    keys = []
+    for im, g in zip(images, grid):
+        h = hashlib.sha256(f"{im.mode}|{im.size}|{tuple(int(x) for x in g)}|"
+                           f"{tokens_per_image}|".encode())
+        h.update(im.tobytes())
+        keys.append(h.hexdigest()[:32])
+    return tuple(keys)
+
+
+class _ImageState:
+    """What it takes to run any stretch of an image state's prefix: the full
+    sequence's M-RoPE positions, the image features (computed on first need, so
+    a document-cache hit never runs the vision tower) and the image keys."""
+
+    def __init__(self, model, tokenizer, keys: tuple, positions: torch.Tensor, feats_fn):
+        from rsijev.vision import IMAGE_PAD, VISION_START
+        self.keys, self.positions, self._feats_fn, self._feats = keys, positions, feats_fn, None
+        self.pad = model.image_token_id
+        self.start = tokenizer.convert_tokens_to_ids(VISION_START)
+        assert self.pad == tokenizer.convert_tokens_to_ids(IMAGE_PAD)
+
+    def feats(self) -> torch.Tensor:
+        if self._feats is None:
+            self._feats = self._feats_fn()
+        return self._feats
+
+    def keys_within(self, ids: Sequence[int]) -> tuple:
+        """The keys of the images whose runs start inside `ids`."""
+        return self.keys[:sum(1 for t in ids if t == self.start)]
+
+    def pads(self, ids: Sequence[int]) -> int:
+        return sum(1 for t in ids if t == self.pad)
+
+    def run(self, model, ids: Sequence[int], start: int, cache, device):
+        """Run ids[start:] on `cache` (None: from scratch). Mutates `cache`."""
+        a, b = self.pads(ids[:start]), self.pads(ids)
+        emb = self.feats()[a:b] if b > a else None
+        chunk = torch.tensor([list(ids[start:])], dtype=torch.long, device=device)
+        pos = self.positions[:, :, start:len(ids)].to(device)
+        return model.encode_image_prefix(chunk, pos, emb, cache=cache)
+
+
+@torch.no_grad()
+def score_image_questions_cached(model, tokenizer, prep, state: str, images: Sequence,
+                                 questions: Sequence[Question], enc: EncodeConfig, *,
+                                 max_options: int | None = None, device: str = "cuda",
+                                 batch_size: int = 16, temperature: float = 1.0,
+                                 min_saved_tokens: int | None = None,
+                                 doc_cache: "DocCache | bool | None" = None):
+    """`score_image_questions`, but the state -- image tokens included -- is read
+    once and every question continues from its cache, as `score_questions_cached`
+    does for text. The vision tower runs once either way.
+
+    The trap is position. Image tokens take M-RoPE positions (t, h, w) from the
+    image's grid, and the text after an image continues from the grid's extent,
+    not from the token count, so the positions of a question's tail cannot be
+    re-derived from where the prefix stopped. They are not: every position used
+    here, prefix and suffix, is a slice of `mrope_position_ids` over the question's
+    WHOLE sequence -- the very tensor the uncached path feeds the tower. Under the
+    causal mask the cached pass therefore computes the same function;
+    tests/test_image_cache.py checks it at fp32 on CPU.
+
+    The same threshold as text decides whether one read pays (MIN_SAVED_TOKENS).
+    With a document cache (`--profile agent`) the state always goes through it,
+    keyed on the ids plus each image's pixel hash (`image_keys`): the same image
+    and state asked about again runs neither tower on the state. Falls back to the
+    uncached path whenever the prefix is not provably shared.
+    """
+    from rsijev.vision import encode_vision_question, expand_state, mrope_position_ids
+    model.eval()
+    if doc_cache is None:
+        doc_cache = default_doc_cache()
+    elif doc_cache is False:
+        doc_cache = None
+    if min_saved_tokens is None:
+        min_saved_tokens = default_min_saved_tokens()
+    if max_options is None:
+        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
+    prepared = prep(images)
+    pv, grid, ntok = prepared
+    encoded = [encode_vision_question(tokenizer, prep, state, images, q, enc, prepared=prepared)
+               for q in questions]
+    prefix = _shared_prefix(tokenizer, expand_state(state, ntok), enc, encoded)
+    kw = dict(max_options=max_options, device=device, batch_size=batch_size,
+              temperature=temperature)
+
+    use_doc = doc_cache is not None and prefix is not None and len(prefix) > doc_cache.holdback
+    if not use_doc:
+        if prefix is not None and (len(questions) - 1) * len(prefix) < min_saved_tokens:
+            prefix = None                      # real, but too small to pay for itself
+        if prefix is None or len(questions) < 2:
+            return score_image_questions(model, tokenizer, prep, state, images, questions, enc,
+                                         _prepared=prepared, _encoded=encoded, **kw)
+
+    ids0 = torch.tensor([encoded[0]["input_ids"]], dtype=torch.long)
+    positions = mrope_position_ids(ids0, torch.ones_like(ids0), grid, model.image_token_id)
+    img = _ImageState(model, tokenizer, image_keys(images, grid, prep.tokens_per_image(len(images))),
+                      positions, lambda: model.image_embeds(pv.to(device), grid.to(device)))
+    if use_doc:
+        npfx = len(prefix) - doc_cache.holdback
+        cache = doc_cache.get(model, prefix[:npfx], device, image=img)
+    else:
+        npfx = len(prefix)
+        cache = img.run(model, prefix, 0, None, device)
+
+    suffix = _suffixes(encoded, npfx)
+    n_pre = img.pads(prefix[:npfx])
+    out: list[Prediction] = []
+    for i in range(0, len(questions), batch_size):
+        chunk, part = list(questions[i:i + batch_size]), suffix[i:i + batch_size]
+        rows = len(part)
+        # Positions: the whole sequences' own, exactly as the uncached path computes
+        # them for this chunk, with the prefix's columns dropped.
+        full = collate(tokenizer, encoded[i:i + batch_size], max_options=max_options, device="cpu")
+        pos = mrope_position_ids(full["input_ids"], full["attention_mask"],
+                                 grid.repeat(rows, 1), model.image_token_id)
+        batch = collate(tokenizer, part, max_options=max_options, device="cpu")
+        width = batch["input_ids"].shape[1]
+        assert full["input_ids"].shape[1] == npfx + width
+        batch["position_ids"] = pos[:, :, npfx:]
+        batch["attention_mask"] = torch.cat(
+            [torch.ones((rows, npfx), dtype=batch["attention_mask"].dtype), batch["attention_mask"]],
+            dim=1)
+        batch = {k: v.to(device) for k, v in batch.items()}
+        extra = {}
+        if n_pre < sum(ntok):                  # the held-back tail reaches into an image
+            extra["image_embeds"] = img.feats()[n_pre:].repeat(rows, 1)
+        logits = unpermute_logits(
+            model(**batch, past_key_values=_replicate(cache, rows, device), **extra),
+            batch["option_perm"], batch["option_mask"]) / temperature
+        probs = F.softmax(logits, dim=-1)
+        for r, q in enumerate(chunk):
+            out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
+    return out, npfx + sum(len(e["input_ids"]) for e in suffix)

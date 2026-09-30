@@ -97,7 +97,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
 def make_scorer(s: Served, batch_size: int = 16):
     """(state_text, questions[, images]) -> (probabilities, prompt tokens), as
     create_app wants. `images` are validated PIL images (serve/images.py)."""
-    from serve.infer import score_image_questions, score_questions_cached
+    from serve.infer import score_image_questions_cached, score_questions_cached
     from serve.wire import RequestError
     spec = s.meta["spec"]
 
@@ -107,11 +107,11 @@ def make_scorer(s: Served, batch_size: int = 16):
             if s.prep is None:
                 raise RequestError(s.vision_error or f"{s.name} is a text-only model; "
                                    "it does not take images")
-            # Images never touch the prefix or document cache: see score_image_questions.
+            # The state and its image tokens are read once; see score_image_questions_cached.
             try:
-                preds, tokens = score_image_questions(s.model, s.tok, s.prep, state, images,
-                                                      questions, s.venc, device=s.device,
-                                                      batch_size=batch_size, max_options=mo)
+                preds, tokens = score_image_questions_cached(
+                    s.model, s.tok, s.prep, state, images, questions, s.venc, device=s.device,
+                    batch_size=batch_size, max_options=mo)
             except ValueError as e:
                 if "cut into an image" not in str(e) and "markers" not in str(e):
                     raise

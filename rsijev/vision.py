@@ -24,8 +24,10 @@ tokenised as N special tokens.
 Ported from the internal release code the vision releases were trained and
 gated with (rc-C-vis3-release). What is new here only serves requests faster
 and does not change a number: `prepare` runs the image processor once per
-request instead of once per question, and `VisionDecisionModel` takes
-precomputed `image_embeds` so the ViT runs once per request as well.
+request instead of once per question, `VisionDecisionModel` takes
+precomputed `image_embeds` so the ViT runs once per request as well, and
+`encode_image_prefix` runs the shared state (image tokens included) once so
+every question continues from its cache (serve/infer.py).
 """
 from __future__ import annotations
 
@@ -210,14 +212,36 @@ class VisionDecisionModel(DecisionModel):
             out = self.visual(pixel_values.to(dt), grid_thw=image_grid_thw, return_dict=True)
         return out.pooler_output
 
+    def embed(self, input_ids, image_embeds=None) -> torch.Tensor:
+        """Token embeddings with the image features written over the image-pad rows,
+        in order. Without features, the plain token embeddings."""
+        emb = self.tower.get_input_embeddings()(input_ids)
+        if image_embeds is None:
+            return emb
+        mask = (input_ids == self.image_token_id).unsqueeze(-1)
+        if int(mask.sum()) != image_embeds.shape[0]:
+            raise ValueError(f"{int(mask.sum())} image tokens for {image_embeds.shape[0]} image features")
+        return emb.masked_scatter(mask, image_embeds.to(emb.dtype))
+
+    def encode_image_prefix(self, input_ids, position_ids, image_embeds=None, cache=None):
+        """Run a prefix that may hold image tokens once and return its cache, or
+        continue `cache` over the next `input_ids` (mutating it).
+
+        `position_ids` are this chunk's (3, 1, T) M-RoPE positions, sliced from the
+        positions of the WHOLE sequence (`mrope_position_ids`), never recomputed from
+        the chunk alone: after an image the text positions jump by the image's grid,
+        not by its token count, so a chunk's positions depend on what came before
+        it. `image_embeds` are the features of the image-pad tokens in this chunk,
+        in order. Under a causal mask this computes what the full pass computes for
+        these tokens -- the same argument as `DecisionModel.encode_prefix`."""
+        with torch.no_grad():
+            return self.tower(inputs_embeds=self.embed(input_ids, image_embeds),
+                              position_ids=position_ids, past_key_values=cache,
+                              use_cache=True).past_key_values
+
     def _compute(self, *, input_ids, pixel_values=None, image_grid_thw=None,
                  image_embeds=None, **kw):
         if pixel_values is None and image_embeds is None:
             return super()._compute(input_ids=input_ids, **kw)
-        emb = self.tower.get_input_embeddings()(input_ids)
         img = image_embeds if image_embeds is not None else self.image_embeds(pixel_values, image_grid_thw)
-        mask = (input_ids == self.image_token_id).unsqueeze(-1)
-        if int(mask.sum()) != img.shape[0]:
-            raise ValueError(f"{int(mask.sum())} image tokens for {img.shape[0]} image features")
-        emb = emb.masked_scatter(mask, img.to(emb.dtype))
-        return super()._compute(input_ids=input_ids, inputs_embeds=emb, **kw)
+        return super()._compute(input_ids=input_ids, inputs_embeds=self.embed(input_ids, img), **kw)

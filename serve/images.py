@@ -52,8 +52,15 @@ def image_limits(meta_vision: dict | None) -> dict[str, Any]:
             "max_image_bytes": MAX_IMAGE_BYTES,
             "max_image_pixels": MAX_IMAGE_PIXELS,
             "state_marker": MARKER,
-            "prefix_cache": False,
-            "document_cache": False}
+            # The state, image tokens included, is read once per request and every
+            # question continues from it (serve/infer.py, score_image_questions_cached).
+            "prefix_cache": True,
+            "document_cache": _doc_cache_on()}
+
+
+def _doc_cache_on() -> bool:
+    from serve.infer import _flag
+    return _flag("RSIJEV_DOC_CACHE")
 
 
 def decode_data_url(url: Any, index: int) -> bytes:
