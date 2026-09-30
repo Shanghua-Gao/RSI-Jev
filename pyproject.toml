@@ -27,6 +27,8 @@ dependencies = [
 # that was verified. causal-conv1d is left out on purpose: it needs an nvcc build
 # and measured little; install it yourself if you want it.
 fast = ["flash-linear-attention>=0.5.2,<0.6", "fla-core>=0.5.2,<0.6"]
+# Image requests (v4.0 on): the Qwen image processor needs both.
+vision = ["pillow", "torchvision"]
 test = ["pytest", "httpx"]
 
 [project.scripts]

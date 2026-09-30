@@ -107,6 +107,54 @@ returned name against the one it sent will need that check relaxed. Set
 `--api-key` (or `RSIJEV_API_KEY`) to require `Authorization: Bearer …` on
 everything except the health routes.
 
+## Images
+
+A release trained with images (v4.0 on) also takes **1–4 images per request**, as base64
+data URLs in an `images` list beside `state`. This is an extension: Jev's request has no
+images. The shape is the one imajev's Jev-style payloads use. The state refers to each
+image with the literal marker `<image>`, in order. A state with no markers gets its images
+put before it.
+
+```bash
+IMG=$(base64 -w0 receipt.png)
+curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "model": "jev-latest",
+  "state": "Customer photo: <image>\nThe customer says the order arrived damaged.",
+  "images": ["data:image/png;base64,'"$IMG"'"],
+  "questions": {
+    "damaged": {"type": "noul",   "instructions": "Does the photo show visible damage?"},
+    "item":    {"type": "choice", "instructions": "What is in the photo?",
+                "criteria": {"box": "A shipping box", "device": "An electronic device", "other": "Something else"}}
+  }
+}'
+```
+
+The answers have the same shapes as for a text request. `usage.input_tokens` counts the
+image tokens. From Python, `Decider.decide(state, questions, images=[...])` takes data URLs,
+file paths, raw bytes or PIL images. Each one becomes a data URL and goes through the same
+checks.
+
+**Limits.** Every violation is a 422 that names the image and says what to change:
+
+| | |
+|---|---|
+| images per request | 1–4 (`[]` or no field is a text request) |
+| encoding | `data:image/<png\|jpeg\|webp>;base64,…`; http(s) URLs are not fetched |
+| size | 20 MiB decoded, 20 million pixels, a single frame, aspect ratio at most 200:1 |
+| markers | none, or exactly one `<image>` per image; Qwen's `<\|image_pad\|>`-style tokens are refused in the state |
+| image tokens | 1,024 per question, split evenly: one image up to 1,024 tokens (~1 MP at 32x32 px per token), four up to 256 each. Larger images are scaled down |
+| total length | 2,048 text tokens plus the image budget. A longer state is cut from the start, as for text. If that would cut into an image, the request is refused. Shorten the state, or put the markers after the text |
+
+EXIF rotation is applied, so a phone photo is seen the way it is displayed. `GET /v1/limits`
+reports all of this under `images` (`supported: false` for a text-only release, with a
+`reason` when the release has images but Pillow/torchvision are missing: `pip install
+"rsi-jev[vision]"`).
+
+**No caches for images.** The prefix cache and the document cache (`--profile agent`) are
+text-only in this version. An image request never reads from them or writes to them, and
+it always reads its whole state. The vision tower still runs once per request, not once
+per question. Text requests to the same server use the caches as before.
+
 ## What is copied exactly
 
 Taken from `reference/openjev-sglang`, which implements
@@ -208,7 +256,8 @@ calibration moves by +0.0001.
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
-| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
+| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache; the image path (`score_image_questions`) |
+| `images.py` | image input: data URLs → validated images, the limits, `<image>` markers |
 | `accel.py` | the opt-in compile switch |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `release.py` | finds a checkpoint (directory, Hugging Face id or alias) and loads it |

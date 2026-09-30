@@ -20,6 +20,7 @@ import torch
 
 from rsijev.arch import ArchConfig, DecisionModel
 from rsijev.encode import EncodeConfig
+from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
@@ -86,11 +87,18 @@ def release_version(name: str) -> str | None:
     return found.group(0) if found else None
 
 
-def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None):
+def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
+                 vision: bool | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
     project a whole version. Evaluation leaves this None and gets fp32.
+
+    A checkpoint trained with images (v4.0 on: a `vision` block in meta.json) is
+    loaded with the base model's own vision tower beside the text tower, as
+    `rsijev.vision.VisionDecisionModel`; a text request runs exactly the text
+    path. `vision=False` loads it text-only. `meta["vision"]` then says what an
+    image request may carry; a text-only model's meta has no such key.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -119,7 +127,20 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None):
                       logit_cap=spec.get("logit_cap"),
                       head_input_norm=spec.get("head_input_norm", False),
                       **dict(spec.get("arch_extra") or {}))
-    model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
+    vb = vision_block(meta) if vision is not False else None
+    if vb:
+        from rsijev.vision import IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual
+        vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
+        # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
+        # is how the vision releases were trained and gated.
+        model = VisionDecisionModel(tower, cfg.hidden_size, arch,
+                                    visual=load_visual(meta["base_model"]),
+                                    image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD),
+                                    vcfg=vcfg).to(device)
+        meta["vision"] = {"image_token_budget": vcfg.image_token_budget,
+                          "min_tokens_per_image": vcfg.min_tokens_per_image}
+    else:
+        model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
     # v2.0 onward a checkpoint may ship a fitted calibration (calibration.safetensors
     # + calibration.json, rsijev/calibrate.py). It is part of the released model, not

@@ -397,3 +397,51 @@ def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Que
     cache = model.encode_prefix(pids)
     out, suffix = _score_on_cache(model, tokenizer, questions, encoded, cache, npfx, **kw)
     return out, npfx + sum(len(e["input_ids"]) for e in suffix)
+
+
+@torch.no_grad()
+def score_image_questions(model, tokenizer, prep, state: str, images: Sequence,
+                          questions: Sequence[Question], enc: EncodeConfig, *,
+                          max_options: int | None = None, device: str = "cuda",
+                          batch_size: int = 16, temperature: float = 1.0):
+    """Answer every question about one state that carries images.
+
+    `enc` is the image encoder config (the text max_length plus the image-token
+    budget). Each question is encoded with the state and its images on its own,
+    exactly as `rsijev.vision.encode_vision_question` does offline. Two things are
+    done once per request rather than per question, and neither changes a number:
+    the image processor, and the vision tower's pass (its features are copied into
+    every question's row).
+
+    Neither the prefix cache nor the document cache is used: both hold text-only
+    tower states, and an image request goes through `inputs_embeds` with M-RoPE
+    positions, which they do not cover. This path always reads the whole state.
+
+    Returns (predictions, prompt_tokens), image tokens included. Raises
+    ValueError when the state is so long that truncation would cut an image.
+    """
+    from rsijev.vision import encode_vision_question, mrope_position_ids
+    model.eval()
+    if max_options is None:
+        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
+    pv, grid, ntok = prep(images)
+    encoded = [encode_vision_question(tokenizer, prep, state, images, q, enc,
+                                      prepared=(pv, grid, ntok)) for q in questions]
+    feats = model.image_embeds(pv.to(device), grid.to(device))
+    out: list[Prediction] = []
+    prompt_tokens = 0
+    for i in range(0, len(questions), batch_size):
+        chunk, part = list(questions[i:i + batch_size]), encoded[i:i + batch_size]
+        prompt_tokens += sum(len(e["input_ids"]) for e in part)
+        batch = collate(tokenizer, part, max_options=max_options, device="cpu")
+        rows = len(part)
+        batch["position_ids"] = mrope_position_ids(
+            batch["input_ids"], batch["attention_mask"], grid.repeat(rows, 1),
+            model.image_token_id)
+        batch = {k: v.to(device) for k, v in batch.items()}
+        logits = unpermute_logits(model(**batch, image_embeds=feats.repeat(rows, 1)),
+                                  batch["option_perm"], batch["option_mask"]) / temperature
+        probs = F.softmax(logits, dim=-1)
+        for r, q in enumerate(chunk):
+            out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
+    return out, prompt_tokens

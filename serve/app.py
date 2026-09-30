@@ -17,12 +17,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from rsijev.contract import Question
+from serve.images import MAX_IMAGES, parse_images
 from serve.wire import (MAX_ANSWERS, MAX_QUESTIONS, RequestError, limits,
                         parse_questions, state_to_text, to_answer)
 
 # A scorer answers every question about one state and reports the prompt tokens
 # it encoded: (state_text, questions) -> (list[list[float]] probabilities, tokens).
-Scorer = Callable[[str, list[Question]], tuple[list[list[float]], int]]
+# A request with images calls it as (state_text, questions, images), images being
+# validated PIL images; a scorer that takes none is never called that way when
+# create_app is told the model has no image support.
+Scorer = Callable[..., tuple[list[list[float]], int]]
 
 JsonValue = Any
 
@@ -67,6 +71,10 @@ class SystemOneRequest(StrictModel):
     state: Content
     model: str = Field(min_length=1)
     questions: dict[str, QuestionModel] = Field(min_length=1, max_length=MAX_QUESTIONS)
+    # An extension to the Jev request, in the shape imajev's Jev-style payloads use:
+    # base64 data URLs, referenced from the state by `<image>` markers
+    # (serve/images.py). Omitted, null or empty, the request is a text request.
+    images: list[str] | None = Field(default=None, max_length=MAX_IMAGES)
 
 
 def _wire_questions(req: SystemOneRequest) -> list[Question]:
@@ -90,14 +98,18 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
     t0 = time.perf_counter()
     questions = _wire_questions(req)
     state = state_to_text(req.state)
+    # Decoded and checked before the model lock, so a bad image never waits for it.
+    images = parse_images(req.images, state) if req.images else []
+    # A text request calls the scorer exactly as before images existed.
+    args = (state, questions, images) if images else (state, questions)
     prepared_ms = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
     if lock is None:
-        probs, prompt_tokens = scorer(state, questions)
+        probs, prompt_tokens = scorer(*args)
     else:
         with lock:
-            probs, prompt_tokens = scorer(state, questions)
+            probs, prompt_tokens = scorer(*args)
     infer_ms = (time.perf_counter() - t1) * 1000
 
     answers = {q.key: to_answer(q, p) for q, p in zip(questions, probs)}
@@ -110,11 +122,15 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
 
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
-               calibration: str = "none", accept_models: Sequence[str] = ()) -> FastAPI:
+               calibration: str = "none", accept_models: Sequence[str] = (),
+               images: dict[str, Any] | None = None) -> FastAPI:
     # Apps built on Jev often pin a Jev version ("jev-1.13.0") in their requests.
     # `accept_models` lets a deployment answer those names without code changes in
     # the app. The response still names THIS model: echoing a borrowed name would
     # tell the client it was answered by a model it was not.
+    # `images` is what /v1/limits reports about image input (serve.images.image_limits);
+    # None means a text-only model, and a request carrying images gets a 422.
+    images = images or {"supported": False}
     own = {alias, served_model_name}
     borrowed = set(accept_models) - own
     app = FastAPI(title="RSI-Jev", version=version,
@@ -150,6 +166,9 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
     def systemone(req: SystemOneRequest) -> JSONResponse:
         if req.model not in own | borrowed:
             raise RequestError(f"Unknown model: {req.model}")
+        if req.images and not images.get("supported"):
+            raise RequestError(images.get("reason") or
+                               f"{served_model_name} is a text-only model; it does not take images")
         answers, usage, prepared_ms, infer_ms = answer_request(scorer, req, lock=gpu)
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}
@@ -174,7 +193,8 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # may ship a fitted calibration, and then the probabilities in an answer are
         # rescaled. The chosen option is the same either way, the numbers are not.
         return {**limits(), "served_model_name": served_model_name, "version": version,
-                "calibration": calibration, "accepted_model_names": sorted(borrowed)}
+                "calibration": calibration, "accepted_model_names": sorted(borrowed),
+                "images": images}
 
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:

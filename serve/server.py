@@ -39,6 +39,20 @@ class Served:
     name: str
     version: str | None
     applied: list[str] = field(default_factory=list)
+    # Image support (v4.0 on): the image processor and the encoder config for image
+    # requests, or None for a text-only checkpoint. `vision_error` says why a
+    # checkpoint trained with images is served text-only here (a missing extra).
+    prep: Any = None
+    venc: Any = None
+    vision_error: str | None = None
+
+    @property
+    def image_limits(self) -> dict:
+        from serve.images import image_limits
+        out = image_limits(self.meta.get("vision") if self.prep is not None else None)
+        if self.vision_error:
+            out["reason"] = self.vision_error
+        return out
 
 
 def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None,
@@ -57,26 +71,65 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype)
     applied = apply_env(model)
     name = checkpoint_name(ref, path)
-    return Served(model, tok, enc, meta, device, dtype_name, path, name,
-                  release_version(name), applied)
+    s = Served(model, tok, enc, meta, device, dtype_name, path, name,
+               release_version(name), applied)
+    if meta.get("vision"):
+        import dataclasses
+        from rsijev.vision import ImagePrep, VisionConfig
+        v = meta["vision"]
+        try:
+            import PIL           # noqa: F401  the image processor needs both
+            import torchvision   # noqa: F401
+        except ImportError as e:
+            s.vision_error = (f"image requests need Pillow and torchvision ({e}); "
+                              f'install them with: pip install "rsi-jev[vision]"')
+        else:
+            s.prep = ImagePrep(meta["base_model"], VisionConfig(
+                image_token_budget=v["image_token_budget"],
+                min_tokens_per_image=v["min_tokens_per_image"]))
+        # The budget is added to the text length, so no state is cut shorter
+        # because it came with an image.
+        s.venc = dataclasses.replace(enc, max_length=enc.max_length + v["image_token_budget"],
+                                     option_order="canonical")
+    return s
 
 
 def make_scorer(s: Served, batch_size: int = 16):
-    """(state_text, questions) -> (probabilities, prompt tokens), as create_app wants."""
-    from serve.infer import score_questions_cached
+    """(state_text, questions[, images]) -> (probabilities, prompt tokens), as
+    create_app wants. `images` are validated PIL images (serve/images.py)."""
+    from serve.infer import score_image_questions, score_questions_cached
+    from serve.wire import RequestError
     spec = s.meta["spec"]
 
-    def scorer(state: str, questions):
+    def scorer(state: str, questions, images=None):
+        mo = max(spec["max_options"], max(len(q.options) for q in questions))
+        if images:
+            if s.prep is None:
+                raise RequestError(s.vision_error or f"{s.name} is a text-only model; "
+                                   "it does not take images")
+            # Images never touch the prefix or document cache: see score_image_questions.
+            try:
+                preds, tokens = score_image_questions(s.model, s.tok, s.prep, state, images,
+                                                      questions, s.venc, device=s.device,
+                                                      batch_size=batch_size, max_options=mo)
+            except ValueError as e:
+                if "cut into an image" not in str(e) and "markers" not in str(e):
+                    raise
+                raise RequestError(
+                    "the state is too long to keep its images whole: the input is "
+                    f"capped at {s.venc.max_length} tokens and a longer state is cut from "
+                    "the left. Shorten the state or put the <image> markers after the "
+                    f"text ({e})") from None
+            return [list(p.probs) for p in preds], tokens
         preds, tokens = score_questions_cached(s.model, s.tok, state, questions, s.enc,
                                                device=s.device, batch_size=batch_size,
-                                               max_options=max(spec["max_options"],
-                                                               max(len(q.options) for q in questions)))
+                                               max_options=mo)
         return [list(p.probs) for p in preds], tokens
 
     return scorer
 
 
-def warm_up(scorer) -> float:
+def warm_up(scorer, images: bool = False) -> float:
     """Run two throwaway requests so kernel JIT (fla's Triton kernels) and most of
     torch.compile happen before the first real request.
 
@@ -91,6 +144,10 @@ def warm_up(scorer) -> float:
          "d": {"type": "noul", "instructions": "Is it long?"}}
     scorer("Warm-up.", parse_questions({"a": q["a"]}))
     scorer("A warm-up document. " * 120, parse_questions(q))
+    if images:                  # the vision tower's kernels, before the first image request
+        from PIL import Image
+        scorer("<image> Warm-up.", parse_questions({"a": q["a"]}),
+               [Image.new("RGB", (448, 448), (128, 128, 128))])
     return time.perf_counter() - t
 
 
@@ -147,7 +204,7 @@ def serve(a: argparse.Namespace) -> int:
         # The first call JIT-compiles fla's Triton kernels (~19 s measured on a GB10
         # after a fresh install; cached afterwards) and, with --profile server,
         # torch.compile's graphs. Do it before accepting requests, not in one.
-        print(f"warm-up: {warm_up(scorer):.1f} s", flush=True)
+        print(f"warm-up: {warm_up(scorer, images=s.prep is not None):.1f} s", flush=True)
     name = a.served_model_name or s.name
     # /v1/limits reports which release is answering, so take it from the checkpoint
     # rather than from whatever this tree was cut for: serving a v1.0 checkpoint out of
@@ -155,12 +212,19 @@ def serve(a: argparse.Namespace) -> int:
     # per release would be told the wrong one.
     served_version = a.version or s.version
     app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
-                     accept_models=a.accept_model,
+                     accept_models=a.accept_model, images=s.image_limits,
                      calibration=s.meta.get("calibration", "none"),
                      **({"version": served_version} if served_version else {}))
     for line in startup_lines(torch=torch, device=s.device, dtype_name=s.dtype_name,
                               model=s.model, profile=a.profile, applied=s.applied):
         print(line, flush=True)
+    il = s.image_limits
+    if il.get("supported"):
+        print(f"images: up to {il['max_images']} per request, {il['image_token_budget']} image "
+              f"tokens per question; image requests skip the prefix and document caches",
+              flush=True)
+    elif il.get("reason"):
+        print(f"images: off ({il['reason']})", flush=True)
     print(f"serving {ref} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {s.meta['base_model']}, calibration {s.meta.get('calibration', 'none')}",
           flush=True)

@@ -105,6 +105,22 @@ the `answers` object of `POST /v1/systemone` (`tests/test_easy_infer.py`).
 From a clone, without installing, run
 `pip install -r requirements.txt && python scripts/serve.py --ckpt shgao/rsi-jev-v3.0-qwen3.5-2b`.
 
+### Images
+
+A release trained with images (v4.0 on) also answers questions about 1–4 images. Install
+the extra (`pip install "rsi-jev[vision]"`: Pillow and torchvision), then send the images
+as data URLs and mark where each one goes in the state with `<image>`:
+
+```python
+d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
+         {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
+         images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL
+```
+
+Over HTTP the same request carries `"images": ["data:image/jpeg;base64,..."]` next to
+`state`. Image requests do not use the prefix or document cache. Limits and an example:
+[`serve/README.md`](../serve/README.md#images).
+
 ## A local, drop-in Jev replacement
 
 Code written against Jev only needs its base URL changed. We ran each snippet below against
