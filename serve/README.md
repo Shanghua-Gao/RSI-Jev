@@ -158,13 +158,24 @@ first requests compile, which takes about 40 s. Against the bf16 tower: 99.9% / 
 of answers agree on the release verify sets, and suite ECE after calibration moves by
 +0.0001.
 
+**FlashQLA** (`RSIJEV_FLASHQLA=1`, experimental). Runs the DeltaNet layers' chunked forward on
+[FlashQLA](https://github.com/QwenLM/FlashQLA)'s TileLang kernel (tested at git 846bb99 with
+tilelang 0.1.12) instead of fla's; the rest of each layer is unchanged, and fp32 inputs still go to
+fla. On a GB10 the kernel alone is 2.0–2.7x faster than fla's for 80–2,048 tokens and 1–32
+sequences, and matches the fp32 reference as closely as fla does. The tower is faster only by
+what that kernel costs in it: default 24 / 65 / 179 and 71 / 122 / 273 ms, with
+`RSIJEV_COMPILE=1` 20 / 57 / 154 and 56 / 100 / 229 ms. Against the bf16 tower, 99.75% / 99.7% /
+99.3% of answers agree on the release verify sets (max |dp| 0.019 / 0.026 / 0.044), and suite ECE
+after calibration moves by +0.0001. Changing the batch size on fla alone gives 99.85% / 99.9% /
+99.3% (max |dp| 0.019 / 0.017 / 0.029). So it is not an exact kernel swap, and it stays off.
+
 ## Layout
 
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
 | `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
-| `accel.py` | the opt-in compile switch |
+| `accel.py` | the opt-in compile and FlashQLA switches |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `../scripts/serve.py` | loads a release checkpoint and runs uvicorn |
 
