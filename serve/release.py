@@ -24,7 +24,8 @@ from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
+REPOS = {"v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
+         "v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
          "v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
