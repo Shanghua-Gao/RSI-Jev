@@ -106,3 +106,12 @@ def test_env_reports_the_vision_extra():
     assert "installed" in describe_vision({"pillow": "12", "torchvision": "0.2"})
     line = describe_vision({"pillow": None, "torchvision": "0.2"})
     assert "pillow" in line and 'pip install "rsi-jev[vision]"' in line
+
+
+@pytest.mark.parametrize("name", ["image_check.py", "image_http.py"])
+def test_the_image_examples_compile_and_say_what_is_unmeasured(name):
+    import py_compile
+    path = ROOT / "examples" / name
+    py_compile.compile(str(path), doraise=True)
+    text = path.read_text()
+    assert "Output" in text and ("fill after GPU run" in text or "measured" in text)
