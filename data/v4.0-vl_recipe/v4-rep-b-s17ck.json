@@ -1,0 +1,92 @@
+{
+ "readout": "option_xattn",
+ "objective": "soft_ce",
+ "steps": 14233,
+ "batch_size": 16,
+ "eval_batch_size": 32,
+ "max_options": 160,
+ "lr_head": 0.0001,
+ "lr_base": 5e-06,
+ "diag_only": false,
+ "logit_cap": null,
+ "head_input_norm": false,
+ "label_smoothing": 0.0,
+ "head_weight_decay": 0.0,
+ "base_schedule": "cosine",
+ "head_schedule": "constant",
+ "seed": 17,
+ "readout_layer": -1,
+ "option_pool": "mean",
+ "layout": "state_first",
+ "freeze_base": false,
+ "sources": "cov_ambigqa,cov_condaqa,cov_cuad,cov_finqa,cov_gsm8k,cov_hotpotqa,cov_massive_multi,cov_musique,cov_open_jev,cov_privacyqa,cov_tabfact,cov_tasksource_jev,mc_replay_extra,mc_replay,st_aegis2,st_boolq,st_civil_comments,st_helpsteer2,st_kev_devtools_v1,st_kev_documents_v1,st_kev_hard_v1,st_massive-de-DE,st_massive-en-US,st_multinli,st_nimble_train,st_paws,st_procedural_train,st_squad2,st_vitaminc,synth,td_train,jsg_emotion,jsg_sst5,jsg_anli,ds2_tasksource_jev,ds2_open_jev",
+ "keep_last_k": 3,
+ "residual": false,
+ "prior_kl": 0.0,
+ "freeze_embeddings": true,
+ "grad_checkpointing": true,
+ "eval_dtype": "native",
+ "repeat_eval": null,
+ "option_order": "shuffled",
+ "eval_option_orders": [
+  "canonical",
+  "reversed"
+ ],
+ "arch_extra": {
+  "xattn_combine": "mlp"
+ },
+ "fit_extra": {
+  "lower_layers_n": 8,
+  "lower_layers_lr_scale": 0.1,
+  "length_bucket": 64
+ },
+ "rl_extra": {},
+ "min_trainable_tower": 100000000,
+ "eval_fast": "auto",
+ "eval_prefix_cache": false,
+ "eval_token_budget": null,
+ "eval_max_rows": null,
+ "eval_compile": false,
+ "eval_smoke": null,
+ "control_cache": true,
+ "specialist": true,
+ "code_dir": "v4-rep-b-s17ck",
+ "why": "Stage 1, text: v3.0's data-scale-2 corpus with each Jev-Style (jsg_*) source capped at 3,000 questions, MLP option combine, 14,233 steps from the base model. Rerun of v3-ds2-rep-b-jsg3k at seed 17 with the checkpoint saved.",
+ "corpus_gate": {
+  "checked": true,
+  "pass": false,
+  "fails": [
+   "mode mix shifted: {'choice': 0.6069, 'noul': 0.2708, 'score': 0.1223} vs {'choice': 0.394, 'noul': 0.3937, 'score': 0.2123}",
+   "choice_first_option_rate 0.3151 vs reference 0.5068 (tolerance 0.08)"
+  ],
+  "override": "Same two gate fails as every data-scale-2 corpus (mode mix choice .607, choice first-option .315); corpus identical to v3-ds2-rep-b-jsg3k's; yes/no true-rate .502 and score priors within tolerance.",
+  "stats": {
+   "questions": 230748,
+   "mode_share": {
+    "choice": 0.6069,
+    "noul": 0.2708,
+    "score": 0.1223
+   },
+   "noul_true_rate": 0.5024,
+   "score_mean_level": 2.1343,
+   "score_argmax_hist": {
+    "0": 0.1188,
+    "1": 0.1829,
+    "10": 0.0004,
+    "11": 0.0004,
+    "12": 0.0003,
+    "13": 0.0001,
+    "2": 0.2612,
+    "3": 0.3236,
+    "4": 0.1025,
+    "5": 0.0057,
+    "6": 0.002,
+    "7": 0.0009,
+    "8": 0.0007,
+    "9": 0.0006
+   },
+   "choice_first_option_rate": 0.3151
+  }
+ },
+ "corpus_dir": "v4-rep-b-s17ck"
+}

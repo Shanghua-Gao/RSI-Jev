@@ -58,10 +58,10 @@ import torch.nn.functional as F
 from .encode import collate, encode_question, gold_tensor, iter_questions, unpermute_logits
 
 MATRIX = ("ce_full", "rl_binary", "rl_proper", "rlcr", "bandit", "bandit_sup")
-MODES_RL2 = (*MATRIX, "packet", "packet_ce", "select", "setcal", "agreecal", "confrank",   # RLCD = RL for Calibrated Decisions
+MODES_RL2 = (*MATRIX, "packet", "packet_ce", "select", "setcal", "agreecal", "confrank", "asym",   # RLCD = RL for Calibrated Decisions
              "listwise", "pointwise", "consistency", "rlcd", "rlcd_sft", "replay_only")
 # RLCD modes: which RL-side source they read by default
-MODE_SOURCE = {**{m: "rl_slice" for m in MATRIX}, "packet": "rl_pkt", "packet_ce": "rl_pkt", "confrank": "rl_slice",
+MODE_SOURCE = {**{m: "rl_slice" for m in MATRIX}, "packet": "rl_pkt", "packet_ce": "rl_pkt", "confrank": "rl_slice", "asym": "rl_slice",
                "select": "rl_cal", "setcal": "rl_cal", "agreecal": "rl_cnc",
                "listwise": "rl_hrr", "pointwise": "rl_hrr", "consistency": "rl_cnc",
                "rlcd": "rl_cnc", "rlcd_sft": "rl_cnc", "replay_only": "rl_"}
@@ -79,6 +79,9 @@ DEFAULTS = dict(mode="replay_only", source=None, group_size=16, samples=16, ndcg
                 # confrank: soft-AUC on the confidence ORDERING + a CE anchor.
                 # rank_coef=0 reduces the arm exactly to ce_full (a built-in control).
                 rank_coef=1.0, ce_anchor=1.0, margin_temp=1.0,
+                # asym (v4.0-VL): correctness minus an ASYMMETRIC confidence penalty,
+                # lam_over on confident-and-wrong, lam_under on timid-and-right.
+                lam_over=4.0, lam_under=1.0,
                 # ctl-b: cal-4b refit on the rl_cal pool after training (calibrate.py)
                 cal_method="", cal_save_dir="",
                 # ---- RLCD reconstruction matrix (jev_rlcd_reproduction_notes s14/s19/s20) ----
@@ -216,6 +219,40 @@ def setcal_loss(logits, gold_idx, strata, stats: CellStats):
     stats.update(keys, m.detach().tolist(), correct.tolist())
     gaps = torch.tensor([stats.gap(k) for k in keys], device=logits.device)
     return (gaps * m).mean(), stats.ece()
+
+
+def unknown_rl2_keys(rl2: dict) -> list:
+    """Keys of a spec's fit_extra.rl2 that fit_rl2 does not read: it merges the block
+    over DEFAULTS, so a misspelt key would otherwise do nothing."""
+    return sorted(k for k in rl2 if k not in DEFAULTS)
+
+
+def asym_loss(logits, gold_idx, *, lam_over: float, lam_under: float):
+    """Correctness minus an ASYMMETRIC confidence penalty, computed exactly.
+
+        R = c - lam_over * max(0, p - c)^2 - lam_under * max(0, c - p)^2
+
+    with p the probability on the top-1 option and c whether it is right, so a
+    confident MISTAKE costs lam_over * p^2 while timid CORRECTNESS costs
+    lam_under * (1-p)^2. A symmetric penalty in (p - c)^2 prices "0.9 and wrong"
+    the same as "0.1 and right", although a confident error breaks a deployment
+    and timid correctness only costs coverage.
+
+    Optimum, for a state whose true P(correct) is q:
+
+        p* = q*lam_under / (q*lam_under + (1-q)*lam_over)
+
+    Equal lambdas give p* = q (a proper rule). lam_over > lam_under puts p* strictly
+    BELOW q, so the optimum is neither the label distribution nor a point mass.
+
+    Returns (loss, mean reward, mean top-1 probability).
+    """
+    logm, _, correct = top_conf_correct(logits, gold_idx)
+    p = logm.exp()
+    over = torch.clamp(p - correct, min=0.0) ** 2
+    under = torch.clamp(correct - p, min=0.0) ** 2
+    R = correct - lam_over * over - lam_under * under
+    return -R.mean(), float(R.detach().mean()), float(p.detach().mean())
 
 
 def conf_rank_loss(logits, gold_idx, *, margin_temp: float):
@@ -625,7 +662,9 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
     order = list(range(len(pairs)))
     random.Random(seed).shuffle(order)
     stream = None
-    if cfg.length_bucket:
+    # replay=false with no replay sources in the corpus (the v4.0-VL asym stage):
+    # there is no replay stream to build
+    if cfg.length_bucket and pairs:
         stream = helpers["bucketed_stream"](pairs, order, cfg.steps * cfg.batch_size,
                                             cfg.batch_size, cfg.length_bucket,
                                             random.Random(seed + 7919))
@@ -642,7 +681,7 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
         units = [(k, v) for k, v in sorted(by.items())
                  if any(rl_pairs[i][1].key.startswith("boundary_") for i in v)]
         info["rl2_groups"] = len(units)
-    elif mode in ("select", "setcal", "confrank") or mode in MATRIX:
+    elif mode in ("select", "setcal", "confrank", "asym") or mode in MATRIX:
         units = list(range(len(rl_pairs)))
         info["rl2_groups"] = len(units)
     elif mode == "agreecal":
@@ -709,10 +748,21 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
 
     rl_order_rng = random.Random(seed + 271828)   # RL-side option shuffles: own stream,
                                                   # so the replay presentation is CRN-identical
+    vis = None
+    if getattr(cfg, "vision", None):
+        # image rows (fit_extra.vision) are looked up by case_id in the vision roots, on
+        # BOTH sides: replay rows and RL-side rows. A row without images is encoded
+        # exactly as by the plain encoder.
+        from .vision_fit import VisionFeed
+        vis = VisionFeed(cfg.vision, tokenizer, model, device)
+
     def forward(chunk, ref_too=False):
         rng_ = rl_order_rng if ref_too else order_rng
-        batch = collate(tokenizer, [encode_question(tokenizer, c.state, q, enc, rng=rng_)
-                                    for c, q in chunk], max_options=max_options, device=device)
+        if vis is not None:
+            batch = vis.batch(chunk, enc, rng_, max_options, rl=ref_too)
+        else:
+            batch = collate(tokenizer, [encode_question(tokenizer, c.state, q, enc, rng=rng_)
+                                        for c, q in chunk], max_options=max_options, device=device)
         with torch.autocast(dev_type, dtype=torch.bfloat16, enabled=cfg.autocast_bf16):
             lg = model(**batch)
         lg = unpermute_logits(lg.float(), batch["option_perm"], batch["option_mask"])
@@ -721,7 +771,12 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
         if ref_too:
             with torch.no_grad(), torch.autocast(dev_type, dtype=torch.bfloat16,
                                                  enabled=dev_type == "cuda"):
-                rl_ = ref(**batch)
+                rb = batch
+                if "inputs_embeds" in batch:     # the ref tower is bf16; its own embedding of
+                    # the text tokens equals this cast (the embedding is frozen in both)
+                    rb = dict(batch, inputs_embeds=batch["inputs_embeds"].to(
+                        next(ref.tower.parameters()).dtype))
+                rl_ = ref(**rb)
             rl_ = unpermute_logits(rl_.float(), batch["option_perm"], batch["option_mask"])
             rl_ = rl_.masked_fill(~batch["option_mask"], float("-inf"))
         return lg, rl_
@@ -779,7 +834,7 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
                     rchunk += [rl_pairs[i] for i in rows]
             elif mode in MATRIX:
                 rchunk = [rl_pairs[i] for i in next_units(r["rows_per_step"])]
-            elif mode in ("select", "setcal", "confrank"):
+            elif mode in ("select", "setcal", "confrank", "asym"):
                 rchunk = [rl_pairs[i] for i in next_units(r["rows_per_step"])]
                 gidx = torch.tensor([max(range(len(c.gold[q.key])), key=c.gold[q.key].__getitem__)
                                      for c, q in rchunk], device=device)
@@ -833,6 +888,10 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
                 if r["ce_anchor"]:
                     term = term + r["ce_anchor"] * objective_loss("soft_ce", rlg, g_)
                 rec.update(rl_auc=auc, rl_pairs=npair)
+            elif mode == "asym":
+                term, rew, cf = asym_loss(rlg, gidx, lam_over=r["lam_over"],
+                                          lam_under=r["lam_under"])
+                rec.update(rl_reward=rew, rl_conf=cf)
             elif mode == "setcal":
                 strata = [(cal_group(cal_source(c.case_id)), q.mode) for c, q in rchunk]
                 term, sece = setcal_loss(rlg, gidx, strata, stats)
@@ -884,6 +943,7 @@ def fit_rl2(model, tokenizer, cases, enc, cfg, *, max_options: int, seed: int, d
         sched.step()
         if logging:
             row = {"step": step, "loss": float(loss_rep.detach()), "logit_absmax": round(lmax, 2),
+                   **({"image_rows": vis.n_image_rows} if vis is not None else {}),
                    "logit_absmax_run": round(logit_max_run, 2)}
             if mode != "replay_only":
                 row.update({f"{k_}_avg": round(v / max(1, agg_n), 5) for k_, v in agg.items()})

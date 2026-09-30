@@ -1,0 +1,106 @@
+{
+ "readout": "option_xattn",
+ "objective": "soft_ce",
+ "steps": 4000,
+ "batch_size": 16,
+ "eval_batch_size": 32,
+ "max_options": 160,
+ "lr_head": 0.0001,
+ "lr_base": 2e-06,
+ "diag_only": false,
+ "logit_cap": null,
+ "head_input_norm": false,
+ "label_smoothing": 0.0,
+ "head_weight_decay": 0.0,
+ "base_schedule": "cosine",
+ "head_schedule": "constant",
+ "seed": 17,
+ "readout_layer": -1,
+ "option_pool": "mean",
+ "layout": "state_first",
+ "freeze_base": false,
+ "sources": "rp_cov_ambigqa,rp_cov_condaqa,rp_cov_cuad,rp_cov_finqa,rp_cov_gsm8k,rp_cov_hotpotqa,rp_cov_massive_multi,rp_cov_musique,rp_cov_open_jev,rp_cov_privacyqa,rp_cov_tabfact,rp_cov_tasksource_jev,rp_ds2_open_jev,rp_ds2_tasksource_jev,rp_jsg_anli,rp_jsg_emotion,rp_jsg_sst5,rp_mc_replay,rp_mc_replay_extra,rp_st_aegis2,rp_st_boolq,rp_st_civil_comments,rp_st_helpsteer2,rp_st_kev_devtools_v1,rp_st_kev_documents_v1,rp_st_kev_hard_v1,rp_st_massive-de-DE,rp_st_massive-en-US,rp_st_multinli,rp_st_nimble_train,rp_st_paws,rp_st_procedural_train,rp_st_squad2,rp_st_vitaminc,rp_synth,rp_td_train,vis_ai2d,vis_aokvqa,vis_chartqa,vis_docvqa,vis_hateful_memes,vis_nlvr2,vis_rvlcdip,vis_scienceqa,vis_screen2words,vis_tallyqa,vis_tqa,vis_vqav2",
+ "keep_last_k": 3,
+ "residual": false,
+ "prior_kl": 0.0,
+ "freeze_embeddings": true,
+ "grad_checkpointing": true,
+ "eval_dtype": "native",
+ "repeat_eval": null,
+ "option_order": "shuffled",
+ "eval_option_orders": [
+  "canonical",
+  "reversed"
+ ],
+ "arch_extra": {
+  "xattn_combine": "mlp"
+ },
+ "fit_extra": {
+  "lower_layers_n": 8,
+  "lower_layers_lr_scale": 0.1,
+  "length_bucket": 64,
+  "init_from": "v4-rep-b-s17ck/s17",
+  "warmup": 0.1,
+  "vision": {
+   "root": "vision_v1",
+   "budget": 1024,
+   "model": "Qwen/Qwen3.5-2B-Base"
+  }
+ },
+ "rl_extra": {},
+ "min_trainable_tower": 100000000,
+ "eval_fast": "auto",
+ "eval_prefix_cache": false,
+ "eval_token_budget": null,
+ "eval_max_rows": null,
+ "eval_compile": false,
+ "eval_smoke": null,
+ "control_cache": true,
+ "specialist": true,
+ "code_dir": "vis-ct-1",
+ "init_parent": {
+  "path": "v4-rep-b-s17ck/s17",
+  "parent_code_dir": "v4-rep-b-s17ck",
+  "parent_corpus_dir": "v4-rep-b-s17ck",
+  "parent_steps": 14233,
+  "parent_seed": 17
+ },
+ "why": "Stage 2, images: 33,906 train-split image questions (vision_v1) plus 30,094 questions of the parent's text replay, 4,000 steps from v4-rep-b-s17ck, frozen ViT, 1,024 image tokens per question. Paired control: vis-ct-1-ctl (replay only).",
+ "corpus_gate": {
+  "checked": true,
+  "pass": false,
+  "fails": [
+   "mode mix shifted: {'choice': 0.6053, 'noul': 0.2985, 'score': 0.0963} vs {'choice': 0.394, 'noul': 0.3937, 'score': 0.2123}",
+   "choice_first_option_rate 0.2778 vs reference 0.5068 (tolerance 0.08)",
+   "score argmax histogram shifted (TV 0.186): {'0': 0.1003, '1': 0.1988, '10': 0.0003, '11': 0.0003, '12': 0.0003, '2': 0.2425, '3': 0.284, '4': 0.1133, '5': 0.0235, '6': 0.0125, '7': 0.0083, '8': 0.005, '9': 0.0109} vs {'0': 0.061, '1': 0.135, '2': 0.3459, '3': 0.3666, '4': 0.0906, '5': 0.0008}"
+  ],
+  "override": "Image arm: the label-statistics shift is the experiment. 33,906 image questions (vision_v1: choice-heavy VQA recasts, balanced yes/no, TallyQA counts as score levels) are 53% of the corpus; the replay half has the same two fails as every rep-b corpus (mode mix, choice first-option rate). The paired control vis-ct-1-ctl (replay only) isolates the image data.",
+  "stats": {
+   "questions": 64000,
+   "mode_share": {
+    "choice": 0.6053,
+    "noul": 0.2985,
+    "score": 0.0963
+   },
+   "noul_true_rate": 0.4985,
+   "score_mean_level": 2.3743,
+   "score_argmax_hist": {
+    "0": 0.1003,
+    "1": 0.1988,
+    "10": 0.0003,
+    "11": 0.0003,
+    "12": 0.0003,
+    "2": 0.2425,
+    "3": 0.284,
+    "4": 0.1133,
+    "5": 0.0235,
+    "6": 0.0125,
+    "7": 0.0083,
+    "8": 0.005,
+    "9": 0.0109
+   },
+   "choice_first_option_rate": 0.2778
+  }
+ },
+ "corpus_dir": "vis-ct-1"
+}
