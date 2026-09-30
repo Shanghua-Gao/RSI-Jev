@@ -215,7 +215,7 @@ Thank you to the people who have sent that feedback:
 | [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v3.0.md`](versions/v3.0.md), [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
 | [`EXPLORE.md`](EXPLORE.md) | **what the loop tried and rejected** between releases |
 | [`docs/rl.md`](docs/rl.md) | **where RL beat supervised training, and where it didn't** — 59 reward-trained arms, one kept |
-| [`docs/speed.md`](docs/speed.md) | **how the agents made inference faster** — 1.25–1.63x by default, up to 5.8x in agent loops, and what did not ship |
+| [`docs/speed.md`](docs/speed.md) | **where the time goes in a decision model** — read the document once; 1.25–1.63x by default, up to 5.8x in agent loops |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | **what each number means** and how to reproduce it |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | **what to send and what happens to it** |
 | [`serve/README.md`](serve/README.md) | **the HTTP API** — copied from Jev exactly, except where stated |

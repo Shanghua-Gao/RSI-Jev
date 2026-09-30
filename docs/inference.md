@@ -10,7 +10,7 @@ includes a network hop.
 
 ## How much faster
 
-[`speed.md`](speed.md) is the story of how these speedups were found, including what did not ship.
+[`speed.md`](speed.md) explains where the time goes and why these changes work.
 
 We ran one benchmark in one session on the GB10. Every configuration used the same
 checkpoint, documents and questions, and each ran in its own process, one at a time. Each
