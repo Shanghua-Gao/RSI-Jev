@@ -121,7 +121,7 @@ v1.0
 
 | model | download | 15-benchmark suite | held-out (eval_final_v2) | calibration (ECE) | per decision |
 |---|---|---|---|---|---|
-| **RSI-Jev-v4.0-VL-2B** · text and images | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) | **0.756** | **0.653** | **0.043** | ~10 ms text, ~0.2–0.5 s with an image |
+| **RSI-Jev-v4.0-VL-2B** · text and images | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) | **0.756** | **0.653** | **0.043** | ~10 ms text, ~0.1–0.3 s with an image |
 | RSI-Jev-v3.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) | 0.756 | 0.649 | 0.066 | ~10 ms |
 | RSI-Jev-v2.1-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) | 0.736 | 0.633 | 0.059 | ~10 ms |
 | RSI-Jev-v2.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) | – | – | – | ~10 ms |

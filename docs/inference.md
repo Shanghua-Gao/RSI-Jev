@@ -125,26 +125,24 @@ Over HTTP the same request carries `"images": ["data:image/jpeg;base64,..."]` ne
   to 256 tokens each. Larger images are scaled down.
 - 2,048 text tokens on top. A longer state is cut from its start, as for text; if the cut
   would reach an image, the request is refused.
-- The vision tower runs once per request, but each question reads the whole state with its
-  image tokens again: image requests use neither the prefix cache nor the document cache.
-  Asking four questions about one image costs about four times the tokens of one.
+- The vision tower runs once per request, and the state with its image tokens is read once:
+  every question continues from that reading, as it does for text. With `--profile agent`, a
+  repeated image state (same image bytes, same text) is not read again at all.
 
-Measured on the GB10 with v4.0-VL over HTTP (bf16 tower, fla, default settings; median of
-20 requests after 3 warm-up):
+Measured on the GB10 with v4.0-VL through the server's request path (bf16 tower, fla; median of
+20 requests after warm-up, no other job on the GPU):
 
-| request | input tokens | median | fastest |
+| request | before (each question read the image) | now | same image again, `--profile agent` |
 |---|---|---|---|
-| text, 1 question | 34 | 79 ms | 39 ms |
-| text, 4 questions | 157 | 90 ms | 81 ms |
-| one 640 px photo, 1 question | 356 | 203 ms | 146 ms |
-| one 640 px photo, 4 questions | 1,445 | 387 ms | 318 ms |
-| one 1,600 px photo, 1 question | 1,016 | 496 ms | 455 ms |
-| one 1,600 px photo, 4 questions | 4,085 | 1,129 ms | 1,067 ms |
+| one 640 px photo, 1 question | 79 ms | 80 ms | 36 ms |
+| one 640 px photo, 4 questions | 172 ms | 110 ms | 50 ms |
+| one 1,600 px photo, 1 question | 245 ms | 245 ms | 82 ms |
+| one 1,600 px photo, 4 questions | 561 ms | 273 ms | 101 ms |
 
-**Another job was using the GPU during this run**, so read these as upper bounds: the text
-rows, which take 22–27 ms on an idle machine ([How much faster](#how-much-faster)), came out
-about three times slower here. The ratio between rows is the useful part: an image costs
-roughly what the same number of text tokens would, and the photo's size decides that number.
+Reading once changes no answer: on 230 image questions every top answer matches the
+per-question path, and the probabilities differ by no more than bf16 rounding already moves
+them. An image costs roughly what the same number of text tokens would, and the photo's size
+decides that number.
 
 ## A local, drop-in Jev replacement
 
