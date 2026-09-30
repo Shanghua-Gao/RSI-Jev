@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import copy
+import os
 import sys
 import time
 from pathlib import Path
@@ -63,7 +64,29 @@ DEFAULTS = dict(readout="option_xattn", objective="soft_ce", steps=1500,
                 min_trainable_tower=100_000_000,
                 # Write a release checkpoint here after training, before evaluation,
                 # so the checkpoint is exactly the model the records score.
-                save_dir=None)
+                save_dir=None,
+                # Evaluation speed (rsijev.evaluate.predict `fast`): length-sorted
+                # batches. "auto" takes them when the tower evaluates in fp32 (rc-B,
+                # whole v2 suite: 2 argmax flips in 20,919, max |dp| 2.3e-3,
+                # |d suite_mean| <= 8e-5, 1.7x faster); false keeps the historical
+                # batching. The v3.0 and v4.0-VL specs set "auto"; the default here is
+                # false, so a spec without the key scores as it always did. Candidate
+                # records carry eval_path. The prefix cache stays behind its flag.
+                eval_fast=False, eval_prefix_cache=False, eval_token_budget=None,
+                eval_max_rows=None, eval_compile=False,
+                # Pipeline check: score only the first N questions of every target.
+                # Records carry smoke=N and must never be compared with a real arm.
+                eval_smoke=None,
+                # Reuse a zero-shot control computed earlier with the same model,
+                # kernel stack, GPU, encoder, batch size, target contents and code,
+                # stored under $RSIJEV_CONTROL_CACHE. A hit returns the stored
+                # per-question probabilities, so a hit and a miss give identical
+                # records; with the variable unset nothing is cached.
+                control_cache=False,
+                # A label, not a switch: true marks an arm that trains on benchmark
+                # TRAIN splits (the "specialist" track, v2.0 on), so its numbers are
+                # read as such. It changes no computation.
+                specialist=False)
 
 
 # "bfloat16" means the model's NATIVE precision, not a cast: Qwen3.5 loads its
@@ -77,10 +100,123 @@ DTYPES = {"native": None, "float32": torch.float32}
 ALIASES = {"bfloat16": "native"}
 
 
-def zero_shot(lm, tok, cases, name, enc, *, device, batch_size, max_options, eval_dtype=None):
+def zero_shot(lm, tok, cases, name, enc, *, device, batch_size, max_options, eval_dtype=None,
+              cache_dir=None, cache_key_extra=None):
+    """The zero-shot control, from the on-disk cache when an identical one exists.
+
+    The control depends only on the base weights, the kernel stack, the GPU, the
+    encoder, the batch composition and the target's contents -- never on the arm.
+    A hit returns the stored per-question probabilities, which are what the same
+    code produced, and the report is rescored from them here, so a hit and a miss
+    yield identical records. Anything that could move a probability is in the key,
+    including the source of the code that computes it.
+    """
+    key = None
+    if cache_dir is not None:
+        key = control_cache_key(lm, tok, cases, name, enc, batch_size=batch_size,
+                                max_options=max_options, eval_dtype=eval_dtype,
+                                extra=cache_key_extra)
+        hit = _control_cache_load(cache_dir, key, cases)
+        if hit is not None:
+            print(f"    control {name}: cache hit {key[:12]}", flush=True)
+            return score_predictions(hit, target=name, split="test"), hit
     with eval_precision(lm, eval_dtype):
-        return _zero_shot(lm, tok, cases, name, enc, device=device,
-                          batch_size=batch_size, max_options=max_options)
+        rep, preds = _zero_shot(lm, tok, cases, name, enc, device=device,
+                                batch_size=batch_size, max_options=max_options)
+    if key is not None:
+        _control_cache_store(cache_dir, key, preds)
+    return rep, preds
+
+
+def control_cache_dir():
+    """$RSIJEV_CONTROL_CACHE, or None (no caching) when it is unset."""
+    d = os.environ.get("RSIJEV_CONTROL_CACHE")
+    return Path(d) if d else None
+
+
+def _cases_digest(cases) -> str:
+    import hashlib
+    import json as _json
+    h = hashlib.sha256()
+    for c in cases:
+        h.update(_json.dumps({"id": c.case_id, "state": c.state, "gold": c.gold,
+                              "q": [[q.key, q.mode, q.instructions, list(q.options), q.criteria]
+                                    for q in c.questions]},
+                             sort_keys=True).encode())
+    return h.hexdigest()
+
+
+def control_cache_key(lm, tok, cases, name, enc, *, batch_size, max_options, eval_dtype,
+                      extra=None) -> str:
+    import dataclasses
+    import hashlib
+    import inspect
+    import json as _json
+    import transformers
+    import rsijev.encode as _enc
+    src = hashlib.sha256()
+    for obj in (LogprobReadout, _zero_shot, _enc):
+        src.update(inspect.getsource(obj).encode())
+    gpu = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"
+    fields = {"model": getattr(lm.config, "_name_or_path", None),
+              "model_commit": getattr(lm.config, "_commit_hash", None),
+              "weights": _weights_fingerprint(lm),
+              "kernel": LINEAR_ATTN_KERNEL, "transformers": transformers.__version__,
+              "gpu": gpu, "target": name, "cases": _cases_digest(cases),
+              "enc": dataclasses.asdict(enc), "batch_size": batch_size,
+              "max_options": max_options, "eval_dtype": str(eval_dtype),
+              "code": src.hexdigest(), "extra": extra}
+    return hashlib.sha256(_json.dumps(fields, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _weights_fingerprint(lm) -> str:
+    """The resident model's bits, cheaply: the evaluator's own checksum."""
+    import hashlib
+    from rsijev.evaluate import _bitwise_checksum
+    return hashlib.sha256(repr(_bitwise_checksum(lm)).encode()).hexdigest()
+
+
+def _control_cache_load(cache_dir, key, cases):
+    import json as _json
+    p = Path(cache_dir) / f"{key}.json"
+    try:
+        rows = _json.loads(p.read_text())["probs"]
+    except Exception:
+        return None
+    pairs = list(iter_questions(cases))
+    if len(rows) != len(pairs) or any(len(r) != len(q.options) for r, (_, q) in zip(rows, pairs)):
+        return None
+    return [(c, q, Prediction(tuple(r))) for r, (c, q) in zip(rows, pairs)]
+
+
+def _control_cache_store(cache_dir, key, preds) -> None:
+    import json as _json
+    try:
+        d = Path(cache_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f"{key}.json.tmp{os.getpid()}"
+        tmp.write_text(_json.dumps({"probs": [list(p.probs) for _, _, p in preds]}))
+        tmp.replace(d / f"{key}.json")
+    except OSError as e:
+        print(f"    control cache not written ({e})", flush=True)
+
+
+def smoke_targets(targets: dict, n: int) -> dict:
+    """The first n questions of every target, as whole Case objects (a case
+    cut mid-way keeps only its first questions and their gold)."""
+    import dataclasses
+    out = {}
+    for tname, cases in targets.items():
+        kept, left = [], n
+        for c in cases:
+            if left <= 0:
+                break
+            qs = c.questions[:left]
+            kept.append(c if len(qs) == len(c.questions) else dataclasses.replace(
+                c, questions=qs, gold={q.key: c.gold[q.key] for q in qs}))
+            left -= len(qs)
+        out[tname] = kept
+    return out
 
 
 @torch.no_grad()
@@ -198,6 +334,32 @@ def save_release(model, lm, cfg: dict, out: Path, *, tapped, train_seconds, hist
     print(f"    saved release checkpoint -> {out} ({len(tower)} tower tensors)", flush=True)
 
 
+# Spec keys that describe an arm rather than configure it: they are copied into
+# every record (spec.<key>) and change no computation.
+SPEC_METADATA = {"why", "code_dir", "corpus_dir", "corpus_gate", "init_parent"}
+
+
+def unknown_spec_keys(spec: dict) -> list:
+    """Top-level spec keys this code neither uses nor records as metadata.
+
+    Everything else in a spec is merged over DEFAULTS, so an unknown key would be
+    carried into the records and silently do nothing. fit_extra and arch_extra are
+    checked where they land (FitConfig / ArchConfig raise on an unknown field), and
+    fit_extra.rl2 by rsijev.rl2.unknown_rl2_keys."""
+    return sorted(k for k in spec if k not in DEFAULTS and k not in SPEC_METADATA)
+
+
+# Targets scored in every option order and against the zero-shot control. Any
+# other target (a benchmark suite, report-only held-out targets) is scored in the
+# canonical order only and without a control. release_train.py passes only these
+# three, so for it every target is scored as before.
+FULL_EVAL_TARGETS = {"typed_decisions", "mmlu_pro_1k", "in_distribution"}
+
+
+def _scored(tname: str, order: str) -> bool:
+    return tname in FULL_EVAL_TARGETS or order == "canonical"
+
+
 def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
     cfg = {**DEFAULTS, **spec}
     # Training presents options in `option_order`; evaluation may score the SAME
@@ -230,6 +392,10 @@ def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
     # diag_only: a training-stability diagnostic scores the in-distribution
     # holdout alone, so no test target can steer a fix chosen from it.
     targets = {"in_distribution": holdout, **({} if cfg["diag_only"] else targets)}
+    if cfg["eval_smoke"]:
+        targets = smoke_targets(targets, int(cfg["eval_smoke"]))
+        print(f"    SMOKE: first {int(cfg['eval_smoke'])} questions per target", flush=True)
+    ctrl_cache = control_cache_dir() if cfg["control_cache"] else None
 
     eval_dtypes = [ALIASES.get(d, d) for d in (cfg["repeat_eval"] or [cfg["eval_dtype"]])]
     for d in eval_dtypes:
@@ -239,15 +405,19 @@ def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
     records = []
     for d, o in [(d, o) for d in eval_dtypes for o in eval_orders]:
         for tname, cases in targets.items():
+            if tname not in FULL_EVAL_TARGETS:
+                continue
             rep, preds = zero_shot(lm, tok, cases, tname, encs[o], device=device,
                                    batch_size=cfg["eval_batch_size"],
-                                   max_options=cfg["max_options"], eval_dtype=DTYPES[d])
+                                   max_options=cfg["max_options"], eval_dtype=DTYPES[d],
+                                   cache_dir=ctrl_cache)
             items += item_rows(preds, target=tname, role="control", eval_dtype=d, option_order=o)
             # the FULL resolved config on control rows too: a control scored at a
             # non-default batch size or precision must be visible in the log.
             records.append(as_record(rep, arm=name, role="control",
                                      control_kind="zero_shot_logprob", trainable=0,
                                      seed=cfg["seed"], eval_dtype=d, option_order=o,
+                                     smoke=cfg["eval_smoke"],
                                      **{"spec." + k: v for k, v in cfg.items()}))
 
 
@@ -378,10 +548,15 @@ def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
                      n_train_cases=len(train_cases))
 
     for d, o, (tname, cases) in [(d, o, t) for d in eval_dtypes for o in eval_orders
-                                 for t in targets.items()]:
+                                 for t in targets.items() if _scored(t[0], o)]:
+        t_e, ev = time.perf_counter(), {}
         preds = predict(model, tok, cases, encs[o], max_options=cfg["max_options"],
                         device=device, batch_size=cfg["eval_batch_size"],
-                        eval_dtype=DTYPES[d])
+                        eval_dtype=DTYPES[d], fast=cfg["eval_fast"],
+                        prefix_cache=cfg["eval_prefix_cache"],
+                        token_budget=cfg["eval_token_budget"], max_rows=cfg["eval_max_rows"],
+                        compile=cfg["eval_compile"], stats=ev)
+        eval_s = time.perf_counter() - t_e
         items += item_rows(preds, target=tname, role="candidate", eval_dtype=d, option_order=o)
         rep = score_predictions(preds, target=tname, split="test")
         rec = as_record(rep, arm=name, role="candidate", eval_dtype=d, option_order=o,
@@ -393,10 +568,17 @@ def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
                         tapped_layer=tapped[0], tapped_layer_type=tapped[1],
                         linear_attn_kernel=LINEAR_ATTN_KERNEL,
                         valid=(init_diff is None or init_diff <= RESIDUAL_TOL),
+                        eval_path=ev.get("eval_path"), eval_seconds=round(eval_s, 1),
+                        smoke=cfg["eval_smoke"],
                         **{"spec." + k: v for k, v in cfg.items()})
         records.append(rec)
-        ctrl = next(r for r in records if r["role"] == "control" and r["target"] == tname
-                    and r["eval_dtype"] == d and r["option_order"] == o)
+        ctrl = next((r for r in records if r["role"] == "control" and r["target"] == tname
+                     and r["eval_dtype"] == d and r["option_order"] == o), None)
+        if ctrl is None:
+            print(f"    [{d}/{o}] {tname:16s} " + "  ".join(
+                f"{m} acc {rec[f'{m}.accuracy']:.4f}" for m in ("choice", "noul", "score")
+                if f"{m}.accuracy" in rec), flush=True)
+            continue
         print(f"    [{d}/{o}] {tname:16s} minDS {rec['min_decision_score']:+7.2f} "
               f"(ctrl {ctrl['min_decision_score']:+7.2f})  "
               f"AURC {rec['pooled_aurc']:.4f} (ctrl {ctrl['pooled_aurc']:.4f})", flush=True)

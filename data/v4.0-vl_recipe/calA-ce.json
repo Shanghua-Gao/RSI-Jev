@@ -1,0 +1,111 @@
+{
+ "readout": "option_xattn",
+ "objective": "soft_ce",
+ "steps": 3000,
+ "batch_size": 16,
+ "eval_batch_size": 32,
+ "max_options": 160,
+ "lr_head": 5e-05,
+ "lr_base": 2e-06,
+ "diag_only": false,
+ "logit_cap": null,
+ "head_input_norm": false,
+ "label_smoothing": 0.0,
+ "head_weight_decay": 0.0,
+ "base_schedule": "cosine",
+ "head_schedule": "cosine",
+ "seed": 17,
+ "readout_layer": -1,
+ "option_pool": "mean",
+ "layout": "state_first",
+ "freeze_base": false,
+ "sources": "dd_lies_beyond,dd_lies_near,dd_lies_solve,dd_order_mid,dd_order_near,dd_swap_beyond,dd_swap_mid,dd_swap_near,rp_rp_rp_cov_ambigqa,rp_rp_rp_cov_condaqa,rp_rp_rp_cov_cuad,rp_rp_rp_cov_finqa,rp_rp_rp_cov_gsm8k,rp_rp_rp_cov_hotpotqa,rp_rp_rp_cov_massive_multi,rp_rp_rp_cov_musique,rp_rp_rp_cov_open_jev,rp_rp_rp_cov_privacyqa,rp_rp_rp_cov_tabfact,rp_rp_rp_cov_tasksource_jev,rp_rp_rp_ds2_open_jev,rp_rp_rp_ds2_tasksource_jev,rp_rp_rp_jsg_anli,rp_rp_rp_jsg_emotion,rp_rp_rp_jsg_sst5,rp_rp_rp_mc_replay,rp_rp_rp_mc_replay_extra,rp_rp_rp_st_aegis2,rp_rp_rp_st_boolq,rp_rp_rp_st_civil_comments,rp_rp_rp_st_helpsteer2,rp_rp_rp_st_kev_devtools_v1,rp_rp_rp_st_kev_documents_v1,rp_rp_rp_st_kev_hard_v1,rp_rp_rp_st_massive-de-DE,rp_rp_rp_st_massive-en-US,rp_rp_rp_st_multinli,rp_rp_rp_st_nimble_train,rp_rp_rp_st_paws,rp_rp_rp_st_procedural_train,rp_rp_rp_st_squad2,rp_rp_rp_st_vitaminc,rp_rp_rp_synth,rp_rp_rp_td_train,rp_rp_vis_ai2d,rp_rp_vis_aokvqa,rp_rp_vis_chartqa,rp_rp_vis_docvqa,rp_rp_vis_hateful_memes,rp_rp_vis_nlvr2,rp_rp_vis_rvlcdip,rp_rp_vis_scienceqa,rp_rp_vis_screen2words,rp_rp_vis_tallyqa,rp_rp_vis_tqa,rp_rp_vis_vqav2,rp_vis2_iconqa,rp_vis2_ocrvqa,rp_vis2_textvqa,rp_vis2_visual7w,rp_vis3_change_detect,rp_vis3_grid_games,rp_vis3_line_rule,rp_vis3_receipt_math,rp_vis3_severity,rp_vis3_ui_state",
+ "keep_last_k": 3,
+ "residual": false,
+ "prior_kl": 0.0,
+ "freeze_embeddings": true,
+ "grad_checkpointing": true,
+ "eval_dtype": "native",
+ "repeat_eval": null,
+ "option_order": "shuffled",
+ "eval_option_orders": [
+  "canonical",
+  "reversed"
+ ],
+ "arch_extra": {
+  "xattn_combine": "mlp"
+ },
+ "fit_extra": {
+  "lower_layers_n": 8,
+  "lower_layers_lr_scale": 0.1,
+  "length_bucket": 64,
+  "warmup": 0.1,
+  "log_every": 25,
+  "init_from": "vis-ct-3/s17",
+  "vision": {
+   "roots": [
+    "vision_v1",
+    "vision_v2",
+    "vision_v3"
+   ],
+   "budget": 1024,
+   "model": "Qwen/Qwen3.5-2B-Base"
+  }
+ },
+ "rl_extra": {},
+ "min_trainable_tower": 100000000,
+ "eval_fast": "auto",
+ "eval_prefix_cache": false,
+ "eval_token_budget": null,
+ "eval_max_rows": null,
+ "eval_compile": false,
+ "eval_smoke": null,
+ "control_cache": true,
+ "specialist": true,
+ "code_dir": "calA-ce",
+ "init_parent": {
+  "path": "vis-ct-3/s17",
+  "parent_code_dir": "vis-ct-3",
+  "parent_corpus_dir": "vis-ct-3",
+  "parent_steps": 3000,
+  "parent_seed": 17
+ },
+ "why": "Stage 5, calibration data: 8,492 generated reasoning questions (lie chains, object swaps, orderings; scripts/depthdial.py) at depths where vis-ct-3 is at chance, with soft targets from vis-ct-3's out-of-fold per-depth accuracy, 18% of a 48k corpus with vis-ct-3's replay mix, 3,000 steps from vis-ct-3. Paired control: calC-ctl (replay only).",
+ "corpus_gate": {
+  "checked": true,
+  "pass": false,
+  "fails": [
+   "mode mix shifted: {'choice': 0.6797, 'noul': 0.2505, 'score': 0.0698} vs {'choice': 0.394, 'noul': 0.3937, 'score': 0.2123}",
+   "choice_first_option_rate 0.3432 vs reference 0.5068 (tolerance 0.08)",
+   "score argmax histogram shifted (TV 0.172): {'0': 0.1236, '1': 0.1857, '10': 0.0003, '11': 0.0006, '12': 0.0006, '2': 0.252, '3': 0.2881, '4': 0.1191, '5': 0.0122, '6': 0.0057, '7': 0.0048, '8': 0.0021, '9': 0.0051} vs {'0': 0.061, '1': 0.135, '2': 0.3459, '3': 0.3666, '4': 0.0906, '5': 0.0008}"
+  ],
+  "override": "Depth-dial generators (own templates, no BIG-Bench Hard text): lie chains, object swaps, N-object ordering. Targets from vis-ct-3's out-of-fold per-depth accuracy: beyond band uniform, near/mid band correct = acc, solvable one-hot. Uniform and soft targets shift the label statistics by design.",
+  "stats": {
+   "questions": 48001,
+   "mode_share": {
+    "choice": 0.6797,
+    "noul": 0.2505,
+    "score": 0.0698
+   },
+   "noul_true_rate": 0.4977,
+   "score_mean_level": 2.221,
+   "score_argmax_hist": {
+    "0": 0.1236,
+    "1": 0.1857,
+    "10": 0.0003,
+    "11": 0.0006,
+    "12": 0.0006,
+    "2": 0.252,
+    "3": 0.2881,
+    "4": 0.1191,
+    "5": 0.0122,
+    "6": 0.0057,
+    "7": 0.0048,
+    "8": 0.0021,
+    "9": 0.0051
+   },
+   "choice_first_option_rate": 0.3432
+  }
+ },
+ "corpus_dir": "calA-ce"
+}
