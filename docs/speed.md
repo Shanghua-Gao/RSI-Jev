@@ -92,6 +92,31 @@ of `pip install "rsi-jev[fast]"`, and the server prints at startup which kernels
 For a server that runs for hours, `--profile server` also compiles the model (about 40 s at
 startup), for another **1.1–1.3x**.
 
+## Everything around the model
+
+Once the model itself was fast, the agents profiled a request from socket to socket. The model's
+forward pass was 85–97% of the time, but the rest had one surprise: the server tokenized the
+document once for every question, and once more to check whether the questions shared it. With
+32 questions on a 1,000-token document that was 29 ms, 10% of the request. It now tokenizes the
+document once. The same pass cut the copies back from the GPU, moved request parsing off the
+model's thread, and added a faster JSON encoder. Every one of 12,389 test answers is
+bit-identical, and the 32-question request drops from 309 to 277 ms. There is nothing to turn on.
+
+**Many clients at once.** The server answered one request at a time, so 32 clients each asking
+one short question got the same 32 requests per second as one client did. `--batch-window-ms 0`
+lets the questions that are waiting at the same moment share one forward pass: **32 → 72
+requests per second**, and the median wait at 32 clients falls from 984 to about 400 ms. vLLM
+reaches 84 on this workload, and is still ahead on single questions about long documents; on
+several questions per document, this server does 2.5x more than vLLM. It is opt-in because a
+question's probabilities move very slightly with what it shares a pass with (99% of answers
+unchanged on the knowledge test, calibration within 0.002).
+
+**Less padding.** The questions in one pass are padded to the longest one, and every question to
+160 answer slots. A request that mixes yes/no questions with long lists of options wasted most
+of its work. `RSIJEV_SORT_ROWS=1 RSIJEV_TRIM_OPTIONS=1` groups questions of similar length and
+trims the unused slots: **1.7–1.8x** on such a request, and 1.08–1.13x on uniform ones, with
+every top answer unchanged.
+
 ## What did not help, and why
 
 A single pass has a floor on this machine. The model's weights are 2.75 GB, and the GB10 reads
@@ -105,7 +130,7 @@ and the GPU spends its time computing. Tricks aimed at other bottlenecks had lit
 | FP8 | slower without compiling, and changed 2–8% of answers |
 | a faster kernel for the DeltaNet layers (FlashQLA) | 2–2.7x faster on its own, but those layers take about 9% of the time: 1–13% overall |
 | CUDA graphs | slower: they remove launch overhead, and the GPU was already busy computing |
-| vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions 2.2x better |
+| vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions more than twice as fast; micro-batching (above) closed most of that gap |
 
 The agents held every change to one rule: **a faster answer must be the same answer.** People set
 thresholds on these probabilities, so a speed-up that moves them is a regression. Each change was
@@ -120,6 +145,7 @@ pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
 rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b                    # default
 rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --profile agent    # agents re-asking about a conversation
 rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --profile server   # long-running servers
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --batch-window-ms 0 # many clients, short questions
 ```
 
 It speaks Jev's API, so an existing Jev client only needs its base URL changed.
@@ -127,18 +153,13 @@ It speaks Jev's API, so an existing Jev client only needs its base URL changed.
 
 ## What comes next
 
-The agents are testing the next round now, each held to the same rule:
+What is left sits almost entirely inside the model's forward pass. Next on the agents' list,
+each held to the same rule:
 
-- **Less overhead per request.** Over HTTP, one question takes 27–38 ms, against 22–27 ms inside
-  the process. The difference is request parsing, JSON, tokenizing the document once per
-  question, and waiting on the GPU between steps. All of it can be cut without touching the model.
-- **Batching requests from many clients together.** The server answers one request at a time, so
-  throughput stays flat as clients are added. This is the one case where vLLM did better, and
-  merging requests that arrive within a few milliseconds should close that gap while keeping
-  several questions per request fast.
-- **Less padding.** Questions in one batch are padded to the longest one. Grouping questions of
-  similar length wastes less work when a request mixes short yes/no questions with long lists of
-  options.
+- **Images read once.** The next release reads images. Today each question about an image
+  re-reads it; reading it once and branching every question off it is the same trick as above.
+- **Sharing a document's reading across clients.** Micro-batching pools single questions; pooling
+  the document pass of multi-question requests would extend it to them.
 - **CUDA graphs on datacenter GPUs.** They did not help on the GB10, but on an H100 one question
   drops to 12.1 ms in our tests.
 
