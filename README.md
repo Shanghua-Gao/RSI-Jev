@@ -24,7 +24,7 @@ The loop running the research is the **next version of
 ## RSI process
 
 <p align="center">
-  <img src="assets/loop-social.gif" width="900" alt="Above: six turns of the cycle climb to v1.0 and the champion line rises with them, then twenty-four directions press against that line without crossing it. Below: one experiment travels propose, experiment, learn; at the gate nearly all become published negatives and one becomes a release, which then becomes the bar to clear">
+  <img src="assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
 **v3.0**, the current release, is **the first release where reinforcement learning works**.
