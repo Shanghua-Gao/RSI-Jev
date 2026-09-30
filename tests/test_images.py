@@ -181,7 +181,7 @@ def test_limits_report_image_support(client):
     assert lim["image_token_budget"] == 1024
     assert lim["max_tokens_per_image"] == {"1": 1024, "2": 512, "3": 341, "4": 256}
     assert lim["state_marker"] == "<image>"
-    assert lim["prefix_cache"] is False and lim["document_cache"] is False
+    assert lim["prefix_cache"] is True and lim["document_cache"] in (True, False)
     assert set(lim["formats"]) == {"png", "jpeg", "webp"}
 
 

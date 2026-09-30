@@ -150,11 +150,17 @@ reports all of this under `images` (`supported: false` for a text-only release, 
 `reason` when the release has images but Pillow/torchvision are missing: `pip install
 "rsi-jev[vision]"`).
 
-**No caches for images.** The prefix cache and the document cache (`--profile agent`) are
-text-only in this version. An image request never reads from them or writes to them, and
-it always reads its whole state, image tokens included, once per question: four questions
-about one 1,024-token image read about 4,100 tokens. The vision tower itself runs once per
-request. Text requests to the same server use the caches as before.
+**Images are read once.** With several questions about one image state, the vision tower
+runs once and the shared prefix (the state with its image tokens, at their M-RoPE
+positions) runs once; every question continues from that cache, as a text state does. The
+positions of each question's tail are sliced from the whole sequence's own M-RoPE
+positions, so the cached pass computes what the per-question pass computes
+(`tests/test_image_cache.py`: fp32 on CPU agrees to ~3e-8). The same threshold as text
+decides when one read pays. Under `--profile agent` image states also go through the
+document cache, keyed on the token ids plus a hash of each image's decoded pixels and the
+resolution it was prepared at: the same image and state asked about again runs neither the
+vision tower nor the text tower on the state. `GET /v1/limits` reports `prefix_cache` and
+`document_cache` under `images`.
 
 ## What is copied exactly
 
@@ -257,15 +263,17 @@ calibration moves by +0.0001.
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
-| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache; the image path (`score_image_questions`) |
+| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache; the image path (`score_image_questions_cached`, read once; `score_image_questions`, per question, the reference) |
 | `images.py` | image input: data URLs → validated images, the limits, `<image>` markers |
 | `accel.py` | the opt-in compile switch |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `release.py` | finds a checkpoint (directory, Hugging Face id or alias) and loads it |
 | `server.py` | loads a release for serving, prints what is active, runs uvicorn |
 | `decider.py` | `Decider`: the same request path in-process, `from rsijev import Decider` |
-| `runtime.py` | device and precision choice, `--profile`, kernel detection for the startup log |
-| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `bench`, `download`, `env` |
+| `runtime.py` | device and precision choice, `--profile`, kernel and `[vision]` extra detection for the startup log |
+| `demo.py`, `ui.html`, `examples.json` | `rsi-jev demo`: the playground page on the served path, with image upload, drag-drop and paste when `/v1/limits` says the model takes images |
+| `demo_images.py` | draws the playground's image examples (chart, screenshot, receipt) |
+| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `demo`, `bench`, `download`, `env` |
 | `../scripts/serve.py` | the same server from a clone, without installing |
 
 `infer.py` exists because `evaluate.predict` takes `Case` objects and a `Case`

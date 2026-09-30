@@ -86,7 +86,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
         else:
             s.prep = ImagePrep(meta["base_model"], VisionConfig(
                 image_token_budget=v["image_token_budget"],
-                min_tokens_per_image=v["min_tokens_per_image"]))
+                min_tokens_per_image=v["min_tokens_per_image"]), revision=v.get("revision"))
         # The budget is added to the text length, so no state is cut shorter
         # because it came with an image.
         s.venc = dataclasses.replace(enc, max_length=enc.max_length + v["image_token_budget"],
@@ -98,7 +98,7 @@ def make_scorer(s: Served, batch_size: int = 16):
     """(state_text, questions[, images]) -> (probabilities, prompt tokens), as
     create_app wants. `images` are validated PIL images (serve/images.py)."""
     from serve.images import state_too_long, text_only_error
-    from serve.infer import score_image_questions, score_questions_cached
+    from serve.infer import score_image_questions_cached, score_questions_cached
     spec = s.meta["spec"]
 
     def scorer(state: str, questions, images=None):
@@ -106,11 +106,11 @@ def make_scorer(s: Served, batch_size: int = 16):
         if images:
             if s.prep is None:
                 raise text_only_error(s.name, s.vision_error)
-            # Images never touch the prefix or document cache: see score_image_questions.
+            # The state and its image tokens are read once; see score_image_questions_cached.
             try:
-                preds, tokens = score_image_questions(s.model, s.tok, s.prep, state, images,
-                                                      questions, s.venc, device=s.device,
-                                                      batch_size=batch_size, max_options=mo)
+                preds, tokens = score_image_questions_cached(
+                    s.model, s.tok, s.prep, state, images, questions, s.venc, device=s.device,
+                    batch_size=batch_size, max_options=mo)
             except ValueError as e:
                 err = state_too_long(e, s.venc.max_length)
                 if err is None:

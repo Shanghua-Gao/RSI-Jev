@@ -24,8 +24,10 @@ tokenised as N special tokens.
 Ported from the release code the vision releases were trained and gated with.
 What is new here only serves requests faster
 and does not change a number: `prepare` runs the image processor once per
-request instead of once per question, and `VisionDecisionModel` takes
-precomputed `image_embeds` so the ViT runs once per request as well.
+request instead of once per question, `VisionDecisionModel` takes
+precomputed `image_embeds` so the ViT runs once per request as well, and
+`encode_image_prefix` runs the shared state (image tokens included) once so
+every question continues from its cache (serve/infer.py).
 """
 from __future__ import annotations
 
@@ -50,6 +52,19 @@ VISION_START, IMAGE_PAD, VISION_END = "<|vision_start|>", "<|image_pad|>", "<|vi
 VISION_SPECIAL_TOKENS = (VISION_START, IMAGE_PAD, VISION_END, "<|video_pad|>")
 
 
+# The base-model snapshot each vision release was verified against. The vision tower's
+# weights and the image processor come from the base repo, not from the release, so
+# without a pinned revision an upstream change to that repo would change answers
+# silently. A release's meta.json may name its own (`vision.revision`).
+PINNED_REVISIONS = {"Qwen/Qwen3.5-2B-Base": "b1485b2fa6dfa1287294f269f5fb618e03d52d7c"}
+
+
+def vision_revision(block: dict | None, model_id: str) -> str | None:
+    """The base-model revision for the vision tower and image processor: the release's
+    own `revision` if its vision block has one, else the pinned one for `model_id`."""
+    return (block or {}).get("revision") or PINNED_REVISIONS.get(model_id)
+
+
 @dataclass
 class VisionConfig:
     # One LLM token covers a 32x32 pixel block (patch 16, 2x2 merge). The budget is
@@ -71,11 +86,12 @@ def vision_block(meta: dict) -> dict | None:
 class ImagePrep:
     """PIL images -> (pixel_values, grid_thw, llm tokens per image), budgeted."""
 
-    def __init__(self, model_id: str, cfg: VisionConfig):
+    def __init__(self, model_id: str, cfg: VisionConfig, revision: str | None = None):
         from transformers import AutoImageProcessor
         self.model_id, self.cfg = model_id, cfg
+        self.revision = revision if revision is not None else PINNED_REVISIONS.get(model_id)
         self._procs: dict[int, object] = {}
-        self._base = AutoImageProcessor.from_pretrained(model_id)
+        self._base = AutoImageProcessor.from_pretrained(model_id, revision=self.revision)
         self.unit = self._base.patch_size * self._base.merge_size      # 32 px
 
     def tokens_per_image(self, n_images: int) -> int:
@@ -88,7 +104,7 @@ class ImagePrep:
             u2 = self.unit * self.unit
             mn = min(self.cfg.min_tokens_per_image, max_tokens) * u2
             self._procs[max_tokens] = AutoImageProcessor.from_pretrained(
-                self.model_id, size={"shortest_edge": mn, "longest_edge": max_tokens * u2})
+                self.model_id, revision=self.revision, size={"shortest_edge": mn, "longest_edge": max_tokens * u2})
         return self._procs[max_tokens]
 
     def __call__(self, images: Sequence) -> tuple[torch.Tensor, torch.Tensor, list[int]]:
@@ -157,21 +173,25 @@ def vision_collate(tokenizer, examples: Sequence[dict], max_options: int,
     return {k: v.to(device) for k, v in batch.items()}
 
 
-def load_visual(model_id: str, dtype=torch.bfloat16) -> nn.Module:
-    """The checkpoint's vision tower (ViT + merger), weights from model.visual.*."""
+def load_visual(model_id: str, dtype=torch.bfloat16, revision: str | None = None) -> nn.Module:
+    """The checkpoint's vision tower (ViT + merger), weights from model.visual.*, at
+    `revision` (default: the pinned one for `model_id`, see PINNED_REVISIONS)."""
     from huggingface_hub import hf_hub_download
     from safetensors import safe_open
     from transformers import AutoConfig
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel
-    cfg = AutoConfig.from_pretrained(model_id)
+    if revision is None:
+        revision = PINNED_REVISIONS.get(model_id)
+    cfg = AutoConfig.from_pretrained(model_id, revision=revision)
     vc = cfg.vision_config
     vc._attn_implementation = "sdpa"
     visual = Qwen3_5VisionModel(vc)
-    idx = json.loads(Path(hf_hub_download(model_id, "model.safetensors.index.json")).read_text())
+    idx = json.loads(Path(hf_hub_download(model_id, "model.safetensors.index.json",
+                                                    revision=revision)).read_text())
     files = sorted({f for k, f in idx["weight_map"].items() if k.startswith("model.visual.")})
     sd = {}
     for f in files:
-        with safe_open(hf_hub_download(model_id, f), framework="pt") as fh:
+        with safe_open(hf_hub_download(model_id, f, revision=revision), framework="pt") as fh:
             for k in fh.keys():
                 if k.startswith("model.visual."):
                     sd[k[len("model.visual."):]] = fh.get_tensor(k)
@@ -210,14 +230,36 @@ class VisionDecisionModel(DecisionModel):
             out = self.visual(pixel_values.to(dt), grid_thw=image_grid_thw, return_dict=True)
         return out.pooler_output
 
+    def embed(self, input_ids, image_embeds=None) -> torch.Tensor:
+        """Token embeddings with the image features written over the image-pad rows,
+        in order. Without features, the plain token embeddings."""
+        emb = self.tower.get_input_embeddings()(input_ids)
+        if image_embeds is None:
+            return emb
+        mask = (input_ids == self.image_token_id).unsqueeze(-1)
+        if int(mask.sum()) != image_embeds.shape[0]:
+            raise ValueError(f"{int(mask.sum())} image tokens for {image_embeds.shape[0]} image features")
+        return emb.masked_scatter(mask, image_embeds.to(emb.dtype))
+
+    def encode_image_prefix(self, input_ids, position_ids, image_embeds=None, cache=None):
+        """Run a prefix that may hold image tokens once and return its cache, or
+        continue `cache` over the next `input_ids` (mutating it).
+
+        `position_ids` are this chunk's (3, 1, T) M-RoPE positions, sliced from the
+        positions of the WHOLE sequence (`mrope_position_ids`), never recomputed from
+        the chunk alone: after an image the text positions jump by the image's grid,
+        not by its token count, so a chunk's positions depend on what came before
+        it. `image_embeds` are the features of the image-pad tokens in this chunk,
+        in order. Under a causal mask this computes what the full pass computes for
+        these tokens -- the same argument as `DecisionModel.encode_prefix`."""
+        with torch.no_grad():
+            return self.tower(inputs_embeds=self.embed(input_ids, image_embeds),
+                              position_ids=position_ids, past_key_values=cache,
+                              use_cache=True).past_key_values
+
     def _compute(self, *, input_ids, pixel_values=None, image_grid_thw=None,
                  image_embeds=None, **kw):
         if pixel_values is None and image_embeds is None:
             return super()._compute(input_ids=input_ids, **kw)
-        emb = self.tower.get_input_embeddings()(input_ids)
         img = image_embeds if image_embeds is not None else self.image_embeds(pixel_values, image_grid_thw)
-        mask = (input_ids == self.image_token_id).unsqueeze(-1)
-        if int(mask.sum()) != img.shape[0]:
-            raise ValueError(f"{int(mask.sum())} image tokens for {img.shape[0]} image features")
-        emb = emb.masked_scatter(mask, img.to(emb.dtype))
-        return super()._compute(input_ids=input_ids, inputs_embeds=emb, **kw)
+        return super()._compute(input_ids=input_ids, inputs_embeds=self.embed(input_ids, img), **kw)

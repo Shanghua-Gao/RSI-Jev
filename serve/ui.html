@@ -264,6 +264,24 @@
     color:var(--ink-3);font-size:12px;line-height:1.8;max-width:70rem}
   .colophon b{color:var(--ink-2)}
   .colophon a{color:var(--accent)}
+
+  /* Images: shown only when GET /v1/limits says the model takes them. */
+  .imgs{margin-top:.9rem}
+  .dropzone{border:1px dashed var(--rule-firm);border-radius:var(--radius-input);
+    padding:.7rem .85rem;color:var(--ink-2);font-size:13px;line-height:1.6;
+    background:var(--inset)}
+  .dropzone.over{border-color:var(--accent);color:var(--ink)}
+  .dropzone .link{font-size:13px}
+  .thumbs{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.6rem}
+  .thumbs:empty{display:none}
+  .thumb{position:relative;border:1px solid var(--rule);border-radius:var(--radius-input);
+    background:var(--inset);padding:4px;width:112px}
+  .thumb img{display:block;width:102px;height:78px;object-fit:contain}
+  .thumb .cap{display:block;font:11px/1.4 var(--num);color:var(--ink-3);margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .thumb .x{position:absolute;top:6px;right:6px;background:var(--panel);padding:0 .35rem;
+    line-height:1.4}
+  .imgs .warn{color:var(--miss)}
 </style>
 </head>
 <body>
@@ -301,6 +319,16 @@
         </span>
       </div>
       <div id="fields"></div>
+      <div class="imgs" id="imgs" hidden>
+        <div class="dropzone" id="dropzone">
+          <b>Images</b> &middot; drop, paste or
+          <button class="link" id="pick" type="button">choose files</button>
+          &middot; <span id="imgcap">1 to 4, PNG, JPEG or WebP</span>
+          <input type="file" id="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+        </div>
+        <div class="thumbs" id="thumbs"></div>
+        <p class="hint" id="imghint"></p>
+      </div>
       <p class="hint">All questions share this context and are answered independently, so
         asking ten costs one read of the state.</p>
     </section>
@@ -372,8 +400,9 @@
 </div>
 
 <p class="colophon">
-  Examples are held out from <code>LocalLLaMA/typed-decisions</code>, which no version is
-  trained on. Teacher is the reference answer, shown only while an example is unedited,
+  Text examples are held out from <code>LocalLLaMA/typed-decisions</code>, which no version
+  is trained on. The image examples (a chart, a screenshot, a receipt) are drawn by
+  <code>serve/demo_images.py</code>, so their answers are known by construction. Teacher is the reference answer, shown only while an example is unedited,
   because a document you write has no right answer to check against. Bars are the model's
   probability for each option, with rules at 25, 50 and 75 per cent.
   <br><br>
@@ -403,6 +432,10 @@ const esc = s => { const d = document.createElement("div"); d.textContent = s; r
 const MAX_QUESTIONS = 64, MAX_ANSWERS = 64;      // the wire contract's limits
 let CFG = null, on = [], DOC = null, FREE = false, QS = [];
 let dirty = false, running = false, inflight = null;
+// Images ride beside the state as data URLs, the way POST /v1/systemone takes them.
+// VISION is GET /v1/limits' `images`; without it (a text-only model, or a server with no
+// /v1/limits) the image input stays hidden and image examples are not offered.
+let IMAGES = [], VISION = {supported: false}, LAST_FIELD = null;
 
 /* ---------- the document ----------------------------------------------------
    The states in this dataset are JSON objects. Showing one as a JSON string means
@@ -891,15 +924,17 @@ function render(d){
   $("#split").innerHTML = `${n} decision${n > 1 ? "s" : ""} about ${d.tokens} tokens of
     state, <b>0</b> tokens written. Nothing is generated, so there is no output to wait
     for or parse.`;
+  const skipped = Object.keys(d.skipped || {});
   $("#ms").innerHTML = (d.gold
     ? "Teacher shown: this example is unedited."
-    : "No teacher: this document is not an unedited example.");
+    : "No teacher: this document is not an unedited example.")
+    + (skipped.length ? `<br>Not asked, text-only: ${skipped.map(esc).join(", ")}.` : "");
 }
 
 async function go(){
   if (running) return;                       // one pass at a time; the GPU has one lane
   const questions = wireQuestions();
-  $("#req").textContent = JSON.stringify({state: stateText(), questions}, null, 2);
+  showRequest(questions);
   if (!on.length){
     $("#out").innerHTML = ""; $("#ms").textContent = "Pick a version."; paint(); return;
   }
@@ -921,7 +956,7 @@ async function go(){
   try {
     const r = await fetch("demo/compare", {
       method: "POST", headers: {"Content-Type": "application/json"}, signal: ctl.signal,
-      body: JSON.stringify({state: stateText(), questions, versions: on}),
+      body: JSON.stringify(requestBody(questions)),
     });
     const d = await r.json();
     if (!r.ok) return fail(d.error || r.statusText);
@@ -988,12 +1023,137 @@ async function measure(){
 async function post(questions){
   const r = await fetch("demo/compare", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({state: stateText(), questions, versions: on}),
+    body: JSON.stringify(requestBody(questions)),
   });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error || r.statusText);
   return d;
 }
+
+function requestBody(questions){
+  const body = {state: stateText(), questions, versions: on};
+  if (IMAGES.length) body.images = IMAGES.map(i => i.url);
+  return body;
+}
+/* The request as sent, with each image shortened to its type and size so the panel stays
+   readable. Copy puts the full request, data URLs and all, on the clipboard. */
+let REQ_FULL = "";
+function showRequest(questions){
+  const body = requestBody(questions);
+  REQ_FULL = JSON.stringify(body, null, 2);
+  const shown = {...body};
+  if (body.images) shown.images = IMAGES.map(i =>
+    `${i.url.slice(0, i.url.indexOf(",") + 1)}… (${kb(i.bytes)})`);
+  $("#req").textContent = JSON.stringify(shown, null, 2);
+}
+const kb = n => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+
+/* ---------- images ----------------------------------------------------------
+   Upload, drag-drop and paste all end in addImageFile. The server checks every image
+   again; these checks only save a round trip and say what to change. */
+const IMG_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const MARKER = "<image>";
+const maxImages = () => VISION.max_images || 4;
+const markerCount = () => stateText().split(MARKER).length - 1;
+
+function imageNote(m){ const h = $("#imghint"); h.textContent = m; h.classList.add("warn"); }
+
+function addImageFile(file){
+  if (!VISION.supported) return;
+  if (!IMG_TYPES.includes(file.type))
+    return imageNote(`${file.name || "That file"} is ${file.type || "not an image"}; use PNG, JPEG or WebP.`);
+  if (IMAGES.length >= maxImages())
+    return imageNote(`At most ${maxImages()} images per request.`);
+  const cap = VISION.max_image_bytes || 20 * 2 ** 20;
+  if (file.size > cap)
+    return imageNote(`${file.name} is ${kb(file.size)}; the limit is ${kb(cap)}.`);
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (IMAGES.length >= maxImages()) return imageNote(`At most ${maxImages()} images per request.`);
+    IMAGES.push({url: reader.result, name: file.name || "pasted image", bytes: file.size});
+    renderImages(); schedule();
+  };
+  reader.readAsDataURL(file);
+}
+function addImageFiles(files){ for (const f of files) addImageFile(f); }
+
+function renderImages(){
+  $("#imgs").hidden = !VISION.supported;
+  const box = $("#thumbs");
+  box.innerHTML = "";
+  IMAGES.forEach((im, i) => {
+    const t = document.createElement("div"); t.className = "thumb";
+    const img = document.createElement("img"); img.src = im.url; img.alt = im.name;
+    const cap = document.createElement("span"); cap.className = "cap";
+    cap.textContent = `${i + 1}. ${im.name} · ${kb(im.bytes)}`; cap.title = im.name;
+    const x = document.createElement("button"); x.className = "x"; x.type = "button";
+    x.textContent = "×"; x.title = "Remove"; x.setAttribute("aria-label", `Remove image ${i + 1}`);
+    x.addEventListener("click", () => { IMAGES.splice(i, 1); renderImages(); schedule(); });
+    t.append(img, cap, x); box.append(t);
+  });
+  const per = VISION.max_tokens_per_image ? VISION.max_tokens_per_image[String(IMAGES.length || 1)] : null;
+  $("#imgcap").textContent = `1 to ${maxImages()}, PNG, JPEG or WebP`
+    + (per ? ` · ${per} tokens each at ${IMAGES.length || 1}` : "");
+  imageHint();
+}
+/* Where the images go: one <image> marker per image, in order, or none (images first). */
+function imageHint(){
+  const h = $("#imghint"), n = IMAGES.length, k = markerCount();
+  h.classList.remove("warn");
+  h.innerHTML = "";
+  if (!n){
+    h.textContent = "Optional. The state can refer to each image with an <image> marker.";
+    return;
+  }
+  if (k && k !== n){
+    h.classList.add("warn");
+    h.textContent = `The state has ${k} ${MARKER} marker${k > 1 ? "s" : ""} for ${n} image${n > 1 ? "s" : ""}: `
+      + `use one per image, in order, or none.`;
+  } else {
+    h.textContent = k ? `Each ${MARKER} marker in the state is replaced by its image, in order. `
+                      : `No ${MARKER} marker in the state, so the image${n > 1 ? "s go" : " goes"} before it. `;
+  }
+  if (k < n){
+    const b = document.createElement("button"); b.className = "link"; b.type = "button";
+    b.textContent = `Insert ${MARKER} at the cursor`;
+    h.append(" ");
+    b.addEventListener("mousedown", e => e.preventDefault());   // keep the field's caret
+    b.addEventListener("click", insertMarker);
+    h.append(b);
+  }
+}
+function insertMarker(){
+  const f = LAST_FIELD && document.contains(LAST_FIELD) ? LAST_FIELD
+          : $("#fields").querySelector("textarea, input[type=text]");
+  if (!f) return;
+  const a = f.selectionStart ?? f.value.length, b = f.selectionEnd ?? a;
+  f.value = f.value.slice(0, a) + MARKER + f.value.slice(b);
+  f.focus(); f.setSelectionRange(a + MARKER.length, a + MARKER.length);
+  f.dispatchEvent(new Event("input", {bubbles: true}));
+  imageHint();
+}
+$("#fields").addEventListener("focusin", e => {
+  if (e.target.matches("textarea, input[type=text]")) LAST_FIELD = e.target;
+});
+$("#fields").addEventListener("input", () => { if (VISION.supported) imageHint(); });
+$("#pick").addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", e => { addImageFiles(e.target.files); e.target.value = ""; });
+for (const t of ["dragenter", "dragover"])
+  $("#dropzone").addEventListener(t, e => { e.preventDefault(); $("#dropzone").classList.add("over"); });
+for (const t of ["dragleave", "drop"])
+  $("#dropzone").addEventListener(t, () => $("#dropzone").classList.remove("over"));
+$("#dropzone").addEventListener("drop", e => {
+  e.preventDefault(); addImageFiles(e.dataTransfer.files);
+});
+// Paste anywhere on the page. Text pastes are left alone; only image data is taken.
+addEventListener("paste", e => {
+  if (!VISION.supported) return;
+  const files = [...(e.clipboardData?.items || [])]
+    .filter(it => it.kind === "file" && it.type.startsWith("image/"))
+    .map(it => it.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  e.preventDefault(); addImageFiles(files);
+});
 
 function fail(m){ const e = $("#err"); e.textContent = m; e.hidden = false; }
 /* Editing no longer runs the model. A run costs one forward pass per selected version
@@ -1013,9 +1173,10 @@ function paint(){
 
 function blank(){
   FRESH.clear();
-  DOC = ""; FREE = true;
+  DOC = ""; FREE = true; IMAGES = [];
   QS = [{key: "", type: "noul", instructions: "", options: [], levels: [],
          yes: "", no: ""}];
+  renderImages();
   markFormat(); renderDoc(); renderQs();
   $("#out").innerHTML = "";
   $("#ms").textContent = "";
@@ -1033,7 +1194,9 @@ function load(id){
   // reads inside three levels of nesting, and pushes the questions off the screen.
   DOC = e.state; FREE = true;
   QS = fromWire(e.questions);
-  renderDoc(); renderQs(); go();
+  IMAGES = (e.images || []).map((url, i) => ({url, name: `${e.id}-${i + 1}`,
+    bytes: Math.floor((url.length - url.indexOf(",") - 1) * 3 / 4)}));
+  renderDoc(); renderQs(); renderImages(); go();
 }
 
 $("#vs").addEventListener("click", ev => {
@@ -1044,6 +1207,8 @@ $("#vs").addEventListener("click", ev => {
   b.setAttribute("aria-pressed", on.includes(v));
   go();
 });
+// The example menu had no listener, so picking an example did nothing.
+$("#ex").addEventListener("change", e => load(e.target.value));
 $("#run").addEventListener("click", go);
 $("#measure").addEventListener("click", measure);
 addEventListener("keydown", e => {
@@ -1088,7 +1253,7 @@ $("#fmtJson").addEventListener("click", () => setFormat(false));
 $("#blank").addEventListener("click", blank);
 $("#copy").addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText($("#req").textContent);
+    await navigator.clipboard.writeText(REQ_FULL || $("#req").textContent);
     $("#copy").textContent = "Copied";
     setTimeout(() => { $("#copy").textContent = "Copy request JSON"; }, 1400);
   } catch {
@@ -1106,7 +1271,13 @@ $("#addq").addEventListener("click", () => {
   renderQs(); schedule();
 });
 
-fetch("demo/config").then(r => r.json()).then(c => {
+Promise.all([
+  fetch("demo/config").then(r => r.json()),
+  // Only `rsi-jev demo` serves /v1/limits; anything else means no image input.
+  fetch("v1/limits").then(r => r.ok ? r.json() : {}).catch(() => ({})),
+]).then(([c, lim]) => {
+  VISION = (lim && lim.images) || {supported: false};
+  if (!VISION.supported) c.examples = c.examples.filter(e => !(e.images && e.images.length));
   CFG = c; on = [...c.versions];
   $("#rig").textContent = `${c.hardware} · ${c.dtype}`;
   $("#vs").innerHTML = c.versions.map((v, i) => `
@@ -1116,7 +1287,8 @@ fetch("demo/config").then(r => r.json()).then(c => {
   $("#ex").innerHTML = c.examples
     .map(e => `<option value="${esc(e.id)}">${esc(e.title || e.id)}</option>`).join("");
   $("#limits").textContent = `Runs on this machine, no API key. Up to ${MAX_QUESTIONS} `
-    + `questions per run, ${MAX_ANSWERS} options or levels each.`;
+    + `questions per run, ${MAX_ANSWERS} options or levels each`
+    + (VISION.supported ? `, and up to ${maxImages()} images.` : ".");
   load(c.examples[0].id);
 }).catch(e => fail("Could not reach the demo server: " + e.message));
 </script>
