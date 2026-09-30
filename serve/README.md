@@ -152,8 +152,9 @@ reports all of this under `images` (`supported: false` for a text-only release, 
 
 **No caches for images.** The prefix cache and the document cache (`--profile agent`) are
 text-only in this version. An image request never reads from them or writes to them, and
-it always reads its whole state. The vision tower still runs once per request, not once
-per question. Text requests to the same server use the caches as before.
+it always reads its whole state, image tokens included, once per question: four questions
+about one 1,024-token image read about 4,100 tokens. The vision tower itself runs once per
+request. Text requests to the same server use the caches as before.
 
 ## What is copied exactly
 
