@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Package builds (pip/uv install of this tree)
+build/
+*.egg-info/

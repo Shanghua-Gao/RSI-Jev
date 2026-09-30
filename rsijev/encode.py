@@ -137,8 +137,14 @@ def encode_question(tokenizer, state: str, q: Question, cfg: EncodeConfig,
 
 
 def collate(tokenizer, examples: Sequence[dict], max_options: int,
-            device: str | torch.device = "cpu") -> dict[str, torch.Tensor]:
-    """Right-pad. Positions are explicit, so padding side cannot shift them."""
+            device: str | torch.device = "cpu",
+            option_tokens: bool = True) -> dict[str, torch.Tensor]:
+    """Right-pad. Positions are explicit, so padding side cannot shift them.
+
+    `option_tokens=False` leaves `option_token_ids` at zero instead of looking up
+    each option's first token. Only the residual readout and prior anchoring read
+    that tensor; the lookups are two tokenizer calls per option, which a server
+    answering a trained readout pays for nothing."""
     pad = tokenizer.pad_token_id
     if pad is None:
         pad = tokenizer.eos_token_id
@@ -171,7 +177,7 @@ def collate(tokenizer, examples: Sequence[dict], max_options: int,
             perm[r, :k] = torch.tensor(e["option_perm"])
         if e.get("mode"):
             mid[r] = MODES.index(e["mode"])
-        if e.get("options"):
+        if option_tokens and e.get("options"):
             oti[r, :k] = torch.tensor(option_first_token_ids(tokenizer, e["options"]))
     return {k: v.to(device) for k, v in
             {"input_ids": ids, "attention_mask": am, "decision_index": di,

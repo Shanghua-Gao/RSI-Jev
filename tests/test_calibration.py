@@ -158,6 +158,7 @@ def test_the_api_reports_whether_it_is_calibrated():
     it, so GET /v1/limits says which it is getting."""
     app_src = (ROOT / "serve" / "app.py").read_text()
     assert '"calibration": calibration' in app_src
-    serve_src = (ROOT / "scripts" / "serve.py").read_text()
-    assert 'calibration=meta.get("calibration"' in serve_src, (
-        "scripts/serve.py must pass the loaded checkpoint's calibration to create_app")
+    # scripts/serve.py and `rsi-jev serve` both run serve/server.py.
+    serve_src = (ROOT / "serve" / "server.py").read_text()
+    assert 'calibration=s.meta.get("calibration"' in serve_src, (
+        "serve/server.py must pass the loaded checkpoint's calibration to create_app")

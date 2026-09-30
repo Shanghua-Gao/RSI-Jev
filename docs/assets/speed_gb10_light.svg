@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 546" width="1000" height="546" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="1000" height="546" fill="#fcfcfb"/>
+<text x="32" y="44" font-size="22" font-weight="700" fill="#0b0b0b">RSI-Jev v3.0 on an HP ZGX Nano (NVIDIA GB10): as first released → now</text>
+<text x="32" y="72" font-size="15" fill="#52514e">Milliseconds per request, median of 20 runs. Shorter is faster. Same model, same answers.</text>
+<circle cx="38" cy="96" r="6" fill="#a9a8a1"/><text x="50" y="101" font-size="14" fill="#52514e">v3.0 as first released</text>
+<circle cx="244.8" cy="96" r="6" fill="#9cc1ee"/><text x="256.8" y="101" font-size="14" fill="#52514e">now, default</text>
+<circle cx="377.6" cy="96" r="7" fill="#2a78d6"/><text x="389.6" y="101" font-size="14" fill="#52514e">now, with the profile that fits</text>
+<line x1="300.0" y1="110" x2="300.0" y2="490" stroke="#e6e5e0" stroke-width="1"/><text x="300.0" y="512" text-anchor="middle" font-size="13" fill="#52514e">0</text>
+<line x1="411.1" y1="110" x2="411.1" y2="490" stroke="#e6e5e0" stroke-width="1"/><text x="411.1" y="512" text-anchor="middle" font-size="13" fill="#52514e">100</text>
+<line x1="522.2" y1="110" x2="522.2" y2="490" stroke="#e6e5e0" stroke-width="1"/><text x="522.2" y="512" text-anchor="middle" font-size="13" fill="#52514e">200</text>
+<line x1="633.3" y1="110" x2="633.3" y2="490" stroke="#e6e5e0" stroke-width="1"/><text x="633.3" y="512" text-anchor="middle" font-size="13" fill="#52514e">300</text>
+<line x1="744.4" y1="110" x2="744.4" y2="490" stroke="#e6e5e0" stroke-width="1"/><text x="744.4" y="512" text-anchor="middle" font-size="13" fill="#52514e">400</text>
+<text x="800.0" y="534" text-anchor="end" font-size="13" fill="#52514e">ms</text>
+<text x="32" y="146.0" font-size="16" font-weight="600" fill="#0b0b0b">1 question</text><text x="32" y="166.0" font-size="13.5" fill="#52514e">80-token document</text>
+<line x1="324.4" y1="149.0" x2="337.2" y2="149.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="337.2" cy="149.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 33.5 ms</title></circle>
+<circle cx="329.8" cy="149.0" r="6" fill="#9cc1ee"><title>now, default: 26.8 ms</title></circle>
+<circle cx="324.4" cy="149.0" r="7" fill="#2a78d6"><title>now, --profile server: 21.9 ms</title></circle>
+<text x="349.2" y="154.0" font-size="13" fill="#52514e">33</text>
+<text x="312.4" y="137.0" text-anchor="middle" font-size="13" fill="#0b0b0b">22</text>
+<text x="968" y="147.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">1.5×</text><text x="968" y="165.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile server</text>
+<text x="32" y="208.0" font-size="16" font-weight="600" fill="#0b0b0b">1 question</text><text x="32" y="228.0" font-size="13.5" fill="#52514e">1,052-token document</text>
+<line x1="376.1" y1="211.0" x2="464.4" y2="211.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="464.4" cy="211.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 148.0 ms</title></circle>
+<circle cx="400.9" cy="211.0" r="6" fill="#9cc1ee"><title>now, default: 90.8 ms</title></circle>
+<circle cx="376.1" cy="211.0" r="7" fill="#2a78d6"><title>now, --profile server: 68.5 ms</title></circle>
+<text x="476.4" y="216.0" font-size="13" fill="#52514e">148</text>
+<text x="364.1" y="199.0" text-anchor="middle" font-size="13" fill="#0b0b0b">68</text>
+<text x="968" y="209.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">2.2×</text><text x="968" y="227.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile server</text>
+<text x="32" y="270.0" font-size="16" font-weight="600" fill="#0b0b0b">32 questions</text><text x="32" y="290.0" font-size="13.5" fill="#52514e">80-token document</text>
+<line x1="484.8" y1="273.0" x2="618.8" y2="273.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="618.8" cy="273.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 286.9 ms</title></circle>
+<circle cx="516.1" cy="273.0" r="6" fill="#9cc1ee"><title>now, default: 194.5 ms</title></circle>
+<circle cx="484.8" cy="273.0" r="7" fill="#2a78d6"><title>now, --profile server: 166.4 ms</title></circle>
+<text x="630.8" y="278.0" font-size="13" fill="#52514e">287</text>
+<text x="472.8" y="261.0" text-anchor="middle" font-size="13" fill="#0b0b0b">166</text>
+<text x="968" y="271.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">1.7×</text><text x="968" y="289.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile server</text>
+<text x="32" y="332.0" font-size="16" font-weight="600" fill="#0b0b0b">32 questions</text><text x="32" y="352.0" font-size="13.5" fill="#52514e">1,052-token document</text>
+<line x1="582.1" y1="335.0" x2="789.4" y2="335.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="789.4" cy="335.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 440.5 ms</title></circle>
+<circle cx="636.6" cy="335.0" r="6" fill="#9cc1ee"><title>now, default: 302.9 ms</title></circle>
+<circle cx="582.1" cy="335.0" r="7" fill="#2a78d6"><title>now, --profile server: 253.9 ms</title></circle>
+<text x="801.4" y="340.0" font-size="13" fill="#52514e">440</text>
+<text x="570.1" y="323.0" text-anchor="middle" font-size="13" fill="#0b0b0b">254</text>
+<text x="968" y="333.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">1.7×</text><text x="968" y="351.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile server</text>
+<text x="32" y="394.0" font-size="16" font-weight="600" fill="#0b0b0b">Agent asks again</text><text x="32" y="414.0" font-size="13.5" fill="#52514e">same 1,052-token state</text>
+<line x1="328.5" y1="397.0" x2="465.1" y2="397.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="465.1" cy="397.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 148.6 ms</title></circle>
+<circle cx="402.8" cy="397.0" r="6" fill="#9cc1ee"><title>now, default: 92.6 ms</title></circle>
+<circle cx="328.5" cy="397.0" r="7" fill="#2a78d6"><title>now, --profile agent: 25.7 ms</title></circle>
+<text x="477.1" y="402.0" font-size="13" fill="#52514e">149</text>
+<text x="316.5" y="385.0" text-anchor="middle" font-size="13" fill="#0b0b0b">26</text>
+<text x="968" y="395.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">5.8×</text><text x="968" y="413.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile agent</text>
+<text x="32" y="456.0" font-size="16" font-weight="600" fill="#0b0b0b">Agent state grows</text><text x="32" y="476.0" font-size="13.5" fill="#52514e">~100 tokens a step</text>
+<line x1="358.5" y1="459.0" x2="458.4" y2="459.0" stroke="#e6e5e0" stroke-width="4" stroke-linecap="round"/>
+<circle cx="458.4" cy="459.0" r="6" fill="#a9a8a1"><title>v3.0 as first released: 142.6 ms</title></circle>
+<circle cx="398.7" cy="459.0" r="6" fill="#9cc1ee"><title>now, default: 88.8 ms</title></circle>
+<circle cx="358.5" cy="459.0" r="7" fill="#2a78d6"><title>now, --profile agent: 52.6 ms</title></circle>
+<text x="470.4" y="464.0" font-size="13" fill="#52514e">143</text>
+<text x="346.5" y="447.0" text-anchor="middle" font-size="13" fill="#0b0b0b">53</text>
+<text x="968" y="457.0" text-anchor="end" font-size="19" font-weight="700" fill="#0b0b0b">2.7×</text><text x="968" y="475.0" text-anchor="end" font-size="12.5" fill="#52514e">--profile agent</text>
+</svg>

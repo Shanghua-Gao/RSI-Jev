@@ -24,7 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 # window and the rest describe the project, both of which outlive a version.
 RELEASE_DOCS = []
 PROJECT_DOCS = ["BENCHMARKS.md", "CONTRIBUTING.md", "README.md", "EXPLORE.md",
-                "rsijev/README.md", "serve/README.md"]
+                "rsijev/README.md", "serve/README.md", "docs/inference.md"]
 DOCS = RELEASE_DOCS + PROJECT_DOCS
 MARKER = re.compile(r"\*Describes release (v\d+\.\d+) · updated (\d{4}-\d{2}-\d{2})\*")
 

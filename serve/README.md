@@ -5,7 +5,8 @@ written against Jev works against this without changes. Getting a checkpoint and
 the rest of the project: the [root README](../README.md).
 
 ```bash
-python scripts/serve.py --ckpt path/to/rsi-jev-v1.0-qwen3.5-2b --port 8000
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --port 8000
+# from a clone, the same thing: python scripts/serve.py --ckpt shgao/rsi-jev-v3.0-qwen3.5-2b --port 8000
 
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
@@ -20,6 +21,46 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 }'
 ```
 
+<!-- response: v3.0 -->
+```json
+{
+  "model": "jev-latest",
+  "answers": {
+    "refund":     {"type": "noul", "noul": 0.995},
+    "department": {"type": "choice", "choice": "billing",
+                   "probabilities": {"billing": 1.000, "technical": 0.000},
+                   "confidence": 0.999},
+    "urgency":    {"type": "score", "score": 1.081,
+                   "legend": {"0": "Routine", "1": "Urgent", "2": "Emergency"},
+                   "probabilities": {"0": 0.178, "1": 0.563, "2": 0.259},
+                   "confidence": 0.345}
+  },
+  "usage": {"input_tokens": 136, "output_tokens": 3}
+}
+```
+
+That is the answer **RSI-Jev-v3.0-2B** actually returns for that request: bf16 on a GB10
+with fla, probabilities rounded to three places. `tests/test_documented_example.py` re-runs
+it against the checkpoint. Note that `score` is an index into the rubric, so 1.081 is
+"Urgent", not a fraction of the scale.
+
+The model is a checkpoint directory, a Hugging Face repo id, or an alias (`v3.0-2b`,
+`v2.1-2b`, `v2.0-2b`, `v1.0-2b`, `v1.0-0.8b`). A repo id is downloaded once into the
+standard Hugging Face cache. The same request from Python, with no server:
+
+```python
+from rsijev import Decider
+d = Decider("shgao/rsi-jev-v3.0-qwen3.5-2b")
+answers = d.decide(state, questions)       # the "answers" object above
+```
+
+`Decider` loads the checkpoint the way the server does and runs the server's own request
+path, so it returns the same answers (`tests/test_easy_infer.py`).
+
+<details>
+<summary>the same request against v1.0, which ships no calibration</summary>
+
+<!-- response: v1.0 -->
 ```json
 {
   "model": "jev-latest",
@@ -37,12 +78,10 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 }
 ```
 
-That is the answer **RSI-Jev-v1.0-2B** actually returns for that request — bf16 on a
-GB10, probabilities rounded to three places. v2.0 and v2.1 return different probabilities
-for the same request: they ship a fitted calibration that rescales every answer, so their
-numbers here would be sharper and their `confidence` higher. The worked example stays on
-v1.0 because a test re-runs it against that checkpoint. Note that `score` is an index into the
-rubric, so 1.197 is "Urgent", not a fraction of the scale.
+RSI-Jev-v1.0-2B, bf16 on a GB10. The test re-runs this one too. Later releases are
+different weights and ship a fitted calibration, so their probabilities differ from these.
+
+</details>
 
 **Ask whether you are getting calibrated probabilities.** `GET /v1/limits` reports a
 `calibration` field: `none` for a v1.0 checkpoint, or the method a v2.0 or v2.1 one shipped, e.g.
@@ -127,16 +166,20 @@ inference procedures despite receiving equivalent payloads."*
 
 ## Speed
 
-**Install `fla`.** Without it, the DeltaNet layers of the Qwen3.5 tower run on a plain
-PyTorch fallback. With `flash-linear-attention` and `fla-core` 0.5.2 installed, a GB10 runs
-about twice as fast. Its release verify still agrees 1.0000 with the training record on
-all three sets.
+**Install `fla`** (`pip install "rsi-jev[fast]"`, or `pip install -e ".[fast]"` in a
+clone). Without it, the DeltaNet layers of the Qwen3.5 tower run on a plain PyTorch
+fallback. With `flash-linear-attention` and `fla-core` 0.5.2 installed, a GB10 answers
+1.25–1.6x faster ([`docs/inference.md`](../docs/inference.md#how-much-faster)). Its release verify still agrees 1.0000 with the training record on all
+three sets. The server's startup log says whether fla is active on this machine;
+`rsi-jev env` prints the same without loading a model. `causal-conv1d` is optional: it
+needs an nvcc build and measured little here.
 
 The document is read once per request and every question continues from that read. Below
 about 480 saved tokens, reading it once per question is faster, and the server picks the
 faster path. `RSIJEV_MIN_SAVED_TOKENS` overrides the threshold.
 
-Two switches, both off by default. Measured on one GB10 with v3.0-2B, a bf16 tower and fla,
+Two switches, both off by default. `--profile agent` turns on the first and `--profile
+server` the second; a variable already set in the environment wins over the profile. Measured on one GB10 with v3.0-2B, a bf16 tower and fla,
 p50 for 1 / 8 / 32 questions:
 
 | path | 80-token doc | 1,052-token doc |
@@ -153,10 +196,12 @@ new tail. An agent transcript growing by 50–200 tokens per step drops from 78�
 `tests/test_doc_cache.py`). A cold single question costs one extra pass: 49 ms instead of
 31 ms. Limits are `RSIJEV_DOC_CACHE_ENTRIES` (32) and `RSIJEV_DOC_CACHE_MB` (2048).
 
-**Compile** (`RSIJEV_COMPILE=1`). torch.compile of each decoder layer and the scorer. The
-first requests compile, which takes about 40 s. Against the bf16 tower: 99.9% / 99.9% / 99.0%
-of answers agree on the release verify sets, and suite ECE after calibration moves by
-+0.0001.
+**Compile** (`RSIJEV_COMPILE=1`). torch.compile of each decoder layer and the scorer.
+`rsi-jev serve` runs two warm-up requests before it listens: 60 s on a GB10 with compile
+on, about 1 s without. A request of a shape it has not seen yet still compiles once, for
+several seconds (8–18 s for the first 32-question request here). Against the bf16 tower:
+99.9% / 99.9% / 99.0% of answers agree on the release verify sets, and suite ECE after
+calibration moves by +0.0001.
 
 ## Layout
 
@@ -166,7 +211,12 @@ of answers agree on the release verify sets, and suite ECE after calibration mov
 | `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
 | `accel.py` | the opt-in compile switch |
 | `app.py` | routes, schemas, auth, error envelopes |
-| `../scripts/serve.py` | loads a release checkpoint and runs uvicorn |
+| `release.py` | finds a checkpoint (directory, Hugging Face id or alias) and loads it |
+| `server.py` | loads a release for serving, prints what is active, runs uvicorn |
+| `decider.py` | `Decider`: the same request path in-process, `from rsijev import Decider` |
+| `runtime.py` | device and precision choice, `--profile`, kernel detection for the startup log |
+| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `bench`, `download`, `env` |
+| `../scripts/serve.py` | the same server from a clone, without installing |
 
 `infer.py` exists because `evaluate.predict` takes `Case` objects and a `Case`
 requires gold, which a served request does not have. Rather than fabricate a
