@@ -15,6 +15,19 @@ Out of the box it is now **1.3–1.6x faster**. A
 long-running server gets **up to 2.2x** with one flag, and an agent that keeps asking about the
 same conversation gets **up to 5.8x**.
 
+If some answers are allowed to change, it goes further. These are the fastest versions we found,
+all measured in one session:
+
+| | 1 question, short document | 1 question, 1,000-token document | 32 questions on it | answers that change |
+|---|---|---|---|---|
+| v3.0 as first released | 35 ms | 148 ms | 443 ms | — |
+| now, same answers (`--profile server`) | 24 ms | 69 ms | 255 ms | none |
+| FP8 weights + compile | 22 ms | **57 ms** | **233 ms** | 2–8% |
+| 4-bit weights on vLLM | **17 ms** | 88 ms | 2,234 ms | 23–31% of MMLU-Pro |
+
+Giving up exactness buys 1.1–1.4x over the lossless version. 4-bit on vLLM is the fastest for one
+short question and far slower for many questions on one document.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/speed_gb10_dark.svg">
   <img src="assets/speed_gb10_light.svg" alt="Milliseconds per request on an HP ZGX Nano for six workloads, v3.0 as first released against now: 1.5x to 5.8x faster with the profile that fits." width="100%">
@@ -165,4 +178,5 @@ each held to the same rule:
 
 *Measured on an HP ZGX Nano AI Station with the NVIDIA GB10 Grace Blackwell Superchip, provided by
 HP and NVIDIA. Medians of 20 runs, one configuration per process, bf16 model; raw data in
-[`assets/bench_gb10.json`](assets/bench_gb10.json).*
+[`assets/bench_gb10.json`](assets/bench_gb10.json) and, for the fastest-versions table,
+[`assets/bench_fastest_gb10.json`](assets/bench_fastest_gb10.json).*
