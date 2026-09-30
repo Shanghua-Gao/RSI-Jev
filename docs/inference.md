@@ -36,7 +36,9 @@ stay within 0.022 of it.
 - **A** is the public code at release (`1767f6e`), in a fresh venv from `requirements.txt`
   with no fla. That is what a user got on release day.
 - **B** is the current code installed with `rsi-jev[fast]`.
-- **C** is B with `RSIJEV_COMPILE=1`, and **D** is B with `RSIJEV_DOC_CACHE=1`.
+- **C** is B with `RSIJEV_COMPILE=1`, and **D** is B with `RSIJEV_DOC_CACHE=1`. Every cell
+  asks about the same document 23 times, so in D all but the first are cache hits: D's
+  grid rows are the "same state again" case, not a new document.
 - All four ran on torch 2.14.0+cu130 and transformers 5.17.0, with a bf16 tower.
 - The raw results are in [`assets/bench_gb10.json`](assets/bench_gb10.json), and the script
   is [`assets/bench_gb10.py`](assets/bench_gb10.py).
