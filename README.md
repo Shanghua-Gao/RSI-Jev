@@ -38,6 +38,18 @@ factory photos, with no defect examples, it scores 86.6 AUROC, against 82.9 for 
   <br><sub>Breakout from pixels: each frame, it says which of five lanes the ball is in. Game from hr98w/jev-visual (MIT); photos from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
 </p>
 
+On 30 image questions from the gallery pools, v4.0-VL served over HTTP answered in 69 ms
+(median) with a probability for every option. Its base model, Qwen3.5-2B, run as a chat model
+that writes a JSON answer, took 540 ms and gives no probability. Both were run on a GB10, one
+request at a time.
+
+<p align="center">
+  <img src="site/assets/v4/chat-vs-rsi.gif" width="640" alt="Replay at measured speed: RSI-Jev v4.0-VL shows probabilities for each answer in about a tenth of a second while Qwen3.5-2B, as a chat model, streams a JSON reply">
+  <br><sub>A replay of measured timings, not a live recording. The checkout screen and chart are ours; dog photo by Joselodos (CC0); capsules from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+</p>
+
+To try it in Colab: [`notebooks/rsi_jev_v4_vl_quickstart.ipynb`](notebooks/rsi_jev_v4_vl_quickstart.ipynb).
+
 ## RSI process
 
 <p align="center">
