@@ -135,3 +135,49 @@ def test_the_gate_is_chosen_for_the_machine(monkeypatch):
 
     monkeypatch.setenv("RSIJEV_MIN_SAVED_TOKENS", "0")
     assert infer.default_min_saved_tokens() == 0
+
+
+class _DictStateLayer:
+    """transformers 5.17's linear-attention cache layer, reduced to what matters:
+    states live in DICTS keyed by state index, reorder_cache assigns into them, and
+    the forward pass then updates them in place."""
+
+    def __init__(self):
+        self.conv_states = {0: torch.arange(4.0).reshape(1, 4)}
+        self.recurrent_states = {0: torch.ones(1, 2)}
+        self.is_conv_states_initialized = {0: True}
+        self.is_recurrent_states_initialized = {0: True}
+        self.has_previous_state = {0: True}
+        self.conv_kernel_size = {0: 4}
+
+    def reorder_cache(self, idx):
+        self.conv_states[0] = self.conv_states[0].index_select(0, idx)
+        self.recurrent_states[0] = self.recurrent_states[0].index_select(0, idx)
+
+
+class _Cache:
+    def __init__(self):
+        self.layers = [_DictStateLayer()]
+
+    def reorder_cache(self, idx):
+        for layer in self.layers:
+            layer.reorder_cache(idx)
+
+
+def test_replicating_never_touches_the_original_cache():
+    """With dict-held states (transformers >= 5.17) a shallow copy shared the dicts,
+    so the question pass wrote its own suffix into the document's cache: every
+    batch after the first, and every document-cache hit, started from the wrong
+    state (32 questions on a 1,052-token document flipped 3 answers on a GB10)."""
+    from serve.infer import _replicate
+    src = _Cache()
+    conv, rec = src.layers[0].conv_states[0].clone(), src.layers[0].recurrent_states[0].clone()
+    rep = _replicate(src, 3, "cpu")
+    assert rep.layers[0].conv_states[0].shape == (3, 4)
+    rep.layers[0].conv_states[0].add_(100)             # the forward's in-place update
+    rep.layers[0].recurrent_states[0].mul_(7)
+    rep.layers[0].has_previous_state[0] = False
+    assert src.layers[0].conv_states[0].shape == (1, 4)
+    assert torch.equal(src.layers[0].conv_states[0], conv)
+    assert torch.equal(src.layers[0].recurrent_states[0], rec)
+    assert src.layers[0].has_previous_state[0] is True

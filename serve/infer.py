@@ -141,7 +141,12 @@ def _replicate(cache, rows: int, device):
                      "is_recurrent_states_initialized", "has_previous_state",
                      "conv_kernel_size"):
             val = getattr(src, attr, None)
-            if isinstance(val, list):
+            # Lists up to transformers 5.16, dicts keyed by state index from 5.17.
+            # Missing the dicts shared them with the caller's cache, so reordering the
+            # replica rewrote the original: every batch after the first, and every
+            # document-cache hit, continued from a state that already held another
+            # question.
+            if isinstance(val, (list, dict)):
                 setattr(dst, attr, val.copy())
     replica.reorder_cache(torch.zeros(rows, dtype=torch.long, device=device))
     return replica
