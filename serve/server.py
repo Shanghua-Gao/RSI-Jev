@@ -86,7 +86,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
         else:
             s.prep = ImagePrep(meta["base_model"], VisionConfig(
                 image_token_budget=v["image_token_budget"],
-                min_tokens_per_image=v["min_tokens_per_image"]))
+                min_tokens_per_image=v["min_tokens_per_image"]), revision=v.get("revision"))
         # The budget is added to the text length, so no state is cut shorter
         # because it came with an image.
         s.venc = dataclasses.replace(enc, max_length=enc.max_length + v["image_token_budget"],

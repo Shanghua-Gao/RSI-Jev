@@ -130,16 +130,19 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                       **dict(spec.get("arch_extra") or {}))
     vb = vision_block(meta) if vision is not False else None
     if vb:
-        from rsijev.vision import IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual
+        from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
+                                   vision_revision)
         vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
+        revision = vision_revision(vb, meta["base_model"])
         # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
         # is how the vision releases were trained and gated.
         model = VisionDecisionModel(tower, cfg.hidden_size, arch,
-                                    visual=load_visual(meta["base_model"]),
+                                    visual=load_visual(meta["base_model"], revision=revision),
                                     image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD),
                                     vcfg=vcfg).to(device)
         meta["vision"] = {"image_token_budget": vcfg.image_token_budget,
-                          "min_tokens_per_image": vcfg.min_tokens_per_image}
+                          "min_tokens_per_image": vcfg.min_tokens_per_image,
+                          "revision": revision}
     else:
         model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
