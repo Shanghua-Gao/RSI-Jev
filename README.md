@@ -137,7 +137,28 @@ Architecture, training recipe and limitations are on each model card.
 [`BENCHMARKS.md`](BENCHMARKS.md) is what these numbers mean and how to re-run them;
 [`versions/v3.0.md`](versions/v3.0.md) is the full record, every figure with its caveats.
 
-To run them:
+To run one:
+
+```bash
+pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --port 8000
+
+curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "model": "jev-latest",
+  "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
+  "questions": {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}}
+}'
+```
+
+The first run downloads the checkpoint and its base model into the Hugging Face cache.
+`[fast]` adds the fused DeltaNet kernels (CUDA only, 1.25–1.6x on a GB10); the startup log
+says whether they are active. In Python, with no server:
+`from rsijev import Decider; Decider("shgao/rsi-jev-v3.0-qwen3.5-2b").decide(state, questions)`.
+An existing Jev client works unchanged once its base URL points here.
+[`docs/inference.md`](docs/inference.md) is the inference guide: which setup to pick, what
+each costs on a GB10, and what we tried to make it faster.
+
+To work on the code, clone it instead:
 
 ```bash
 git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -r requirements.txt
@@ -146,7 +167,7 @@ git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -
 | | | |
 |---|---|---|
 | **Compare releases** | `python scripts/demo_web.py` | every released version side by side, answers moving as you type |
-| **Serve** | `python scripts/serve.py --ckpt DIR` | `POST /v1/systemone`, Jev's own request and answer shapes → [`serve/README.md`](serve/README.md) |
+| **Serve** | `python scripts/serve.py --ckpt DIR` | `POST /v1/systemone`, Jev's own request and answer shapes → [`serve/README.md`](serve/README.md). `--ckpt` also takes a Hugging Face id |
 | **Load** | `load_release(path, device="cuda")` | from `scripts/load_release.py`; a published checkpoint carries its own code |
 | **Score the suite** | `python scripts/suite.py --ckpt DIR` | the table above; `--list` names each benchmark's pinned source |
 | **Retrain** | `python scripts/release_train.py` | one H100, ~50 min per seed at 2B → [`rsijev/README.md`](rsijev/README.md) |
@@ -197,6 +218,7 @@ Thank you to the people who have sent that feedback:
 | [`BENCHMARKS.md`](BENCHMARKS.md) | **what each number means** and how to reproduce it |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | **what to send and what happens to it** |
 | [`serve/README.md`](serve/README.md) | **the HTTP API** — copied from Jev exactly, except where stated |
+| [`docs/inference.md`](docs/inference.md) | **running it** — setups, measured latency, and the speed-ups tried |
 | [`rsijev/README.md`](rsijev/README.md) | **the code** — and which files the loop may rewrite |
 
 ## Acknowledgements
