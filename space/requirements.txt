@@ -1,0 +1,3 @@
+# The package from GitHub: [vision] is Pillow and torchvision, which image requests need;
+# [fast] is the fused DeltaNet kernels (CUDA). Gradio itself comes from sdk_version in README.md.
+rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev
