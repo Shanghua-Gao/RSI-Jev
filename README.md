@@ -21,6 +21,23 @@ The loop running the research is the **next version of
 *Want to collaborate, or support the work with compute or funding? Reach out to
 **[Shanghua Gao](https://shgao.site)**.*
 
+## Reads images
+
+v4.0-VL answers the same typed questions about a photo, a screenshot or a chart. On VisA
+factory photos, with no defect examples, it scores 86.6 AUROC, against 82.9 for Gemma 4 12B and
+81.1 for Jev-Omni on the same 2,162 photos. More on the
+[project page](https://shanghua-gao.github.io/RSI-Jev/#images) and in the
+[full gallery](https://shanghua-gao.github.io/RSI-Jev/gallery.html), misses included.
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
+</p>
+<p align="center">
+  <img src="site/assets/v4/breakout.gif" width="640" alt="RSI-Jev v4.0-VL playing Breakout: each frame it picks which of five lanes holds the ball">
+  <br><sub>Breakout from pixels: each frame, it says which of five lanes the ball is in. Game from hr98w/jev-visual (MIT); photos from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+</p>
+
 ## RSI process
 
 <p align="center">
