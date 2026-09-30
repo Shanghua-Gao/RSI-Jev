@@ -21,8 +21,8 @@ A state holds one literal "<image>" per image, where that image goes, or none
 are untouched: the expanded state is an ordinary string whose image run is
 tokenised as N special tokens.
 
-Ported from the internal release code the vision releases were trained and
-gated with (rc-C-vis3-release). What is new here only serves requests faster
+Ported from the release code the vision releases were trained and gated with.
+What is new here only serves requests faster
 and does not change a number: `prepare` runs the image processor once per
 request instead of once per question, `VisionDecisionModel` takes
 precomputed `image_embeds` so the ViT runs once per request as well, and

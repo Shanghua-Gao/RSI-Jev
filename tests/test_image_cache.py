@@ -193,3 +193,28 @@ def test_token_index_positions_would_be_caught(parts, monkeypatch):
     monkeypatch.setattr(V, "mrope_position_ids", token_index)
     got = _cached(parts, state, _imgs(n))[0]
     assert _worst(got, ref) > 10 * ATOL           # read-once itself is ~3e-8 here
+
+
+def test_the_worker_path_plans_read_once_and_matches(parts, monkeypatch):
+    """The server plans on the request thread (image processor, encoding, M-RoPE
+    positions) and runs the plan on the GPU worker (vision tower, prefix, suffixes)."""
+    from serve.batcher import ModelRunner
+    tok, prep, vm, _, enc = parts
+    monkeypatch.setenv("RSIJEV_MIN_SAVED_TOKENS", "0")
+    monkeypatch.delenv("RSIJEV_DOC_CACHE", raising=False)
+    runner = ModelRunner(vm, tok, enc, spec_max_options=8, device="cpu", prep=prep, venc=enc)
+    state, n = STATES[0]
+    plan = runner.plan(state, QS, _imgs(n))
+    assert plan["path"] == "image" and plan["image_path"] == "cached"
+    probs, tokens = runner.one(plan)
+    ref, ref_tokens = _uncached(parts, state, _imgs(n))
+    assert tokens < ref_tokens
+    assert max(abs(a - b) for p, r in zip(probs, ref) for a, b in zip(p, r.probs)) < ATOL
+
+
+def test_sorted_and_trimmed_suffix_rows_still_match(parts):
+    state, n = STATES[2]
+    ref = _uncached(parts, state, _imgs(n))[0]
+    got = _cached(parts, state, _imgs(n), batch_size=2, sort=True, trim_options=True)[0]
+    assert _argmaxes(got) == _argmaxes(ref)
+    assert _worst(got, ref) < ATOL

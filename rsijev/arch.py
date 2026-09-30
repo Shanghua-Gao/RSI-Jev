@@ -3,7 +3,8 @@
 The base is `Qwen/Qwen3.5-0.8B-Base`, which is NOT a plain decoder:
 
   * multimodal (`Qwen3_5ForConditionalGeneration`): a text tower plus a vision
-    tower. The vision tower is frozen and unused here.
+    tower. The vision tower is frozen and unused here; rsijev/vision.py loads it
+    for image states (v4.0-VL on).
   * the text tower repeats `linear_attention x3 + full_attention`, so **only
     every 4th layer can attend freely**. Where a readout is attached is a real
     choice, not a detail.

@@ -83,9 +83,14 @@ def checkpoint_name(ref: str | Path, path: str | Path | None = None) -> str:
 
 
 def release_version(name: str) -> str | None:
-    """`v3.0` out of `rsi-jev-v3.0-qwen3.5-2b`, or None."""
-    found = re.search(r"v\d+\.\d+", name)
-    return found.group(0) if found else None
+    """`v3.0` out of `rsi-jev-v3.0-qwen3.5-2b`, `v4.0-VL` out of
+    `rsi-jev-v4.0-vl-qwen3.5-2b`, or None. The only suffix read is `-vl`: any other
+    word after the number is the base model's name, not the release's."""
+    found = re.search(r"v\d+\.\d+(-vl)?(?![a-z])", name, re.IGNORECASE)
+    if not found:
+        return None
+    return found.group(0)[:len(found.group(0)) - len(found.group(1) or "")] + \
+        (found.group(1) or "").upper()
 
 
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
@@ -95,7 +100,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     stays fp32 -- running it in reduced precision is the bug that cost this
     project a whole version. Evaluation leaves this None and gets fp32.
 
-    A checkpoint trained with images (v4.0 on: a `vision` block in meta.json) is
+    A checkpoint trained with images (v4.0-VL on: a `vision` block in meta.json) is
     loaded with the base model's own vision tower beside the text tower, as
     `rsijev.vision.VisionDecisionModel`; a text request runs exactly the text
     path. `vision=False` loads it text-only. `meta["vision"]` then says what an

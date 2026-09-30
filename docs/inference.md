@@ -10,7 +10,7 @@ includes a network hop.
 
 ## How much faster
 
-[`speed.md`](speed.md) is the story of how these speedups were found, including what did not ship.
+[`speed.md`](speed.md) explains where the time goes and why these changes work.
 
 We ran one benchmark in one session on the GB10. Every configuration used the same
 checkpoint, documents and questions, and each ran in its own process, one at a time. Each
@@ -69,7 +69,7 @@ The first run downloads the checkpoint (5.3 GB) and its base model into the stan
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v3.0-qwen3.5-2b`;
-- an alias: `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -107,7 +107,7 @@ From a clone, without installing, run
 
 ### Images
 
-A release trained with images (v4.0 on) also answers questions about 1–4 images. Install
+A release trained with images (v4.0-VL on) also answers questions about 1–4 images. Install
 the extra (`pip install "rsi-jev[vision]"`: Pillow and torchvision), then send the images
 as data URLs and mark where each one goes in the state with `<image>`:
 
@@ -118,8 +118,33 @@ d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
 ```
 
 Over HTTP the same request carries `"images": ["data:image/jpeg;base64,..."]` next to
-`state`. Image requests do not use the prefix or document cache. Limits and an example:
-[`serve/README.md`](../serve/README.md#images).
+`state`. Full limits and an example: [`serve/README.md`](../serve/README.md#images). In short:
+
+- 1–4 PNG, JPEG or WebP images per request, as data URLs; http(s) URLs are not fetched.
+- 1,024 image tokens per question, split evenly: one image up to about one megapixel, four up
+  to 256 tokens each. Larger images are scaled down.
+- 2,048 text tokens on top. A longer state is cut from its start, as for text; if the cut
+  would reach an image, the request is refused.
+- The vision tower runs once per request, but each question reads the whole state with its
+  image tokens again: image requests use neither the prefix cache nor the document cache.
+  Asking four questions about one image costs about four times the tokens of one.
+
+Measured on the GB10 with v4.0-VL over HTTP (bf16 tower, fla, default settings; median of
+20 requests after 3 warm-up):
+
+| request | input tokens | median | fastest |
+|---|---|---|---|
+| text, 1 question | 34 | 79 ms | 39 ms |
+| text, 4 questions | 157 | 90 ms | 81 ms |
+| one 640 px photo, 1 question | 356 | 203 ms | 146 ms |
+| one 640 px photo, 4 questions | 1,445 | 387 ms | 318 ms |
+| one 1,600 px photo, 1 question | 1,016 | 496 ms | 455 ms |
+| one 1,600 px photo, 4 questions | 4,085 | 1,129 ms | 1,067 ms |
+
+**Another job was using the GPU during this run**, so read these as upper bounds: the text
+rows, which take 22–27 ms on an idle machine ([How much faster](#how-much-faster)), came out
+about three times slower here. The ratio between rows is the useful part: an image costs
+roughly what the same number of text tokens would, and the photo's size decides that number.
 
 ## A local, drop-in Jev replacement
 
@@ -183,7 +208,8 @@ the benchmark above.
 | one request at a time | `rsi-jev serve <id>` | 1 question: 27 ms (80-token doc), 91 ms (1,052 tokens). 32 questions: 195 / 303 ms |
 | an agent asking again about the same or a growing state | `--profile agent` | same state again: 26 ms. Growing by 101 tokens a step: 53 ms per step, 1 question |
 | a long-running server | `--profile server` | 32 questions on 1,052 tokens: 254 ms. Warm-up at startup: 60 s |
-| many concurrent clients, one short question each | vLLM backend, **experimental**, on the unreleased `vllm-backend` branch | 84 requests/s at 32 clients, against 34–37 for this server |
+| many concurrent clients, one short question each | `--batch-window-ms 0` | 72 requests/s at 8 and 32 clients, against 32–35 without it (vLLM backend, experimental: 84) |
+| questions of very different lengths in one request | `RSIJEV_SORT_ROWS=1 RSIJEV_TRIM_OPTIONS=1` | 32 questions with 2–40 options: 1.7–1.8x. 32 uniform questions: 1.08–1.13x |
 | Python, no server | `Decider(...)` | the server's numbers minus HTTP |
 | CPU only | `--device cpu` (fp32) | on the GB10's Arm CPU: 1 question 733 ms, 3 questions 1.5 s, 32 questions on 1,052 tokens 16.7 s |
 | Apple Silicon | torch on MPS or CPU | not measured; an MLX port is in progress and not released |
@@ -251,7 +277,16 @@ default (`RSIJEV_DOC_CACHE_ENTRIES`, `RSIJEV_DOC_CACHE_MB`).
 
 ### Concurrency
 
-The server runs one forward pass at a time, so throughput stays flat as clients are added.
+By default the server runs one request at a time, so throughput stays flat as clients are
+added. With `--batch-window-ms 0`, the single questions of requests waiting at the same time
+share a forward pass (up to 1,280 padded tokens), and 1-question requests on an 80-token document
+go from 32 to 72 req/s at 8 and 32 clients. Long documents and multi-question requests are not
+batched, because on the GB10 they gain nothing from it. It is opt-in because batching moves
+probabilities slightly: agreement with unbatched serving is 1.000 / 1.000 / 0.990, and ECE
+moves +0.0016.
+`pip install "rsi-jev[http]"` adds orjson, uvloop and httptools, which the server uses when they
+are present.
+
 These figures come from an HTTP benchmark in an earlier session, with closed-loop clients:
 
 | request | 1 client | 8 clients | 32 clients |
@@ -319,6 +354,9 @@ roundtrip, and suite ECE within ±0.003 (see [the last section](#checks-every-sp
 | **document cache** | same state again: 3.0–3.6x faster than B on 1,052 tokens, 1.2–1.5x on 80; growing state 1.7–1.8x | every argmax equal to a fresh read; \|dp\| 1.6e-6 on CPU, 4.6e-4 on GPU | **shipped**, `--profile agent` |
 | **torch.compile** | 1.1–1.3x faster than B (benchmark above); 60 s warm-up | agreement 0.9985 / 0.999 / 0.990 with bf16, roundtrip 0.995, ECE +0.0001 | **shipped**, `--profile server` |
 | **bf16 tower** (scorer stays fp32) | 3.4–6.2x against fp32 (measured on an A100 slice) | 0.4–1.6% of single predictions flip; pooled top-1 moves ≤ 0.003 | **shipped**, default on CUDA; evaluation stays fp32 |
+| **one-pass tokenization, one GPU worker, orjson** | 32 questions on 1,052 tokens: 309 → 277 ms; tokenization 29 → 2.8 ms | bit-identical on all 12,389 verify, roundtrip and suite answers | **shipped**, default |
+| **micro-batching** | 1 short question, 8–32 clients: 32 → 72 req/s | agreement 1.000 / 1.000 / 0.990 with unbatched serving, roundtrip 0.990, ECE +0.0016 | passes; opt-in, `--batch-window-ms` |
+| **rows sorted by length, option slots trimmed** | mixed-length 32 questions: 1.7–1.8x; uniform: 1.08–1.13x | agreement 1.000 everywhere, roundtrip 0.990, ECE −0.00004 / ±0 | passes; opt-in, `RSIJEV_SORT_ROWS`, `RSIJEV_TRIM_OPTIONS` |
 | **CUDA graphs** | slower on the GB10. On an H100, 12.1 ms for one question on an unreleased branch | — | not on this machine; H100 path not released |
 | **batch size** | ±15% at most | — | unchanged (16): the GPU is compute-bound |
 | **FP8** weights and activations | slower eager: 45 ms against 24 ms for one question | agreement 0.9795 / 0.9755 / 0.921, roundtrip 0.985 (0.975 compiled) | **not shipped**: fails |

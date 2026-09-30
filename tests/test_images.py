@@ -225,3 +225,49 @@ def test_exif_rotation_is_applied(client):
     r = client.post("/v1/systemone", json=body([url(buf.getvalue(), "image/jpeg")]))
     assert r.status_code == 200
     assert calls[-1][2][0].size == (20, 40)
+
+
+def test_the_model_worker_plans_images_on_their_own_path(monkeypatch):
+    """The server's worker (serve/batcher.py) plans an image request with the image
+    encoder, runs it with the image scorer, and never pools it with text rows."""
+    import serve.infer as infer
+    from serve.batcher import GpuWorker, ModelRunner
+    from serve.wire import parse_questions
+
+    seen = {}
+
+    def fake_plan(tok, prep, state, images, questions, enc):
+        seen["planned"] = (state, len(images))
+        return {"path": "image", "encoded": [{"input_ids": [1, 2, 3]}] * len(questions),
+                "options": [len(q.options) for q in questions]}
+
+    def fake_run(model, tok, plan, **kw):
+        seen["ran"] = plan["path"]
+        from rsijev.contract import Prediction
+        return [Prediction((0.25, 0.75)) for _ in plan["options"]], 3
+
+    monkeypatch.setattr(infer, "plan_image_request", fake_plan)
+    monkeypatch.setattr(infer, "score_image_planned", fake_run)
+    runner = ModelRunner(object(), None, None, spec_max_options=8, device="cpu",
+                         prep=object(), venc=object())
+    w = GpuWorker(runner, window_ms=5)
+    try:
+        qs = parse_questions({"q": {"type": "noul", "instructions": "Red?"}})
+        img = Image.new("RGB", (8, 8))
+        plan = w.plan("<image> x", qs, [img])
+        assert not runner.poolable(plan)
+        probs, tokens = w.enqueue(plan).result(timeout=10)
+    finally:
+        w.close()
+    assert seen == {"planned": ("<image> x", 1), "ran": "image"}
+    assert probs == [[0.25, 0.75]] and tokens == 3
+
+
+def test_the_model_worker_of_a_text_model_refuses_images():
+    from serve.batcher import ModelRunner
+    from serve.wire import RequestError, parse_questions
+    runner = ModelRunner(object(), None, None, spec_max_options=8, device="cpu",
+                         name="rsi-jev-v3.0-qwen3.5-2b")
+    qs = parse_questions({"q": {"type": "noul", "instructions": "Red?"}})
+    with pytest.raises(RequestError, match="text-only"):
+        runner.plan("<image> x", qs, [Image.new("RGB", (8, 8))])

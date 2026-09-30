@@ -109,7 +109,7 @@ everything except the health routes.
 
 ## Images
 
-A release trained with images (v4.0 on) also takes **1–4 images per request**, as base64
+A release trained with images (v4.0-VL on) also takes **1–4 images per request**, as base64
 data URLs in an `images` list beside `state`. This is an extension: Jev's request has no
 images. The shape is the one imajev's Jev-style payloads use. The state refers to each
 image with the literal marker `<image>`, in order. A state with no markers gets its images

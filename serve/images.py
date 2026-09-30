@@ -5,7 +5,7 @@ A request carries `images`, a list of 1-4 data URLs
 the literal marker `<image>`, one per image, in order; a state without markers
 gets its images put before it. The model sees each image at its own resolution,
 scaled down so that all of a request's images together take at most the
-checkpoint's image-token budget (1,024 tokens for v4.0: one image up to ~1 MP,
+checkpoint's image-token budget (1,024 tokens for v4.0-VL: one image up to ~1 MP,
 four images up to 256 tokens each).
 
 Every rejection here is a `RequestError` (HTTP 422) that says what to change.
@@ -169,3 +169,19 @@ def to_data_url(image) -> str:
         fmt = (im.format or "PNG").lower()
     mime = {"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp"}.get(fmt, f"image/{fmt}")
     return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
+
+
+def state_too_long(e: ValueError, max_length: int) -> RequestError | None:
+    """The 422 for an image request whose state would be cut into an image, or None
+    when `e` is some other ValueError (which stays a 500)."""
+    if "cut into an image" not in str(e) and "markers" not in str(e):
+        return None
+    return RequestError(
+        "the state is too long to keep its images whole: the input is "
+        f"capped at {max_length} tokens and a longer state is cut from "
+        "the left. Shorten the state or put the <image> markers after the "
+        f"text ({e})")
+
+
+def text_only_error(name: str, reason: str | None = None) -> RequestError:
+    return RequestError(reason or f"{name} is a text-only model; it does not take images")

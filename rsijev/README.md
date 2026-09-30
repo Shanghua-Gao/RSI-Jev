@@ -16,7 +16,7 @@ move a protected file is a change to the task, and goes through a human.
 | | path | what it decides |
 |---|---|---|
 | **EDITABLE** | `arch.py` | the model axis: how state and options are encoded and read out |
-| **EDITABLE** | `vision.py` | images in the state (v4.0 on): the base model's own vision tower, `<image>` markers, M-RoPE positions |
+| **EDITABLE** | `vision.py` | images in the state (v4.0-VL on): the base model's own vision tower, `<image>` markers, M-RoPE positions |
 | **EDITABLE** | `data.py` | the data axis: what gets collected, generated or deleted |
 | **EDITABLE** | `train.py` | the training axis: objective, optimiser, schedule, calibration |
 | **PROTECTED** | `contract.py` | what a typed decision *is* — one `Case`, one prediction |
