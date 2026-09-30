@@ -270,8 +270,10 @@ calibration moves by +0.0001.
 | `release.py` | finds a checkpoint (directory, Hugging Face id or alias) and loads it |
 | `server.py` | loads a release for serving, prints what is active, runs uvicorn |
 | `decider.py` | `Decider`: the same request path in-process, `from rsijev import Decider` |
-| `runtime.py` | device and precision choice, `--profile`, kernel detection for the startup log |
-| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `bench`, `download`, `env` |
+| `runtime.py` | device and precision choice, `--profile`, kernel and `[vision]` extra detection for the startup log |
+| `demo.py`, `ui.html`, `examples.json` | `rsi-jev demo`: the playground page on the served path, with image upload, drag-drop and paste when `/v1/limits` says the model takes images |
+| `demo_images.py` | draws the playground's image examples (chart, screenshot, receipt) |
+| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `demo`, `bench`, `download`, `env` |
 | `../scripts/serve.py` | the same server from a clone, without installing |
 
 `infer.py` exists because `evaluate.predict` takes `Case` objects and a `Case`
