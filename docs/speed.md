@@ -18,12 +18,14 @@ same conversation gets **up to 5.8x**.
 If some answers are allowed to change, it goes further. These are the fastest versions we found,
 all measured in one session:
 
-| | 1 question, short document | 1 question, 1,000-token document | 32 questions on it | answers that change |
+| | 1 question, short document | 1 question, 1,000-token document | 32 questions on it | answers that change* |
 |---|---|---|---|---|
 | v3.0 as first released | 35 ms | 148 ms | 443 ms | — |
 | now, same answers (`--profile server`) | 24 ms | 69 ms | 255 ms | none |
-| FP8 weights + compile | 22 ms | **57 ms** | **233 ms** | 2–8% |
-| 4-bit weights on vLLM | **17 ms** | 88 ms | 2,234 ms | 23–31% of MMLU-Pro |
+| FP8 weights + compile | 22 ms | **57 ms** | **233 ms** | 3–8% |
+| 4-bit weights on vLLM | **17 ms** | 88 ms | 2,234 ms | 3–23% |
+
+*Share of answers that differ from the unchanged model: the low end on our typed-decision test, the high end on MMLU-Pro.*
 
 Giving up exactness buys 1.1–1.4x over the lossless version. 4-bit on vLLM is the fastest for one
 short question and far slower for many questions on one document.
@@ -140,7 +142,7 @@ and the GPU spends its time computing. Tricks aimed at other bottlenecks had lit
 | tried | what happened |
 |---|---|
 | 4-bit and 8-bit weights | faster only for a single short question (28 → 19 ms with 4-bit), and they changed answers: 4-bit agreed with the full model on only 69–77% of MMLU-Pro questions |
-| FP8 | slower without compiling, and changed 2–8% of answers |
+| FP8 | slower without compiling, and changed 3–8% of answers |
 | a faster kernel for the DeltaNet layers (FlashQLA) | 2–2.7x faster on its own, but those layers take about 9% of the time: 1–13% overall |
 | CUDA graphs | slower: they remove launch overhead, and the GPU was already busy computing |
 | vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions more than twice as fast; micro-batching (above) closed most of that gap |

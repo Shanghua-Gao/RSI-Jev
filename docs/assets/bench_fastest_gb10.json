@@ -5583,5 +5583,225 @@
     "prompt_tokens": 1606493
    }
   }
- }
+ },
+ "accuracy": {
+  "definition": "gates measured earlier on the same checkpoint (not re-run): release verify agreement with the bf16 serve path (typed_decisions canonical n=2000, reversed n=2000, MMLU-Pro 1k), roundtrip argmax agreement (n=200; bf16 gets 0.995), suite ECE after calibration minus bf16's 0.07899. Bars: agreement >= 0.99, roundtrip >= 0.99, ECE within +/-0.003.",
+  "A": {
+   "answers_changed_pct": null,
+   "note": "v3.0 as released; bf16 without fla. Its 1,052x32 cell answers 3/32 questions from the wrong state (release-day cache bug, fixed in e71b6ee); verify through evaluate.predict is unaffected"
+  },
+  "B": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 1.0,
+    "typed_reversed": 1.0,
+    "mmlu_pro_1k": 1.0
+   },
+   "answers_changed_pct": 0.0,
+   "answers_changed": "0/5000",
+   "roundtrip_argmax_agreement": 0.995,
+   "suite_ece_delta": 0.0,
+   "source": "exp/results/gates/bf16.json (the baseline)"
+  },
+  "C": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 0.9985,
+    "typed_reversed": 0.999,
+    "mmlu_pro_1k": 0.99
+   },
+   "answers_changed_pct": 0.3,
+   "answers_changed": "15/5000",
+   "roundtrip_argmax_agreement": 0.995,
+   "suite_ece_delta": 0.00014,
+   "source": "exp/results/gates/compile.vs_bf16.json, gates_compile.log"
+  },
+  "D": {
+   "answers_changed_pct": 0.0,
+   "note": "evaluate.predict never uses the document cache, so verify/roundtrip/ECE equal B; cached vs uncached on this model in this session: 0/144 argmax flips, max |dp| 0.0016 (runs.D.doc_cache_agreement)"
+  },
+  "E": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 0.9745,
+    "typed_reversed": 0.9725,
+    "mmlu_pro_1k": 0.919
+   },
+   "answers_changed_pct": 3.74,
+   "answers_changed": "187/5000",
+   "roundtrip_argmax_agreement": 0.975,
+   "suite_ece_delta": 0.00064,
+   "source": "exp/results/gates/fp8+compile.vs_bf16.json, gates_fp8compile.log (torch 2.13, same enable_fp8/enable_compile code)",
+   "note": "FAILS the agreement (a) and roundtrip (b) bars; typed 2.65% of answers change, MMLU-Pro 8.1%"
+  },
+  "F": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 0.9745,
+    "typed_reversed": 0.9725,
+    "mmlu_pro_1k": 0.919
+   },
+   "answers_changed_pct": 3.74,
+   "answers_changed": "187/5000",
+   "roundtrip_argmax_agreement": 0.975,
+   "suite_ece_delta": 0.00064,
+   "source": "verify not re-run: evaluate.predict does not use the document cache, so F's release verify is E's by construction",
+   "note": "FAILS like E. Doc cache on top of FP8+compile, this session: 0/144 argmax flips vs uncached reads of the same model, max |dp| 0.0087 (runs.F.doc_cache_agreement); combines cleanly"
+  },
+  "G": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 0.997,
+    "typed_reversed": 0.999,
+    "mmlu_pro_1k": 0.992
+   },
+   "answers_changed_pct": 0.32,
+   "answers_changed": "16/5000",
+   "roundtrip_argmax_agreement": 0.995,
+   "suite_ece_delta": 0.00066,
+   "source": "vllm_report.md; exp/results/vllm/"
+  },
+  "H": {
+   "verify_agreement_with_bf16_serve": {
+    "typed_canonical": 0.971,
+    "typed_reversed": 0.9735,
+    "mmlu_pro_1k": 0.772
+   },
+   "answers_changed_pct": 6.78,
+   "answers_changed": "339/5000",
+   "roundtrip_argmax_agreement": 0.975,
+   "suite_ece_delta": -0.00253,
+   "source": "flashqla_w4_report.md; exp/results/fqw4/vllm-w4a16.vs_bf16.json",
+   "note": "FAILS (a) and (b); typed 2.8% of answers change, MMLU-Pro 22.8%; top-1 MMLU-Pro 0.366 -> 0.331"
+  }
+ },
+ "http_concurrency": {
+  "what": "closed-loop clients over HTTP, 1-question requests on the 80-token doc, unique first line per request, 20 s per cell; req/s and p50/p95 ms (bench_http_1q.py)",
+  "servers": {
+   "ours_default": "rsi-jev serve (venv-easy), default",
+   "ours_server": "rsi-jev serve --profile server",
+   "G_vllm_bf16": "scripts/serve.py --backend vllm @9a062bb, bf16 dir",
+   "H_vllm_w4a16": "same, w4a16 dir"
+  },
+  "note": "ours_default is the third run: the first (23.1 req/s at 32 clients) and second overlapped other users' GPU jobs; the third was sampled every 2 s with no other compute process",
+  "results": {
+   "ours_default": [
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 1,
+     "n": 679,
+     "req_s": 33.98,
+     "p50_ms": 29.1,
+     "p95_ms": 30.5
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 8,
+     "n": 693,
+     "req_s": 34.8,
+     "p50_ms": 227.4,
+     "p95_ms": 243.4
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 32,
+     "n": 631,
+     "req_s": 33.45,
+     "p50_ms": 924.6,
+     "p95_ms": 1057.6
+    }
+   ],
+   "ours_server": [
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 1,
+     "n": 712,
+     "req_s": 35.66,
+     "p50_ms": 27.6,
+     "p95_ms": 30.4
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 8,
+     "n": 816,
+     "req_s": 41.31,
+     "p50_ms": 189.0,
+     "p95_ms": 213.0
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 32,
+     "n": 684,
+     "req_s": 35.13,
+     "p50_ms": 856.0,
+     "p95_ms": 1049.7
+    }
+   ],
+   "G_vllm_bf16": [
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 1,
+     "n": 703,
+     "req_s": 35.16,
+     "p50_ms": 27.5,
+     "p95_ms": 31.3
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 8,
+     "n": 1423,
+     "req_s": 71.26,
+     "p50_ms": 109.3,
+     "p95_ms": 148.3
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 32,
+     "n": 1631,
+     "req_s": 82.86,
+     "p50_ms": 384.6,
+     "p95_ms": 488.7
+    }
+   ],
+   "H_vllm_w4a16": [
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 1,
+     "n": 1001,
+     "req_s": 50.09,
+     "p50_ms": 19.6,
+     "p95_ms": 23.1
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 8,
+     "n": 1675,
+     "req_s": 82.66,
+     "p50_ms": 94.9,
+     "p95_ms": 121.0
+    },
+    {
+     "doc_tok": 80,
+     "q": 1,
+     "conc": 32,
+     "n": 1730,
+     "req_s": 87.89,
+     "p50_ms": 363.7,
+     "p95_ms": 469.4
+    }
+   ]
+  }
+ },
+ "notes": [
+  "E/F: current code (venv-easy, rsi-jev[fast]) with serve/accel.py's FP8 switch from 780382f patched in; 780382f's own serve path predates e71b6ee (the cache-replication fix), so it was not used as a whole",
+  "G/H run in vllm_venv (torch 2.13.0, vLLM 0.29.0); A-F in torch 2.14.0",
+  "G/H grid and repeat cells ask the identical (state, question) again; the backend then re-runs the request without cache reading (rerun_uncached), so those cells are slower than a fresh request; growth rows get block-level prefix hits",
+  "E/F 1,052x32: 30/32 argmax agree with an uncached read of the same FP8 model (FP8 dynamic scales depend on batch shape)"
+ ]
 }
