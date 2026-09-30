@@ -39,7 +39,7 @@ class Served:
     name: str
     version: str | None
     applied: list[str] = field(default_factory=list)
-    # Image support (v4.0 on): the image processor and the encoder config for image
+    # Image support (v4.0-VL on): the image processor and the encoder config for image
     # requests, or None for a text-only checkpoint. `vision_error` says why a
     # checkpoint trained with images is served text-only here (a missing extra).
     prep: Any = None

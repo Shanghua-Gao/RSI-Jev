@@ -5,7 +5,7 @@ A request carries `images`, a list of 1-4 data URLs
 the literal marker `<image>`, one per image, in order; a state without markers
 gets its images put before it. The model sees each image at its own resolution,
 scaled down so that all of a request's images together take at most the
-checkpoint's image-token budget (1,024 tokens for v4.0: one image up to ~1 MP,
+checkpoint's image-token budget (1,024 tokens for v4.0-VL: one image up to ~1 MP,
 four images up to 256 tokens each).
 
 Every rejection here is a `RequestError` (HTTP 422) that says what to change.

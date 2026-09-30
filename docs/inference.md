@@ -69,7 +69,7 @@ The first run downloads the checkpoint (5.3 GB) and its base model into the stan
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v3.0-qwen3.5-2b`;
-- an alias: `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -107,7 +107,7 @@ From a clone, without installing, run
 
 ### Images
 
-A release trained with images (v4.0 on) also answers questions about 1–4 images. Install
+A release trained with images (v4.0-VL on) also answers questions about 1–4 images. Install
 the extra (`pip install "rsi-jev[vision]"`: Pillow and torchvision), then send the images
 as data URLs and mark where each one goes in the state with `<image>`:
 
@@ -118,8 +118,33 @@ d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
 ```
 
 Over HTTP the same request carries `"images": ["data:image/jpeg;base64,..."]` next to
-`state`. Image requests do not use the prefix or document cache. Limits and an example:
-[`serve/README.md`](../serve/README.md#images).
+`state`. Full limits and an example: [`serve/README.md`](../serve/README.md#images). In short:
+
+- 1–4 PNG, JPEG or WebP images per request, as data URLs; http(s) URLs are not fetched.
+- 1,024 image tokens per question, split evenly: one image up to about one megapixel, four up
+  to 256 tokens each. Larger images are scaled down.
+- 2,048 text tokens on top. A longer state is cut from its start, as for text; if the cut
+  would reach an image, the request is refused.
+- The vision tower runs once per request, but each question reads the whole state with its
+  image tokens again: image requests use neither the prefix cache nor the document cache.
+  Asking four questions about one image costs about four times the tokens of one.
+
+Measured on the GB10 with v4.0-VL over HTTP (bf16 tower, fla, default settings; median of
+20 requests after 3 warm-up):
+
+| request | input tokens | median | fastest |
+|---|---|---|---|
+| text, 1 question | 34 | 79 ms | 39 ms |
+| text, 4 questions | 157 | 90 ms | 81 ms |
+| one 640 px photo, 1 question | 356 | 203 ms | 146 ms |
+| one 640 px photo, 4 questions | 1,445 | 387 ms | 318 ms |
+| one 1,600 px photo, 1 question | 1,016 | 496 ms | 455 ms |
+| one 1,600 px photo, 4 questions | 4,085 | 1,129 ms | 1,067 ms |
+
+**Another job was using the GPU during this run**, so read these as upper bounds: the text
+rows, which take 22–27 ms on an idle machine ([How much faster](#how-much-faster)), came out
+about three times slower here. The ratio between rows is the useful part: an image costs
+roughly what the same number of text tokens would, and the photo's size decides that number.
 
 ## A local, drop-in Jev replacement
 

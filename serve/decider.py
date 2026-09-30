@@ -4,7 +4,7 @@
     d = Decider("shgao/rsi-jev-v3.0-qwen3.5-2b")
     d.decide("I was charged twice. Please refund.",
              {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
-    d.decide("<image> Is this receipt paid?", {...}, images=["receipt.png"])   # v4.0 on
+    d.decide("<image> Is this receipt paid?", {...}, images=["receipt.png"])   # v4.0-VL on
 
 `decide(state, questions)` takes the `state` and `questions` of a `POST
 /v1/systemone` body and returns its `answers`. It is not a second implementation:
