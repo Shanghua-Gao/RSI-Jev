@@ -8,12 +8,18 @@ did not change.** This is how the agents got there, and what they tried that did
 
 Everything below was measured on one HP ZGX Nano (NVIDIA GB10) with RSI-Jev-v3.0-2B, a bf16
 tower and 4-option choice questions. Each timing is the median of 20 runs after warm-up. The
-before-and-after table comes from one benchmark in one session
-([`assets/bench_gb10.json`](assets/bench_gb10.json)).
+chart and table come from one benchmark in one session
+([`assets/bench_gb10.json`](assets/bench_gb10.json); the chart is drawn by
+[`assets/speed_chart.py`](assets/speed_chart.py)).
 
 ## Where it started and where it ended
 
-| | on release day | now, default | `--profile server` | `--profile agent` |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/speed_gb10_dark.svg">
+  <img src="assets/speed_gb10_light.svg" alt="Milliseconds per request on an HP ZGX Nano for six workloads, v3.0 as first released against now: 1.5x to 5.8x faster with the profile that fits." width="100%">
+</picture>
+
+| | v3.0 as first released | now, default | `--profile server` | `--profile agent` |
 |---|---|---|---|---|
 | 1 question, 80-token document | 33.5 ms | 26.8 ms | **21.9 ms** | 23.1 ms |
 | 1 question, 1,052-token document | 148.0 ms | 90.8 ms | 68.5 ms | **25.6 ms**¹ |
