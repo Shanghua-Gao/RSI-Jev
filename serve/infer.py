@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import threading
 from collections import OrderedDict
@@ -24,7 +25,8 @@ import torch
 import torch.nn.functional as F
 
 from rsijev.contract import Prediction, Question
-from rsijev.encode import EncodeConfig, collate, encode_question, unpermute_logits
+from rsijev.encode import (EncodeConfig, collate, encode_question, option_permutation, render,
+                           unpermute_logits)
 
 DEFAULT_MAX_OPTIONS = 80
 
@@ -74,36 +76,202 @@ def _datacentre_gpu() -> bool:
 MIN_SAVED_TOKENS = default_min_saved_tokens()
 
 
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _needs_option_tokens(model) -> bool:
+    """Only the residual readout (and prior anchoring, which serving never asks for)
+    reads `option_token_ids`. Anything that is not a DecisionModel keeps them."""
+    cfg = getattr(model, "cfg", None)
+    return cfg is None or bool(getattr(cfg, "residual", True))
+
+
+def row_order(lengths: Sequence[int], batch_size: int, sort: bool = False,
+              max_tokens: int | None = None) -> list[list[int]]:
+    """Which rows go through the model together, as lists of indices.
+
+    Default: in request order, `batch_size` at a time, as the evaluator batches.
+    `sort`: longest first, so rows of similar length share a batch and pad less.
+    Results always go back to their own index, so the order a caller sees never
+    changes. Sorting is not bit-exact: a bf16 row's numbers depend slightly on what
+    it is batched with (see docs/assets/profile_gb10.md), so it is opt-in."""
+    idx = list(range(len(lengths)))
+    if sort:
+        idx.sort(key=lambda i: -lengths[i])
+    if max_tokens is None:
+        return [idx[i:i + batch_size] for i in range(0, len(idx), batch_size)]
+    # Also close a batch before its padded size (rows x longest row) passes max_tokens.
+    out, cur, width = [], [], 0
+    for i in idx:
+        w = max(width, lengths[i])
+        if cur and (len(cur) >= batch_size or (len(cur) + 1) * w > max_tokens):
+            out.append(cur)
+            cur, w = [], lengths[i]
+        cur.append(i)
+        width = w
+    if cur:
+        out.append(cur)
+    return out
+
+
+@torch.no_grad()
+def run_rows(model, tokenizer, rows: Sequence[dict], *, max_options: int, device,
+             batch_size: int, temperature: float = 1.0, cache=None, npfx: int = 0,
+             sort: bool = False, trim_options: bool = False,
+             max_tokens: int | None = None) -> list[list[float]]:
+    """Probabilities for encoded rows, in the order given.
+
+    With `cache`, every row continues from that one prefix cache of `npfx` tokens
+    (rows are already re-indexed onto their suffix). One GPU->CPU copy per batch.
+    `trim_options` pads the option slots to the widest question in the batch
+    instead of `max_options`; the scorer's cost scales with the slots, and the
+    result moves by ~1e-6 (fp32 reduction order), so it is opt-in."""
+    ks = [len(e["option_index"]) for e in rows]
+    out: list[list[float] | None] = [None] * len(rows)
+    tokens = _needs_option_tokens(model)
+    for idx in row_order([len(e["input_ids"]) for e in rows], batch_size, sort, max_tokens):
+        part = [rows[i] for i in idx]
+        width = max(ks[i] for i in idx) if trim_options else max_options
+        batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
+        if cache is not None:
+            w = batch["input_ids"].shape[1]
+            batch["attention_mask"] = torch.cat(
+                [torch.ones((len(part), npfx), dtype=batch["attention_mask"].dtype,
+                            device=device), batch["attention_mask"]], dim=1)
+            batch["past_key_values"] = _replicate(cache, len(part), device)
+            batch["position_ids"] = (torch.arange(w, device=device) + npfx
+                                     ).unsqueeze(0).expand(len(part), w)
+        logits = unpermute_logits(model(**batch), batch["option_perm"],
+                                  batch["option_mask"]) / temperature
+        probs = F.softmax(logits, dim=-1).float().cpu()
+        for r, i in enumerate(idx):
+            out[i] = probs[r, : ks[i]].tolist()
+    return out
+
+
 @torch.no_grad()
 def score_questions(model, tokenizer, state: str, questions: Sequence[Question],
                     enc: EncodeConfig, *, max_options: int | None = None,
                     device: str = "cuda", batch_size: int = 16,
-                    temperature: float = 1.0) -> tuple[list[Prediction], int]:
+                    temperature: float = 1.0, encoded: list[dict] | None = None,
+                    sort: bool = False, trim_options: bool = False
+                    ) -> tuple[list[Prediction], int]:
     """Answer every question about one state. Returns (predictions, prompt_tokens).
 
     Questions are independent: each is encoded with the state on its own and the
     model never sees another question or its answer, which is what the API
-    promises.
-    """
+    promises. `encoded` takes rows already made by `encode_question` (or
+    `encode_questions`, which gives the same rows)."""
     model.eval()
     if max_options is None:
         max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
-    out: list[Prediction] = []
-    prompt_tokens = 0
-    for i in range(0, len(questions), batch_size):
-        chunk = list(questions[i:i + batch_size])
-        encoded = [encode_question(tokenizer, state, q, enc) for q in chunk]
-        prompt_tokens += sum(len(e["input_ids"]) for e in encoded)
-        batch = collate(tokenizer, encoded, max_options=max_options, device=device)
-        logits = unpermute_logits(model(**batch), batch["option_perm"],
-                                  batch["option_mask"]) / temperature
-        probs = F.softmax(logits, dim=-1)
-        for r, q in enumerate(chunk):
-            out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
-    return out, prompt_tokens
+    if encoded is None:
+        encoded = [encode_question(tokenizer, state, q, enc) for q in questions]
+    probs = run_rows(model, tokenizer, encoded, max_options=max_options, device=device,
+                     batch_size=batch_size, temperature=temperature, sort=sort,
+                     trim_options=trim_options)
+    return ([Prediction(tuple(p)) for p in probs],
+            sum(len(e["input_ids"]) for e in encoded))
 
 
-def _shared_prefix(tokenizer, state: str, enc: EncodeConfig, encoded: list[dict]):
+# The Qwen2/Qwen3.5 pre-tokenizer. With it, "\n\n" followed by a printable,
+# non-whitespace character is always a pre-token boundary: no alternative of the
+# pattern can match across it (letters, digits and punctuation runs stop at a
+# newline; the whitespace alternatives stop at a non-space), the pattern has no
+# look-behind or anchors, so matching resumes after the boundary exactly as it would
+# on the text alone, and byte-level BPE never merges across pre-tokens. NFC cannot
+# compose or reorder across a newline, and no added token of this tokenizer contains
+# one or strips whitespace. So tok(state + "\n\n" + rest) == tok(state + "\n\n") +
+# tok(rest). `encode_questions` relies on that only when this exact configuration is
+# what the tokenizer reports; anything else takes `encode_question` per question.
+_QWEN_SPLIT = ("(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+"
+               "[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+")
+_QWEN_PRE = {"type": "Sequence", "pretokenizers": [
+    {"type": "Split", "pattern": {"Regex": _QWEN_SPLIT}, "behavior": "Isolated", "invert": False},
+    {"type": "ByteLevel", "add_prefix_space": False, "trim_offsets": True, "use_regex": False}]}
+
+
+def splits_after_blank_line(tokenizer) -> bool:
+    """Whether `tokenizer` is one `encode_questions` may tokenize the state once for."""
+    ok = getattr(tokenizer, "_rsijev_splits_after_blank_line", None)
+    if ok is not None:
+        return ok
+    ok = False
+    try:
+        j = json.loads(tokenizer.backend_tokenizer.to_str())
+        ok = (j.get("normalizer") in (None, {"type": "NFC"})
+              and j.get("pre_tokenizer") == _QWEN_PRE
+              and j.get("model", {}).get("type") == "BPE"
+              and not getattr(tokenizer, "split_special_tokens", False)
+              and all(not (t.get("lstrip") or t.get("rstrip")) and "\n" not in t["content"]
+                      and "\r" not in t["content"] for t in j.get("added_tokens", [])))
+    except Exception:                      # a slow tokenizer, or an unknown format
+        ok = False
+    try:
+        tokenizer._rsijev_splits_after_blank_line = ok
+    except Exception:
+        pass
+    return ok
+
+
+def encode_questions(tokenizer, state: str, questions: Sequence[Question],
+                     enc: EncodeConfig) -> tuple[list[dict], list[int] | None]:
+    """`[encode_question(tokenizer, state, q, enc) for q in questions]`, with the
+    state tokenized once per request instead of once per question, and every other
+    piece (instructions, option blocks, the cue) in one batched tokenizer call.
+
+    Returns (rows, ids of state + "\n\n"), or (rows, None) when it fell back to
+    encode_question for the whole request. The rows are identical to
+    encode_question's: see `splits_after_blank_line` for why, and
+    tests/test_serve_speed.py for the check on the real tokenizer. A question whose
+    text after the blank line starts with whitespace, or that needs its state
+    truncated, is encoded by encode_question on its own."""
+    lead = f"{state}\n\n"
+    if not (enc.layout == "state_first" and enc.option_order in ("canonical", "reversed")
+            and state.strip() and splits_after_blank_line(tokenizer)):
+        return [encode_question(tokenizer, state, q, enc) for q in questions], None
+    plans = []
+    texts: dict[str, None] = {lead: None}
+    for q in questions:
+        order = option_permutation(q, enc)
+        head, parts = render(state, q, enc, order)
+        rest = head[len(lead):]
+        if not (head.startswith(lead) and rest[:1].isprintable() and rest[:1].strip()):
+            plans.append(None)
+            continue
+        blocks = ["\n" + b for b in parts[:-1]]
+        plans.append((q, order, rest, blocks, parts[-1]))
+        for t in (rest, *blocks, parts[-1]):
+            texts.setdefault(t)
+    keys = list(texts)
+    ids = dict(zip(keys, tokenizer(keys, add_special_tokens=False)["input_ids"]))
+    lead_ids = ids[lead]
+    rows = []
+    for q, plan in zip(questions, plans):
+        if plan is None:
+            rows.append(encode_question(tokenizer, state, q, enc))
+            continue
+        _, order, rest, blocks, tail = plan
+        row = lead_ids + ids[rest]
+        spans = []
+        for b in blocks:
+            start = len(row)
+            row = row + ids[b]
+            spans.append((start, len(row)))
+        row = row + ids[tail]
+        if len(row) > enc.max_length:              # truncation: let the original do it
+            rows.append(encode_question(tokenizer, state, q, enc))
+            continue
+        rows.append({"input_ids": row, "option_index": [e - 1 for _, e in spans],
+                     "option_span": spans, "decision_index": len(row) - 1,
+                     "options": [q.options[i] for i in order],
+                     "option_perm": order, "mode": q.mode})
+    return rows, list(lead_ids)
+
+
+def _shared_prefix(tokenizer, state: str, enc: EncodeConfig, encoded: list[dict],
+                   ids: list[int] | None = None):
     """The token prefix every question of this state shares, or None.
 
     `render()` builds `state + "\n\n" + instructions + ...` for the default
@@ -114,7 +282,8 @@ def _shared_prefix(tokenizer, state: str, enc: EncodeConfig, encoded: list[dict]
     """
     if enc.layout != "state_first" or not state.strip():
         return None
-    ids = tokenizer(f"{state}\n\n", add_special_tokens=False)["input_ids"]
+    if ids is None:
+        ids = tokenizer(f"{state}\n\n", add_special_tokens=False)["input_ids"]
     if not ids:
         return None
     for e in encoded:
@@ -150,10 +319,6 @@ def _replicate(cache, rows: int, device):
                 setattr(dst, attr, val.copy())
     replica.reorder_cache(torch.zeros(rows, dtype=torch.long, device=device))
     return replica
-
-
-def _flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no", "off")
 
 
 def model_fingerprint(model) -> str:
@@ -311,7 +476,8 @@ def default_doc_cache() -> DocCache | None:
 
 
 def _score_on_cache(model, tokenizer, questions, encoded, cache, npfx: int, *,
-                    max_options: int, device, batch_size: int, temperature: float):
+                    max_options: int, device, batch_size: int, temperature: float,
+                    sort: bool = False, trim_options: bool = False):
     """Continue every question from a prefix cache of its first `npfx` tokens."""
     # Re-index onto the suffix: the cache supplies everything before it.
     suffix = [{**e,
@@ -319,24 +485,10 @@ def _score_on_cache(model, tokenizer, questions, encoded, cache, npfx: int, *,
                "option_index": [i - npfx for i in e["option_index"]],
                "option_span": [(a - npfx, b - npfx) for a, b in e["option_span"]],
                "decision_index": e["decision_index"] - npfx} for e in encoded]
-
-    out: list[Prediction] = []
-    for i in range(0, len(questions), batch_size):
-        chunk, part = list(questions[i:i + batch_size]), suffix[i:i + batch_size]
-        batch = collate(tokenizer, part, max_options=max_options, device=device)
-        width = batch["input_ids"].shape[1]
-        batch["attention_mask"] = torch.cat(
-            [torch.ones((len(part), npfx), dtype=batch["attention_mask"].dtype, device=device),
-             batch["attention_mask"]], dim=1)
-        pos = (torch.arange(width, device=device) + npfx).unsqueeze(0).expand(len(part), width)
-        logits = unpermute_logits(
-            model(**batch, past_key_values=_replicate(cache, len(part), device),
-                  position_ids=pos),
-            batch["option_perm"], batch["option_mask"]) / temperature
-        probs = F.softmax(logits, dim=-1)
-        for r, q in enumerate(chunk):
-            out.append(Prediction(tuple(probs[r, : len(q.options)].float().tolist())))
-    return out, suffix
+    probs = run_rows(model, tokenizer, suffix, max_options=max_options, device=device,
+                     batch_size=batch_size, temperature=temperature, cache=cache,
+                     npfx=npfx, sort=sort, trim_options=trim_options)
+    return [Prediction(tuple(p)) for p in probs], suffix
 
 
 @torch.no_grad()
@@ -345,7 +497,8 @@ def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Que
                            device: str = "cuda", batch_size: int = 16,
                            temperature: float = 1.0,
                            min_saved_tokens: int | None = None,
-                           doc_cache: "DocCache | bool | None" = None):
+                           doc_cache: "DocCache | bool | None" = None,
+                           sort: bool | None = None, trim_options: bool | None = None):
     """`score_questions`, but the state is encoded once instead of per question.
 
     Only when that pays. Uncached costs Q*(P+S) and cached costs P + Q*S plus a
@@ -368,32 +521,86 @@ def score_questions_cached(model, tokenizer, state: str, questions: Sequence[Que
     counts the prefix once, because it is computed once.
     """
     model.eval()
+    plan = plan_request(tokenizer, state, questions, enc, min_saved_tokens=min_saved_tokens,
+                        doc_cache=doc_cache)
+    if max_options is None:
+        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
+    return score_planned(model, tokenizer, plan, max_options=max_options, device=device,
+                         batch_size=batch_size, temperature=temperature, sort=sort,
+                         trim_options=trim_options)
+
+
+def _env_on(name: str, default: bool) -> bool:
+    v = os.environ.get(name)
+    return default if v is None or not v.strip() else _flag(name)
+
+
+def speed_options(sort: bool | None = None, trim_options: bool | None = None,
+                  fast_encode: bool | None = None) -> dict[str, bool]:
+    """The serving path's switches, from the environment unless given.
+
+    RSIJEV_FAST_ENCODE (on)   tokenize the state once per request; exact
+    RSIJEV_SORT_ROWS (off)    batch rows of similar length together
+    RSIJEV_TRIM_OPTIONS (off) pad option slots to the batch, not to max_options
+    The last two move probabilities slightly (bf16 / fp32 batch composition), so
+    they are opt-in; `--profile server` turns them on."""
+    return {"sort": _env_on("RSIJEV_SORT_ROWS", False) if sort is None else sort,
+            "trim_options": (_env_on("RSIJEV_TRIM_OPTIONS", False) if trim_options is None
+                             else trim_options),
+            "fast_encode": _env_on("RSIJEV_FAST_ENCODE", True) if fast_encode is None
+            else fast_encode}
+
+
+def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: EncodeConfig, *,
+                 min_saved_tokens: int | None = None,
+                 doc_cache: "DocCache | bool | None" = None,
+                 fast_encode: bool | None = None) -> dict:
+    """Encode one request and decide how it runs, without touching the model.
+
+    Returns {"encoded", "prefix", "path", "doc_cache"}; path is "doc" (through the
+    document cache), "cached" (state read once for this request) or "plain" (each
+    question read in full). score_planned runs it; the micro-batcher pools the
+    "plain" ones of several requests."""
     if doc_cache is None:
         doc_cache = default_doc_cache()
     elif doc_cache is False:
         doc_cache = None
     if min_saved_tokens is None:
         min_saved_tokens = default_min_saved_tokens()
-    if max_options is None:
-        max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
-    encoded = [encode_question(tokenizer, state, q, enc) for q in questions]
-    prefix = _shared_prefix(tokenizer, state, enc, encoded)
-    kw = dict(max_options=max_options, device=device, batch_size=batch_size,
-              temperature=temperature)
-
+    if speed_options(fast_encode=fast_encode)["fast_encode"]:
+        encoded, lead = encode_questions(tokenizer, state, questions, enc)
+    else:
+        encoded, lead = [encode_question(tokenizer, state, q, enc) for q in questions], None
+    prefix = _shared_prefix(tokenizer, state, enc, encoded, ids=lead)
     if doc_cache is not None and prefix is not None and len(prefix) > doc_cache.holdback:
+        path = "doc"
+    elif prefix is None or len(questions) < 2 or \
+            (len(questions) - 1) * len(prefix) < min_saved_tokens:
+        path = "plain"                     # no shared prefix, or too small to pay for itself
+    else:
+        path = "cached"
+    return {"encoded": encoded, "prefix": prefix, "path": path, "doc_cache": doc_cache,
+            "options": [len(q.options) for q in questions]}
+
+
+@torch.no_grad()
+def score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
+                  batch_size: int = 16, temperature: float = 1.0,
+                  sort: bool | None = None, trim_options: bool | None = None):
+    """Run a plan_request plan. Returns (predictions, prompt_tokens)."""
+    opt = speed_options(sort=sort, trim_options=trim_options)
+    kw = dict(max_options=max_options, device=device, batch_size=batch_size,
+              temperature=temperature, sort=opt["sort"], trim_options=opt["trim_options"])
+    encoded, prefix = plan["encoded"], plan["prefix"]
+    if plan["path"] == "plain":
+        probs = run_rows(model, tokenizer, encoded, **kw)
+        return [Prediction(tuple(p)) for p in probs], sum(len(e["input_ids"]) for e in encoded)
+    if plan["path"] == "doc":
+        doc_cache = plan["doc_cache"]
         npfx = len(prefix) - doc_cache.holdback
         cache = doc_cache.get(model, prefix[:npfx], device)
-        out, suffix = _score_on_cache(model, tokenizer, questions, encoded, cache, npfx, **kw)
-        return out, npfx + sum(len(e["input_ids"]) for e in suffix)
-
-    if prefix is not None and (len(questions) - 1) * len(prefix) < min_saved_tokens:
-        prefix = None                      # real, but too small to pay for itself
-    if prefix is None or len(questions) < 2:
-        return score_questions(model, tokenizer, state, questions, enc, **kw)
-
-    npfx = len(prefix)
-    pids = torch.tensor([prefix], dtype=torch.long, device=device)
-    cache = model.encode_prefix(pids)
-    out, suffix = _score_on_cache(model, tokenizer, questions, encoded, cache, npfx, **kw)
+    else:
+        npfx = len(prefix)
+        cache = model.encode_prefix(torch.tensor([prefix], dtype=torch.long, device=device))
+    out, suffix = _score_on_cache(model, tokenizer, None, encoded, cache, npfx, **kw)
     return out, npfx + sum(len(e["input_ids"]) for e in suffix)
