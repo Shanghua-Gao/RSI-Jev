@@ -88,7 +88,7 @@ one forward pass with nothing generated, so there is no reasoning trace to read.
 arms ask whether a decision-tuned tower can be given its words back without giving up the
 decision, and whether an explanation it produces is the reason or a plausible story.
 
-Of the 204 arms run since v1.0, these are the ones that got from one release to the next, each
+Of the 312 arms run since v1.0, these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
