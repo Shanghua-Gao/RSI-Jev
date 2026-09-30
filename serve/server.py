@@ -97,29 +97,25 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
 def make_scorer(s: Served, batch_size: int = 16):
     """(state_text, questions[, images]) -> (probabilities, prompt tokens), as
     create_app wants. `images` are validated PIL images (serve/images.py)."""
+    from serve.images import state_too_long, text_only_error
     from serve.infer import score_image_questions, score_questions_cached
-    from serve.wire import RequestError
     spec = s.meta["spec"]
 
     def scorer(state: str, questions, images=None):
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
         if images:
             if s.prep is None:
-                raise RequestError(s.vision_error or f"{s.name} is a text-only model; "
-                                   "it does not take images")
+                raise text_only_error(s.name, s.vision_error)
             # Images never touch the prefix or document cache: see score_image_questions.
             try:
                 preds, tokens = score_image_questions(s.model, s.tok, s.prep, state, images,
                                                       questions, s.venc, device=s.device,
                                                       batch_size=batch_size, max_options=mo)
             except ValueError as e:
-                if "cut into an image" not in str(e) and "markers" not in str(e):
+                err = state_too_long(e, s.venc.max_length)
+                if err is None:
                     raise
-                raise RequestError(
-                    "the state is too long to keep its images whole: the input is "
-                    f"capped at {s.venc.max_length} tokens and a longer state is cut from "
-                    "the left. Shorten the state or put the <image> markers after the "
-                    f"text ({e})") from None
+                raise err from None
             return [list(p.probs) for p in preds], tokens
         preds, tokens = score_questions_cached(s.model, s.tok, state, questions, s.enc,
                                                device=s.device, batch_size=batch_size,
@@ -151,6 +147,11 @@ def warm_up(scorer, images: bool = False) -> float:
     return time.perf_counter() - t
 
 
+def _env_float(name: str) -> float | None:
+    v = os.environ.get(name, "").strip()
+    return float(v) if v else None
+
+
 def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
     if positional:
         ap.add_argument("model", nargs="?", default=None,
@@ -177,6 +178,12 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                     help="tower precision (default bf16 on CUDA, fp32 elsewhere). "
                          "The scorer is always fp32. Evaluation always uses fp32.")
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--batch-window-ms", type=float,
+                    default=_env_float("RSIJEV_BATCH_WINDOW_MS"),
+                    help="micro-batching: run the questions of requests that arrive "
+                         "within this many ms of each other in one forward pass "
+                         "(0: only those already waiting). Off by default: it moves "
+                         "probabilities slightly. Also RSIJEV_BATCH_WINDOW_MS.")
     ap.add_argument("--no-warmup", action="store_true",
                     help="skip the throwaway requests run before serving")
     ap.add_argument("--version", default=None,
@@ -199,7 +206,11 @@ def serve(a: argparse.Namespace) -> int:
     s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision)
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
-    scorer = make_scorer(s, a.batch_size)
+    from serve.batcher import model_worker
+    from serve.infer import speed_options
+    if a.batch_window_ms is None:
+        a.batch_window_ms = _env_float("RSIJEV_BATCH_WINDOW_MS")   # set by --profile
+    scorer = model_worker(s, batch_size=a.batch_size, window_ms=a.batch_window_ms)
     if not a.no_warmup:
         # The first call JIT-compiles fla's Triton kernels (~19 s measured on a GB10
         # after a fresh install; cached afterwards) and, with --profile server,
@@ -218,6 +229,11 @@ def serve(a: argparse.Namespace) -> int:
     for line in startup_lines(torch=torch, device=s.device, dtype_name=s.dtype_name,
                               model=s.model, profile=a.profile, applied=s.applied):
         print(line, flush=True)
+    opt = speed_options()
+    print("micro-batching " + ("off" if a.batch_window_ms is None else
+                               f"on, window {a.batch_window_ms:g} ms")
+          + f"; rows sorted by length {'on' if opt['sort'] else 'off'}"
+          + f"; option slots trimmed {'on' if opt['trim_options'] else 'off'}", flush=True)
     il = s.image_limits
     if il.get("supported"):
         print(f"images: up to {il['max_images']} per request, {il['image_token_budget']} image "

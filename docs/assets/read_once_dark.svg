@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" width="1000" height="380" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="1000" height="380" fill="#1a1a19"/>
+<text x="40" y="44" font-size="20" font-weight="700" fill="#ffffff">Before: the ticket is read 8 times</text>
+<text x="40" y="68" font-size="14" fill="#c3c2b7">each question is its own sequence</text>
+<rect x="40" y="90" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="90" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="112" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="112" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="134" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="134" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="156" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="156" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="178" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="178" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="200" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="200" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="222" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="222" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="244" width="250" height="16" rx="3" fill="#2f5f9e"/><rect x="293" y="244" width="34" height="16" rx="3" fill="#3987e5"/>
+<text x="540" y="44" font-size="20" font-weight="700" fill="#ffffff">After: read once, every question continues</text>
+<text x="540" y="68" font-size="14" fill="#c3c2b7">the questions branch off one reading</text>
+<rect x="540" y="167.0" width="250" height="16" rx="3" fill="#2f5f9e"/>
+<path d="M 790 175.0 C 806 175.0, 804 98.0, 820 98.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="90" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 120.0, 820 120.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="112" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 142.0, 820 142.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="134" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 164.0, 820 164.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="156" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 186.0, 820 186.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="178" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 208.0, 820 208.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="200" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 230.0, 820 230.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="222" width="34" height="16" rx="3" fill="#3987e5"/>
+<path d="M 790 175.0 C 806 175.0, 804 252.0, 820 252.0" fill="none" stroke="#c3c2b7" stroke-opacity="0.45" stroke-width="2"/>
+<rect x="820" y="244" width="34" height="16" rx="3" fill="#3987e5"/>
+<rect x="40" y="300" width="16" height="16" rx="3" fill="#2f5f9e"/><text x="64" y="313" font-size="15" fill="#c3c2b7">ticket, ~1,000 tokens</text><rect x="250" y="300" width="16" height="16" rx="3" fill="#3987e5"/><text x="274" y="313" font-size="15" fill="#c3c2b7">one question and its options, ~20–60 tokens</text>
+<text x="40" y="352" font-size="16" fill="#ffffff">8 × (1,000 + 50) ≈ 8,400 tokens read</text><text x="540" y="352" font-size="16" fill="#ffffff">1,000 + 8 × 50 ≈ 1,400 tokens read</text>
+</svg>

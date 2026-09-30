@@ -1,127 +1,168 @@
-# How the agents made inference faster
+# Making a decision model fast on a desktop GPU
 
-*For the v3.0 serving update · measured on an HP ZGX Nano (NVIDIA GB10)*
+*RSI-Jev v3.0 · measured on an HP ZGX Nano (NVIDIA GB10)*
 
-**The same v3.0 model, on the same machine, now answers 1.25–1.63x faster by default,
-up to 2.2x faster with `--profile server`, and up to 5.8x faster in agent loops. The answers
-did not change.** This is how the agents got there, and what they tried that did not ship.
+RSI-Jev is an open, Jev-style decision model. You give it some text and a few questions, each
+with the answers you allow, and it returns a probability for every answer instead of writing a
+reply. It runs on your own machine, and it usually sits inside something that is waiting for it:
+a support queue, a moderation pipeline, an agent deciding its next step.
 
-Everything below was measured on one HP ZGX Nano (NVIDIA GB10) with RSI-Jev-v3.0-2B, a bf16
-tower and 4-option choice questions. Each timing is the median of 20 runs after warm-up. The
-chart and table come from one benchmark in one session
-([`assets/bench_gb10.json`](assets/bench_gb10.json); the chart is drawn by
-[`assets/speed_chart.py`](assets/speed_chart.py)).
-
-## Where it started and where it ended
+So we gave the next generation of [AutoScientists](https://github.com/mims-harvard/AutoScientists),
+our AI research-agent system, one question: how fast can the released v3.0 model answer on a
+desk-side GPU, without changing a single answer? The agents measured where the time went,
+proposed changes, tested each one against the unchanged model, and kept only those that passed.
+Out of the box it is now **1.3–1.6x faster**. A
+long-running server gets **up to 2.2x** with one flag, and an agent that keeps asking about the
+same conversation gets **up to 5.8x**.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/speed_gb10_dark.svg">
   <img src="assets/speed_gb10_light.svg" alt="Milliseconds per request on an HP ZGX Nano for six workloads, v3.0 as first released against now: 1.5x to 5.8x faster with the profile that fits." width="100%">
 </picture>
 
-| | v3.0 as first released | now, default | `--profile server` | `--profile agent` |
-|---|---|---|---|---|
-| 1 question, 80-token document | 33.5 ms | 26.8 ms | **21.9 ms** | 23.1 ms |
-| 1 question, 1,052-token document | 148.0 ms | 90.8 ms | 68.5 ms | **25.6 ms**¹ |
-| 32 questions, 80-token document | 286.9 ms | 194.5 ms | **166.4 ms** | 191.6 ms |
-| 32 questions, 1,052-token document | 440.5 ms | 302.9 ms | 253.9 ms | **240.7 ms** |
-| per decision, 32 questions, 80 tokens | 9.0 ms | 6.1 ms | **5.2 ms** | 6.0 ms |
-| agent asks again about the same 1,052-token state | 148.6 ms | 92.6 ms | 68.7 ms | **25.7 ms** |
-| agent state grows ~100 tokens a step | 142.6 ms | 88.8 ms | 65.7 ms | **52.6 ms** |
+Most of this comes from one observation about how these models spend their time.
 
-¹ A document it has already read, served from the cache.
+## The document is the expensive part
 
-In every configuration, each chosen option matches a reference that reads the whole document
-for every question with no cache. For scale: TypeSafe reports 70–500 ms for its hosted Jev
-(vendor-reported). Called from our machine over the internet, it took 164–188 ms on the six
-examples on our showcase page.
+Take a support ticket of about 1,000 tokens, and eight questions about it: which team should
+handle it, is it a refund request, how urgent is it, and so on. Each question with its options
+is 20–60 tokens.
 
-## How it went
+The straightforward way to answer is to give the model the ticket plus one question, eight times
+over. That reads the ticket eight times. But the model reads left to right, so its work on the
+ticket is identical for every question that follows. It can read the ticket once, keep what it
+computed, and continue each question from there. The answers come out exactly the same.
 
-The agents worked in the same way the research loop trains models. They measured first, proposed
-one change at a time, and kept a change only if it passed the checks at the end of this page.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/read_once_dark.svg">
+  <img src="assets/read_once_light.svg" alt="Before: the ticket is read once per question, about 8,400 tokens. After: the ticket is read once and all eight questions branch off it, about 1,400 tokens." width="100%">
+</picture>
 
-**1. The kernels were missing.** Qwen3.5 mixes attention layers with Gated DeltaNet layers.
-A plain install ran the DeltaNet layers on transformers' PyTorch reference code, and the only
-sign of it was a warning in the log. Installing the fused kernels (fla) gave **1.25–1.63x**.
-The release verification still agrees 1.0000 with the training record on all three sets.
-`pip install "rsi-jev[fast]"` now installs them, and the server says at startup which kernels
-it is actually using.
+On the GB10, the eight questions take **1,347 ms** when the ticket is read eight times and
+**253 ms** when it is read once, 5.3x less. With sixteen questions the gap is 8.8x. A request
+costs roughly one reading of the document, plus a little for each question. The practical
+advice follows directly: **ask all your questions about a document in one request.**
 
-**2. A threshold tuned on another GPU was switching the cache off.** When a request asks
-several questions about one document, the server reads the document once and continues each
-question from that read, but only when that saves enough tokens. The cut-off had been tuned on
-an A100, where one pass is cheap, and it applied whenever fla was installed. On the GB10 the
-break-even point is much lower:
+RSI-Jev's server already did this in v3.0. What the agents found was that it often was not doing
+it on this machine, and that agents were paying for the document again on every call.
 
-| tokens saved | 280 | 400 | 480 | 1,200 | 2,800 | 15,000 |
-|---|---|---|---|---|---|---|
-| reading once is | 0.75x | 1.06x | 1.28x | 1.97x | 3.84x | 8.77x |
+## A setting tuned on one GPU was switching it off on another
 
-The A100 threshold gave up **1.3–2x** on every request between 480 and 2,048 saved tokens. The
-threshold now depends on the GPU.
+Reading once has a small fixed cost: a second pass, and a copy of the kept state for each
+question. For a short document with only two or three questions, that overhead is bigger than
+the saving. So the server only reads once when enough work is saved, and the cut-off had been
+measured on an A100.
 
-**3. Looking at how others do it.** The agents read how other Jev-style projects serve their
-models: an explicit prefix cache and CUDA graphs (kev), a merged-LoRA fast path with CUDA graphs
-(imajev), one read of the state with every question as a short branch (OneJev), and vLLM or
-SGLang with prefix caching (vllm-jev, openjev). Each idea below was tried here.
+An A100 is fast enough per pass that the saving must be large to pay off. The GB10 is not, and
+its break-even point is about four times lower:
 
-**4. The GPU was already busy.** Changing the batch size moved latency by at most ±15%, and
-CUDA graphs made the GB10 slower. On this machine the time goes into real compute, not into
-launching kernels. (On an H100 the same graphs brought one question to 12.1 ms; that path is not
-released yet.) So the remaining gains had to come from doing less work.
+| tokens saved by reading once | 280 | 400 | 480 | 1,200 | 2,800 |
+|---|---|---|---|---|---|
+| speed-up on the GB10 | 0.75x | 1.06x | 1.28x | 1.97x | 3.84x |
 
-**5. Doing less work: remember what was read.** Agents ask about the same state again and again,
-often with a few lines added. The document cache keeps each read across requests, keyed on the
-exact tokens and the weights. A repeated state skips the read, and a state that grew reads only
-the new part. Asking again about the same state went from **148.6 to 25.7 ms**, and a state that
-grows each step from **142.6 to 52.6 ms**. Every answer matches a fresh read.
+With the A100's cut-off, the GB10 was reading documents repeatedly on every request in that
+middle range and losing 1.3–2x. The server now chooses the cut-off by GPU. A number that trades
+a fixed cost against saved work belongs to the hardware, not to the model.
 
-**6. Compiling the model.** `torch.compile` of each layer and the scorer gave **1.1–1.3x**
-more. It agrees with the uncompiled model on 99.9% / 99.9% / 99.0% of the verification
-questions, and calibration moved by 0.0001. It costs about 40 seconds of compiling on the first
-requests, so it is opt-in: `--profile server`.
+## Agents ask about the same thing again and again
 
-**7. A bug found on the way.** While measuring, the agents found that transformers 5.17 stores
-the DeltaNet states in dicts where 5.16 used lists. The cache copied only lists, so a copy shared
-state with the original. Requests with more than 16 questions, and every document-cache hit,
-continued from the wrong state; on a 32-question request, 3 answers changed. It is fixed, with a
-regression test that fails without the fix.
+An agent calls the model at every step with its whole conversation so far, and each call usually
+adds only a few lines. Reading once within a request does not help there: every call starts
+from scratch.
 
-## What did not ship
+`--profile agent` keeps what the model computed for a document across requests. A repeated
+document skips the reading entirely, and a document that has grown only reads the new part.
+Two details keep it exact. Entries are keyed on the exact tokens and the model weights, never on
+the raw text. And the last few tokens are always re-read, because adding text can change how
+the old ending splits into tokens (a JSON transcript's closing `}]` turning into `},{` is the
+usual case).
 
-| tried | on the GB10 | why it did not ship |
-|---|---|---|
-| **FP8** weights and activations | slower (45 ms against 24 ms for one question) | converting activations to FP8 cost more than the faster matrix multiply saved, and 2–8% of verification answers changed, most on MMLU-Pro |
-| **4-bit weights** (W4A16, NVFP4A16) | one short question 28 → 19 ms, no gain elsewhere | MMLU-Pro agreement fell to 0.77 and 0.69 |
-| **8-bit weights** (W8A16) | slower than bf16 almost everywhere | MMLU-Pro agreement 0.977, below the bar |
-| **FlashQLA** DeltaNet kernel | kernel 2.0–2.7x faster, end to end only 1–13% | that kernel is about 9% of the time; agreement 0.993–0.998, above what a kernel swap may change |
-| **vLLM** backend | 2.2x the throughput for many clients asking single short questions; 3x faster offline evaluation | slower for multi-question requests: on this hybrid model it shares a document only in 544-token blocks. Kept as an experimental backend |
+On a 1,000-token conversation, asking again drops from **149 ms to 26 ms**. A conversation that
+grows by about 100 tokens per step drops from 143 ms to **53 ms** per step. Every answer matches
+a fresh reading.
 
-Quantization was the most tempting, because one pass on the GB10 is limited by reading the
-weights. It only helped the one case that is limited that way, a single short question, and it
-changed answers on knowledge-heavy questions first.
+## The smaller wins: make sure the fast code runs
 
-## Where the floor is
+Three quarters of the model's layers are a newer kind of attention (Gated DeltaNet), and their
+fast implementation ships as a separate package. Without it, the model silently falls back to
+a slow reference version, and the only sign is one line in a log. Installing it made everything
+**1.25–1.63x** faster, with results identical to the training run's own records. It is now part
+of `pip install "rsi-jev[fast]"`, and the server prints at startup which kernels it is using.
 
-The tower's weights are about 2.75 GB in bf16. At the GB10's ~273 GB/s, reading them once takes
-about 10 ms, and that is the floor for one pass on this machine. One question takes 22–27 ms;
-32 questions at once share one read of the weights and cost 5–10 ms each. Going lower means
-changing the model itself: early exit (being tested), distilling to a smaller tower, or training
-with quantization in mind so that 4-bit weights pass the checks.
+For a server that runs for hours, `--profile server` also compiles the model (about 40 s at
+startup), for another **1.1–1.3x**.
 
-## The checks
+## Everything around the model
 
-A speed change ships only if it passes all three, against the unchanged model:
+Once the model itself was fast, the agents profiled a request from socket to socket. The model's
+forward pass was 85–97% of the time, but the rest had one surprise: the server tokenized the
+document once for every question, and once more to check whether the questions shared it. With
+32 questions on a 1,000-token document that was 29 ms, 10% of the request. It now tokenizes the
+document once. The same pass cut the copies back from the GPU, moved request parsing off the
+model's thread, and added a faster JSON encoder. Every one of 12,389 test answers is
+bit-identical, and the 32-question request drops from 309 to 277 ms. There is nothing to turn on.
 
-1. **Release verification:** answer agreement on the typed-decisions test set in both option
-   orders and on MMLU-Pro 1k. Kernel swaps must agree about 1.000; other changes at least 0.99.
-2. **Roundtrip:** 200 questions against the training run's own record, at least 0.99.
-3. **Calibration:** error after the shipped calibration within ±0.003 on the benchmark suite.
+**Many clients at once.** The server answered one request at a time, so 32 clients each asking
+one short question got the same 32 requests per second as one client did. `--batch-window-ms 0`
+lets the questions that are waiting at the same moment share one forward pass: **32 → 72
+requests per second**, and the median wait at 32 clients falls from 984 to about 400 ms. vLLM
+reaches 84 on this workload, and is still ahead on single questions about long documents; on
+several questions per document, this server does 2.5x more than vLLM. It is opt-in because a
+question's probabilities move very slightly with what it shares a pass with (99% of answers
+unchanged on the knowledge test, calibration within 0.002).
 
-## Thanks
+**Less padding.** The questions in one pass are padded to the longest one, and every question to
+160 answer slots. A request that mixes yes/no questions with long lists of options wasted most
+of its work. `RSIJEV_SORT_ROWS=1 RSIJEV_TRIM_OPTIONS=1` groups questions of similar length and
+trims the unused slots: **1.7–1.8x** on such a request, and 1.08–1.13x on uniform ones, with
+every top answer unchanged.
 
-Thanks to HP and NVIDIA for providing the HP ZGX Nano AI Station, powered by the NVIDIA GB10
-Grace Blackwell Superchip. Every measurement here was made on it.
+## What did not help, and why
 
-[`inference.md`](inference.md) is how to install and run it, and which setup to pick.
+A single pass has a floor on this machine. The model's weights are 2.75 GB, and the GB10 reads
+memory at about 273 GB/s, so one pass cannot take less than about 10 ms; one question measures
+22–27 ms. When many questions are answered together, the weights are read once for all of them
+and the GPU spends its time computing. Tricks aimed at other bottlenecks had little to work with:
+
+| tried | what happened |
+|---|---|
+| 4-bit and 8-bit weights | faster only for a single short question (28 → 19 ms with 4-bit), and they changed answers: 4-bit agreed with the full model on only 69–77% of MMLU-Pro questions |
+| FP8 | slower without compiling, and changed 2–8% of answers |
+| a faster kernel for the DeltaNet layers (FlashQLA) | 2–2.7x faster on its own, but those layers take about 9% of the time: 1–13% overall |
+| CUDA graphs | slower: they remove launch overhead, and the GPU was already busy computing |
+| vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions more than twice as fast; micro-batching (above) closed most of that gap |
+
+The agents held every change to one rule: **a faster answer must be the same answer.** People set
+thresholds on these probabilities, so a speed-up that moves them is a regression. Each change was
+compared with the unchanged model on the release's verification sets, on 200 questions from the
+training run's own records, and on calibration error. Quantization failed that test, and it
+failed first on knowledge-heavy questions.
+
+## Try it
+
+```bash
+pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b                    # default
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --profile agent    # agents re-asking about a conversation
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --profile server   # long-running servers
+rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --batch-window-ms 0 # many clients, short questions
+```
+
+It speaks Jev's API, so an existing Jev client only needs its base URL changed.
+[`inference.md`](inference.md) has the details.
+
+## What comes next
+
+What is left sits almost entirely inside the model's forward pass. Next on the agents' list,
+each held to the same rule:
+
+- **Images read once.** The next release reads images. Today each question about an image
+  re-reads it; reading it once and branching every question off it is the same trick as above.
+- **Sharing a document's reading across clients.** Micro-batching pools single questions; pooling
+  the document pass of multi-question requests would extend it to them.
+- **CUDA graphs on datacenter GPUs.** They did not help on the GB10, but on an H100 one question
+  drops to 12.1 ms in our tests.
+
+*Measured on an HP ZGX Nano AI Station with the NVIDIA GB10 Grace Blackwell Superchip, provided by
+HP and NVIDIA. Medians of 20 runs, one configuration per process, bf16 model; raw data in
+[`assets/bench_gb10.json`](assets/bench_gb10.json).*
