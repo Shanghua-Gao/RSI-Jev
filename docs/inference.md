@@ -10,6 +10,8 @@ includes a network hop.
 
 ## How much faster
 
+[`speed.md`](speed.md) is the story of how these speedups were found, including what did not ship.
+
 We ran one benchmark in one session on the GB10. Every configuration used the same
 checkpoint, documents and questions, and each ran in its own process, one at a time. Each
 cell is the p50 of 20 runs after 3 warm-up runs, in milliseconds, with 4-option choice
