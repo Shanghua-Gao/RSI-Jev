@@ -116,6 +116,28 @@ class FitConfig:
     rl2: dict = field(default_factory=dict)
 
 
+
+def _lr_lambdas(groups, cfg: FitConfig):
+    """One LR multiplier per parameter group. Every tower group ("base" and v2.1's
+    "base_lower") follows `base_schedule`, the head follows `head_schedule`, and the rest
+    only warm up. The lower layers share the tower's schedule, as in the code that trained
+    v2.1 onwards; an earlier public copy matched only "base" and held them constant."""
+    n_warm = max(1, int(cfg.warmup * cfg.steps))
+
+    def warm(s):
+        return min(1.0, (s + 1) / n_warm)
+
+    def warm_cosine(s):
+        if s < n_warm:
+            return warm(s)
+        t = (s - n_warm) / max(1, cfg.steps - n_warm)
+        return 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
+
+    base_fn = warm_cosine if cfg.base_schedule == "cosine" else warm
+    head_fn = warm_cosine if cfg.head_schedule == "cosine" else warm
+    return [base_fn if gr["name"].startswith("base") else head_fn if gr["name"] == "head" else warm
+            for gr in groups]
+
 def _param_groups(model, cfg: FitConfig):
     """One group per role, plus an optional slower group for the lowest layers.
 
@@ -368,19 +390,7 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     random.Random(seed).shuffle(order)          # data order is part of the CRN
 
     opt = torch.optim.AdamW(_param_groups(model, cfg), weight_decay=cfg.weight_decay)
-    n_warm = max(1, int(cfg.warmup * cfg.steps))
-    def warm(s):
-        return min(1.0, (s + 1) / n_warm)
-    def warm_cosine(s):
-        if s < n_warm:
-            return warm(s)
-        t = (s - n_warm) / max(1, cfg.steps - n_warm)
-        return 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
-    base_fn = warm_cosine if cfg.base_schedule == "cosine" else warm
-    head_fn = warm_cosine if cfg.head_schedule == "cosine" else warm
-    lambdas = [base_fn if gr["name"] == "base" else head_fn if gr["name"] == "head" else warm
-               for gr in opt.param_groups]
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambdas)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, _lr_lambdas(opt.param_groups, cfg))
 
     # Scale probes: where does logit growth come from -- the features the head
     # reads, or the head's own weights? A pre-hook records the mean L2 norm of
