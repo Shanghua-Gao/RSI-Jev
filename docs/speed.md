@@ -7,8 +7,11 @@ with the answers you allow, and it returns a probability for every answer instea
 reply. It runs on your own machine, and it usually sits inside something that is waiting for it:
 a support queue, a moderation pipeline, an agent deciding its next step.
 
-So we set out to answer one question: how fast can the released v3.0 model answer on a desk-side
-GPU, without changing a single answer? Out of the box it is now **1.3–1.6x faster**. A
+So we gave the next generation of [AutoScientists](https://github.com/mims-harvard/AutoScientists),
+our AI research-agent system, one question: how fast can the released v3.0 model answer on a
+desk-side GPU, without changing a single answer? The agents measured where the time went,
+proposed changes, tested each one against the unchanged model, and kept only those that passed.
+Out of the box it is now **1.3–1.6x faster**. A
 long-running server gets **up to 2.2x** with one flag, and an agent that keeps asking about the
 same conversation gets **up to 5.8x**.
 
@@ -40,8 +43,8 @@ On the GB10, the eight questions take **1,347 ms** when the ticket is read eight
 costs roughly one reading of the document, plus a little for each question. The practical
 advice follows directly: **ask all your questions about a document in one request.**
 
-RSI-Jev's server already did this in v3.0. What we found was that it often was not doing it on
-this machine, and that agents were paying for the document again on every call.
+RSI-Jev's server already did this in v3.0. What the agents found was that it often was not doing
+it on this machine, and that agents were paying for the document again on every call.
 
 ## A setting tuned on one GPU was switching it off on another
 
@@ -104,7 +107,7 @@ and the GPU spends its time computing. Tricks aimed at other bottlenecks had lit
 | CUDA graphs | slower: they remove launch overhead, and the GPU was already busy computing |
 | vLLM | built for generating text; on this model it keeps shared documents in 544-token blocks, so short documents are re-read for every question. It did handle many concurrent single questions 2.2x better |
 
-We held every change to one rule: **a faster answer must be the same answer.** People set
+The agents held every change to one rule: **a faster answer must be the same answer.** People set
 thresholds on these probabilities, so a speed-up that moves them is a regression. Each change was
 compared with the unchanged model on the release's verification sets, on 200 questions from the
 training run's own records, and on calibration error. Quantization failed that test, and it
