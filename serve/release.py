@@ -20,15 +20,17 @@ import torch
 
 from rsijev.arch import ArchConfig, DecisionModel
 from rsijev.encode import EncodeConfig
+from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
+REPOS = {"v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
+         "v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
          "v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
-LATEST = "v3.0-2b"
+LATEST = "v4.0-vl-2b"
 
 _REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
 
@@ -81,16 +83,28 @@ def checkpoint_name(ref: str | Path, path: str | Path | None = None) -> str:
 
 
 def release_version(name: str) -> str | None:
-    """`v3.0` out of `rsi-jev-v3.0-qwen3.5-2b`, or None."""
-    found = re.search(r"v\d+\.\d+", name)
-    return found.group(0) if found else None
+    """`v3.0` out of `rsi-jev-v3.0-qwen3.5-2b`, `v4.0-VL` out of
+    `rsi-jev-v4.0-vl-qwen3.5-2b`, or None. The only suffix read is `-vl`: any other
+    word after the number is the base model's name, not the release's."""
+    found = re.search(r"v\d+\.\d+(-vl)?(?![a-z])", name, re.IGNORECASE)
+    if not found:
+        return None
+    return found.group(0)[:len(found.group(0)) - len(found.group(1) or "")] + \
+        (found.group(1) or "").upper()
 
 
-def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None):
+def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
+                 vision: bool | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
     project a whole version. Evaluation leaves this None and gets fp32.
+
+    A checkpoint trained with images (v4.0-VL on: a `vision` block in meta.json) is
+    loaded with the base model's own vision tower beside the text tower, as
+    `rsijev.vision.VisionDecisionModel`; a text request runs exactly the text
+    path. `vision=False` loads it text-only. `meta["vision"]` then says what an
+    image request may carry; a text-only model's meta has no such key.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -119,7 +133,23 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None):
                       logit_cap=spec.get("logit_cap"),
                       head_input_norm=spec.get("head_input_norm", False),
                       **dict(spec.get("arch_extra") or {}))
-    model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
+    vb = vision_block(meta) if vision is not False else None
+    if vb:
+        from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
+                                   vision_revision)
+        vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
+        revision = vision_revision(vb, meta["base_model"])
+        # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
+        # is how the vision releases were trained and gated.
+        model = VisionDecisionModel(tower, cfg.hidden_size, arch,
+                                    visual=load_visual(meta["base_model"], revision=revision),
+                                    image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD),
+                                    vcfg=vcfg).to(device)
+        meta["vision"] = {"image_token_budget": vcfg.image_token_budget,
+                          "min_tokens_per_image": vcfg.min_tokens_per_image,
+                          "revision": revision}
+    else:
+        model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
     # v2.0 onward a checkpoint may ship a fitted calibration (calibration.safetensors
     # + calibration.json, rsijev/calibrate.py). It is part of the released model, not

@@ -502,3 +502,34 @@ not sealed from the search. Arms are counted one per run record, a rerun countin
 | `dp-r5-stack-ctl` | control | control | 0.7586 | 0.6402 | 0.3690 | control for dp-r5-stack |
 | `dp-r5-stack` | stack | no KEEP (product candidate) | 0.7622 | 0.6450 | 0.3770 | stack of every kept dp component: +.0036 vs ctl, below the +.006 bar; KoBBQ gate fails |
 | `rl5-listwise-rcC` | RL | kept = v3.0 | 0.7561 | 0.6490 | 0.3640 | rl4 recipe on the v3.0 SFT parent: hippo pc R@1 .192 -> .308 |
+
+## jevtr_v1, continued — from v3.0 to v4.0-VL (2026-09-28/30)
+
+Same loop and evaluator, now with images. Counted as before, one per run record and a rerun
+once: **108 arms** between v3.0 and v4.0-VL. The table lists the eleven on v4.0-VL's own line,
+the stages it was built from with their controls and rivals; `vis-ct-1` and `vis-ct-2` are in
+the v3.0 table above. The other arms of this stretch (a text retrain, 4B models cut at an
+early exit, image games, further RL and data rounds) are not written up here yet.
+
+- **Images train like text.** Each image round held the suite against its replay-only control
+  and moved its own held-out probes: round 3's generators took theirs from 0.613 to 0.854.
+- **Stacked continued training made the model overconfident.** Raw held-out ECE rose from
+  v3.0's 0.154 to 0.25–0.29 over the image rounds, and the confidence head removed only part of it.
+- **Soft targets on questions it cannot answer repaired most of that** (`calA-ce`); the same
+  questions with true answers taught BIG-Bench Hard's task families instead (`calB-rl`).
+- **An asymmetric confidence penalty calibrated in the weights**: raw held-out ECE 0.200 →
+  0.082, against 0.121 for the matched supervised stage. One seed.
+
+| arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
+|---|---|---|---|---|---|---|
+| `rl5-listwise-vis` | RL | kept (parent of round 3) | 0.7601 | 0.6423 | 0.3860 | v3.0's listwise reranking stage on `vis-ct-1`: hippo R@1 .220; image eval .807 (`vis-ct-1` .809) |
+| `vis-ct-3` | vision | kept | 0.7577 | 0.6447 | 0.3750 | image round 3: six synthetic generators + four vision_v2 sources, 51% text replay: held-out-template probes .854 vs .613 for its control; image eval .804 |
+| `vis-ct-3-ctl` | control | control | 0.7537 | 0.6431 | 0.3580 | replay-only control for `vis-ct-3` (image eval .806) |
+| `vis-ct-3b` | vision | rejected | 0.7574 | 0.6445 | 0.3650 | `vis-ct-3` with 2,048 image tokens for document and chart sources: probes .856, no resolution effect |
+| `vis-rl-2` | RL | rejected | 0.7543 | 0.6341 | 0.3710 | listwise RL over 16 images per query: retrieval NDCG@5 .980, identical to its pointwise control |
+| `vis-rl-2-pw` | control | control | 0.7532 | 0.6373 | 0.3720 | pointwise CE control for `vis-rl-2` |
+| `calA-ce` | data | kept | 0.7555 | 0.6469 | 0.3750 | 8,492 generated reasoning questions with soft targets where `vis-ct-3` is at chance: raw final ECE .200 vs .316 for its control, .075 after calibration |
+| `calB-rl` | RL | not a release candidate | 0.7551 | 0.6875 | 0.3660 | bandit RL on the same questions with true answers: BBH web_of_lies .52 → .91; without BBH, lower accuracy than its parent and ECE .087 after calibration |
+| `calC-ctl` | control | control | 0.7537 | 0.6394 | 0.3630 | replay-only control for `calA-ce` and `calB-rl` |
+| `asym-calA` | RL | **kept = v4.0-VL** | 0.7564 | 0.6528 | 0.3850 | asymmetric RL stage on `calA-ce` (a confident mistake costs 4× a timid correct answer), 30% image rows: raw final ECE .200 → .082 |
+| `ce-calA` | control | control | 0.7579 | 0.6442 | 0.3750 | the matched supervised stage for `asym-calA`: same data, steps and seed; raw final ECE .121. Scores from the release gate eval job, as in the card |

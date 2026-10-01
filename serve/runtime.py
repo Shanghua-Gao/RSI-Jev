@@ -14,7 +14,7 @@ import os
 import sys
 from typing import Mapping, MutableMapping
 
-FAST_INSTALL = 'pip install "rsi-jev[fast]"'
+FAST_INSTALL = 'pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"'
 
 # A profile only sets defaults. A variable already in the environment wins, so
 # `RSIJEV_DOC_CACHE=0 rsi-jev serve ... --profile agent` still runs without it.
@@ -204,6 +204,28 @@ def describe_kernels(report: dict[str, dict], device: str) -> list[str]:
     return lines
 
 
+VISION_INSTALL = 'pip install "rsi-jev[vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"'
+
+
+def vision_report() -> dict[str, str | None]:
+    """The `[vision]` extra: the installed version of Pillow and torchvision, or None.
+
+    Image requests to a release trained with images (v4.0 on) need both: the image
+    processor imports torchvision, and requests are decoded with Pillow."""
+    return {name: (_dist_version(dist) or "installed") if _importable(module) else None
+            for name, dist, module in (("pillow", "pillow", "PIL"),
+                                       ("torchvision", "torchvision", "torchvision"))}
+
+
+def describe_vision(report: dict[str, str | None]) -> str:
+    missing = [k for k, v in report.items() if v is None]
+    if not missing:
+        return "images: [vision] extra installed (" + ", ".join(
+            f"{k} {v}" for k, v in report.items()) + ")"
+    return (f"images: [vision] extra missing ({', '.join(missing)} not installed); image "
+            f"requests to v4.0 releases need it: {VISION_INSTALL}")
+
+
 def startup_lines(*, torch, device: str, dtype_name: str, model=None,
                   profile: str | None = None, applied: list[str] = ()) -> list[str]:
     """What the server prints before it answers anything."""
@@ -216,6 +238,7 @@ def startup_lines(*, torch, device: str, dtype_name: str, model=None,
         where = device
     lines = [f"runtime: torch {torch.__version__}, {where}, tower {dtype_name}, scorer fp32"]
     lines += describe_kernels(kernel_report(device, model), device)
+    lines.append(describe_vision(vision_report()))
     doc_cache = "on" if _flag("RSIJEV_DOC_CACHE") else "off"
     compile_ = ("on" if any(a.startswith("compile") for a in applied)
                 else "off")

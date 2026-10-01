@@ -16,13 +16,15 @@ move a protected file is a change to the task, and goes through a human.
 | | path | what it decides |
 |---|---|---|
 | **EDITABLE** | `arch.py` | the model axis: how state and options are encoded and read out |
+| **EDITABLE** | `vision.py` | images in the state (v4.0-VL on): the base model's own vision tower, `<image>` markers, M-RoPE positions |
+| **EDITABLE** | `vision_fit.py` | the image rows of a training batch (`FitConfig.vision`): images looked up by case id in the image corpora, fed through the frozen vision tower; a text row is encoded exactly as before |
 | **EDITABLE** | `data.py` | the data axis: what gets collected, generated or deleted |
 | **EDITABLE** | `train.py` | the training axis: objective, optimiser, schedule, calibration |
 | **PROTECTED** | `contract.py` | what a typed decision *is* — one `Case`, one prediction |
 | **PROTECTED** | `evaluate.py`, `metrics.py`, `targets.py` | what is scored, how, and on which splits |
 | **PROTECTED** | `encode.py` | position and padding bookkeeping (the *layout* is an `arch.py` choice) |
 | **mixed** | `fit.py` | the loop: bookkeeping protected, configuration editable |
-| **EDITABLE** | `rl2.py` | continued training with a reward instead of a label (v3.0's listwise reranking stage: Plackett-Luce rankings scored by NDCG@k, leave-one-out baseline, KL penalty to the parent). `fit.py` hands over to it when `FitConfig.rl2` is set |
+| **EDITABLE** | `rl2.py` | continued training with a reward instead of a label (v3.0's listwise reranking stage: Plackett-Luce rankings scored by NDCG@k, leave-one-out baseline, KL penalty to the parent). `fit.py` hands over to it when `FitConfig.rl2` is set. v4.0-VL's stage is `mode: "asym"`: correctness minus a confidence penalty that is `lam_over` on confident mistakes and `lam_under` on timid correct answers |
 
 Entry points are in `scripts/`, and each one says what it is on its first line
 (`head -1 scripts/*.py`). The three that matter here:
@@ -49,7 +51,18 @@ deliberately **not** evaluation targets.
 | `build_ds2_addons.py` | v3.0's data-scale-2 additions (emotion, SST-5, ANLI, tasksource and Open-Jev train items) on top of a base corpus |
 | `build_hippo_rr.py` | v3.0's reranking corpus: MS MARCO / TopiOCQA / FiQA train queries with BM25 hard negatives, in the hippo request shape |
 | `build_rl2_sources.py` | the RL stage's source files from that corpus (`rl_hrr.jsonl`: one query group per case) |
-| `fit_release_calibration.py` | fits a release's confidence head on the held-out tenth of its parent's corpus |
+| `fit_release_calibration.py` | fits a release's confidence head on the held-out tenth of its parent's corpus; `--lineage --vis-dev-root` adds v4.0-VL's image holdout and a leak guard over every corpus of the lineage |
+
+**v4.0-VL's six stages** are specified in [`../data/v4.0-vl_recipe/`](../data/v4.0-vl_recipe/)
+(`asym-calA.json` is the checkpoint's own spec) and built by:
+
+| script | what it produces |
+|---|---|
+| `build_vision_v1.py`, `build_vision_v2.py`, `build_vision_v3.py` | the three image corpora: public VQA / document / chart train splits (v1, v2) and six code-labelled synthetic generators (v3) |
+| `build_eval_vision.py`, `decontam_vision.py` | the held-out image set (report-only), and the decontamination of every image corpus against it |
+| `depthdial.py`, `build_depthdial.py`, `depthdial_measure.py` | the calibration round's generated reasoning questions, with soft targets from the parent's measured per-depth accuracy |
+| `ct_build_corpus.py`, `build_stage_corpora.py` | each stage's corpus: new data plus replay of the parent's |
+| `build_rl2_calpool.py` | the RL stage's slice, calibration and dev pools |
 
 Each takes every root as an argument. None has a default path, and
 `tests/test_corpus_builders.py` fails if one appears.

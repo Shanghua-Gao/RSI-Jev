@@ -96,6 +96,7 @@ def test_the_served_name_is_the_repo_name_not_a_snapshot_hash(tmp_path):
     d.mkdir()
     assert release.checkpoint_name(str(d)) == "rsi-jev-v2.1-qwen3.5-2b"     # as before
     assert release.release_version("rsi-jev-v3.0-qwen3.5-2b") == "v3.0"
+    assert release.release_version("rsi-jev-v4.0-vl-qwen3.5-2b") == "v4.0-VL"
 
 
 def test_the_script_loader_is_the_package_loader():
@@ -224,7 +225,7 @@ def test_missing_fla_on_cuda_prints_the_install_command(monkeypatch):
     _fake_install(monkeypatch, fla=None, conv=None)
     lines = runtime.describe_kernels(runtime.kernel_report("cuda"), "cuda")
     assert "fla not installed" in lines[0]
-    assert len(lines) == 2 and 'pip install "rsi-jev[fast]"' in lines[1]
+    assert len(lines) == 2 and 'pip install "rsi-jev[fast] @ git+' in lines[1]
 
 
 def test_fla_off_cuda_is_installed_but_not_used(monkeypatch):

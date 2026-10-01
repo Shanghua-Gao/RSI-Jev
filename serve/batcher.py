@@ -13,7 +13,7 @@ The questions of the requests that read their state in full ("plain" requests, a
 multi-question requests on a short state) then run together, in batches of at most
 `max_rows` rows and `max_tokens` padded tokens, and the answers are split back.
 Requests that read a long state once and continue each question from it run on
-their own, as they do without batching. A request that finds nobody to share with
+their own, as they do without batching, and so do requests with images. A request that finds nobody to share with
 runs exactly as it would without batching.
 
 Batching changes which rows share a bf16 forward, and that moves probabilities
@@ -31,15 +31,16 @@ from typing import Any, Callable, Sequence
 
 
 class CallRunner:
-    """Wraps any scorer `(state, questions) -> (probs, tokens)`; never batches."""
+    """Wraps any scorer `(state, questions[, images]) -> (probs, tokens)`; never
+    batches. A text request calls the scorer with two arguments, as before images."""
 
     pools = False
 
     def __init__(self, scorer: Callable):
         self.scorer = scorer
 
-    def plan(self, state, questions):
-        return (state, questions)
+    def plan(self, state, questions, images=None):
+        return (state, questions, images) if images else (state, questions)
 
     def run(self, plans: list) -> list:
         return [_capture(self.scorer, *p) for p in plans]
@@ -59,14 +60,20 @@ class _Failed:
 
 class ModelRunner:
     """The served model: plan with `serve.infer.plan_request`, run with
-    `score_planned`, and (when pooling) run several plans' rows together."""
+    `score_planned`, and (when pooling) run several plans' rows together.
+
+    `prep` and `venc` (serve.server.Served) enable image requests: they are planned
+    with `plan_image_request`, run on their own with `score_image_planned`, and
+    never pooled. Without them an image request is a 422 (`image_error` says why)."""
 
     pools = True
 
     def __init__(self, model, tok, enc, *, spec_max_options: int, device, batch_size: int = 16,
                  max_rows: int | None = None, max_tokens: int | None = None,
-                 pool_prefix_tokens: int | None = None):
+                 pool_prefix_tokens: int | None = None, prep=None, venc=None,
+                 name: str = "this model", image_error: str | None = None):
         env = os.environ.get
+        self.prep, self.venc, self.name, self.image_error = prep, venc, name, image_error
         self.model, self.tok, self.enc, self.device = model, tok, enc, device
         self.spec_max_options = spec_max_options
         self.batch_size = batch_size
@@ -87,19 +94,37 @@ class ModelRunner:
     def max_options(self, questions) -> int:
         return max(self.spec_max_options, max(len(q.options) for q in questions))
 
-    def plan(self, state, questions) -> dict:
+    def plan(self, state, questions, images=None) -> dict:
         from serve.infer import plan_request
-        with self._tok_lock:
-            p = plan_request(self.tok, state, questions, self.enc)
+        if images:
+            p = self._plan_images(state, questions, images)
+        else:
+            with self._tok_lock:
+                p = plan_request(self.tok, state, questions, self.enc)
         p["max_options"] = self.max_options(questions)
         return p
 
+    def _plan_images(self, state, questions, images) -> dict:
+        from serve.images import state_too_long, text_only_error
+        from serve.infer import plan_image_request
+        if self.prep is None:
+            raise text_only_error(self.name, self.image_error)
+        try:
+            with self._tok_lock:
+                return plan_image_request(self.tok, self.prep, state, images, questions,
+                                          self.venc)
+        except ValueError as e:
+            err = state_too_long(e, self.venc.max_length)
+            if err is None:
+                raise
+            raise err from None
+
     def one(self, plan):
-        from serve.infer import score_planned
+        from serve.infer import score_image_planned, score_planned
+        run = score_image_planned if plan["path"] == "image" else score_planned
         with self._maybe_tok_lock():
-            preds, tokens = score_planned(self.model, self.tok, plan,
-                                          max_options=plan["max_options"], device=self.device,
-                                          batch_size=self.batch_size)
+            preds, tokens = run(self.model, self.tok, plan, max_options=plan["max_options"],
+                                device=self.device, batch_size=self.batch_size)
         return [list(p.probs) for p in preds], tokens
 
     def _maybe_tok_lock(self):
@@ -174,8 +199,12 @@ class GpuWorker:
         self._thread.start()
 
     # -- caller side
-    def plan(self, state, questions):
-        """Tokenize and choose a path, in the caller's thread."""
+    def plan(self, state, questions, images=None):
+        """Tokenize and choose a path, in the caller's thread. `images` (validated
+        PIL images) is passed on only when there are some, so a runner written for
+        text alone keeps working."""
+        if images:
+            return self.runner.plan(state, questions, images)
         return self.runner.plan(state, questions)
 
     def enqueue(self, plan) -> Future:
@@ -183,9 +212,9 @@ class GpuWorker:
         self._q.put((time.perf_counter(), plan, f))
         return f
 
-    def __call__(self, state, questions):
+    def __call__(self, state, questions, images=None):
         """Synchronous use, as a scorer: plan here, run on the worker, wait."""
-        return self.enqueue(self.plan(state, questions)).result()
+        return self.enqueue(self.plan(state, questions, images)).result()
 
     def close(self) -> None:
         self._q.put(None)
@@ -244,6 +273,9 @@ def model_worker(served, *, batch_size: int = 16, window_ms: float | None = None
     """The server's worker for a loaded release (serve.server.Served)."""
     runner = ModelRunner(served.model, served.tok, served.enc,
                          spec_max_options=served.meta["spec"]["max_options"],
-                         device=served.device, batch_size=batch_size, **runner_kw)
+                         device=served.device, batch_size=batch_size,
+                         prep=getattr(served, "prep", None), venc=getattr(served, "venc", None),
+                         name=served.name, image_error=getattr(served, "vision_error", None),
+                         **runner_kw)
     return GpuWorker(runner, window_ms=window_ms)
 

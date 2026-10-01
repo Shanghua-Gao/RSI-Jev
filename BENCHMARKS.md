@@ -129,7 +129,7 @@ numbers should be compared before trusting either.
 | `python scripts/routing.py --cases 400` | accuracy against coverage when you act only on the top slice by confidence, and whether a small-model-first cascade earns its place. Runs v1.0's two sizes, the only release with two |
 | `python scripts/load_release.py --ckpt DIR --verify` | re-scores a checkpoint against the run that produced it |
 
-`--model` takes `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
+`--model` takes `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
 
 Speed moves with GPU load — up to ±20% between runs — so measure on your own
 hardware before depending on a figure. Each release's record names the machine its

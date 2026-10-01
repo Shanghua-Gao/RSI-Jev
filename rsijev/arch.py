@@ -3,7 +3,8 @@
 The base is `Qwen/Qwen3.5-0.8B-Base`, which is NOT a plain decoder:
 
   * multimodal (`Qwen3_5ForConditionalGeneration`): a text tower plus a vision
-    tower. The vision tower is frozen and unused here.
+    tower. The vision tower is frozen and unused here; rsijev/vision.py loads it
+    for image states (v4.0-VL on).
   * the text tower repeats `linear_attention x3 + full_attention`, so **only
     every 4th layer can attend freely**. Where a readout is attached is a real
     choice, not a detail.
@@ -496,7 +497,8 @@ class DecisionModel(nn.Module):
 
     def _run_tower(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
                    all_states: bool = False, past_key_values=None,
-                   position_ids: torch.Tensor | None = None):
+                   position_ids: torch.Tensor | None = None,
+                   inputs_embeds: torch.Tensor | None = None):
         """One tower pass, returning (state the correction reads, FINAL state).
 
         The two are not the same thing and must not be conflated. The correction
@@ -514,8 +516,14 @@ class DecisionModel(nn.Module):
             extra = {"past_key_values": past_key_values, "use_cache": True}
         if position_ids is not None:
             extra["position_ids"] = position_ids
-        out = self.tower(input_ids=input_ids, attention_mask=attention_mask,
-                         output_hidden_states=True, **extra)
+        # Image states (rsijev/vision.py) arrive as embeddings with the vision
+        # features scattered over the image-pad tokens, plus M-RoPE position ids.
+        # A text batch sets neither, so its call is unchanged.
+        if inputs_embeds is None:
+            extra["input_ids"] = input_ids
+        else:
+            extra["inputs_embeds"] = inputs_embeds
+        out = self.tower(attention_mask=attention_mask, output_hidden_states=True, **extra)
         hs = out.hidden_states                      # tuple, embeddings first
         # `last_hidden_state` is unambiguously post-norm; hs[-1] is post-norm in
         # HF text models but that is a convention, not a guarantee, so prefer the
@@ -561,7 +569,8 @@ class DecisionModel(nn.Module):
                  past_key_values=None,
                  position_ids: torch.Tensor | None = None,
                  want_base: bool = False,
-                 row_grad_scale: torch.Tensor | None = None):
+                 row_grad_scale: torch.Tensor | None = None,
+                 inputs_embeds: torch.Tensor | None = None):
         """One tower pass, returning (logits, base logits or None).
 
         The base term and the correction both come from this single pass. A
@@ -573,7 +582,8 @@ class DecisionModel(nn.Module):
         """
         hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
                                     past_key_values=past_key_values,
-                                    position_ids=position_ids)
+                                    position_ids=position_ids,
+                                    inputs_embeds=inputs_embeds)
         b = torch.arange(final.shape[0], device=final.device)
         if self.mix_logits is not None:
             if mode_id is None:

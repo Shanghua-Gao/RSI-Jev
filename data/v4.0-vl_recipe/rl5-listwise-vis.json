@@ -1,0 +1,83 @@
+{
+ "readout": "option_xattn",
+ "objective": "soft_ce",
+ "steps": 1500,
+ "batch_size": 16,
+ "eval_batch_size": 32,
+ "max_options": 160,
+ "lr_head": 5e-05,
+ "lr_base": 2e-06,
+ "diag_only": false,
+ "logit_cap": null,
+ "head_input_norm": false,
+ "label_smoothing": 0.0,
+ "head_weight_decay": 0.0,
+ "base_schedule": "cosine",
+ "head_schedule": "cosine",
+ "seed": 17,
+ "readout_layer": -1,
+ "option_pool": "mean",
+ "layout": "state_first",
+ "freeze_base": false,
+ "keep_last_k": 3,
+ "residual": false,
+ "prior_kl": 0.0,
+ "freeze_embeddings": true,
+ "grad_checkpointing": true,
+ "eval_dtype": "native",
+ "repeat_eval": null,
+ "option_order": "shuffled",
+ "eval_option_orders": [
+  "canonical",
+  "reversed"
+ ],
+ "arch_extra": {
+  "xattn_combine": "mlp"
+ },
+ "fit_extra": {
+  "lower_layers_n": 8,
+  "lower_layers_lr_scale": 0.1,
+  "length_bucket": 64,
+  "warmup": 0.1,
+  "log_every": 25,
+  "init_from": "vis-ct-1/s17",
+  "vision": {
+   "root": "vision_v1",
+   "budget": 1024,
+   "model": "Qwen/Qwen3.5-2B-Base"
+  },
+  "rl2": {
+   "mode": "listwise",
+   "group_size": 16,
+   "samples": 16,
+   "ndcg_k": 5,
+   "kl_coef": 0.1,
+   "kl_gate": 1000000000.0
+  }
+ },
+ "rl_extra": {},
+ "min_trainable_tower": 100000000,
+ "eval_fast": "auto",
+ "eval_prefix_cache": false,
+ "eval_token_budget": null,
+ "eval_max_rows": null,
+ "eval_compile": false,
+ "eval_smoke": null,
+ "control_cache": true,
+ "specialist": true,
+ "sources": "rl_hrr,rp_cov_ambigqa,rp_cov_condaqa,rp_cov_cuad,rp_cov_finqa,rp_cov_gsm8k,rp_cov_hotpotqa,rp_cov_massive_multi,rp_cov_musique,rp_cov_open_jev,rp_cov_privacyqa,rp_cov_tabfact,rp_cov_tasksource_jev,rp_ds2_open_jev,rp_ds2_tasksource_jev,rp_jsg_anli,rp_jsg_emotion,rp_jsg_sst5,rp_mc_replay_extra,rp_mc_replay,rp_st_aegis2,rp_st_boolq,rp_st_civil_comments,rp_st_helpsteer2,rp_st_kev_devtools_v1,rp_st_kev_documents_v1,rp_st_kev_hard_v1,rp_st_massive-de-DE,rp_st_massive-en-US,rp_st_multinli,rp_st_nimble_train,rp_st_paws,rp_st_procedural_train,rp_st_squad2,rp_st_vitaminc,rp_synth,rp_td_train,vis_ai2d,vis_aokvqa,vis_chartqa,vis_docvqa,vis_hateful_memes,vis_nlvr2,vis_rvlcdip,vis_scienceqa,vis_screen2words,vis_tallyqa,vis_tqa,vis_vqav2",
+ "corpus_dir": "rl5-vis",
+ "init_parent": {
+  "path": "vis-ct-1/s17",
+  "parent_code_dir": "vis-ct-1",
+  "parent_corpus_dir": "vis-ct-1",
+  "parent_steps": 4000,
+  "parent_seed": 17
+ },
+ "code_dir": "rl5-listwise-vis",
+ "why": "Stage 3, RL: v3.0's listwise reranking stage (KL penalty 0.1, gate off, Plackett-Luce NDCG@5 with a leave-one-out baseline over 16 reranking candidates per step, 1,500 steps) on vis-ct-1, with vis-ct-1's own replay mix (30,094 text + 7,410 vision_v1 questions, 19.8% images) and the rl_hrr rows on the RL side only.",
+ "corpus_gate": {
+  "checked": false,
+  "override": "Continued-training stage on vis-ct-1: its own replay mix (text rp_* + 22% hash subsample of its vision_v1 rows = 19.8% of replay questions) + rl_hrr (RL-side rows only)."
+ }
+}

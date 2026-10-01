@@ -1,9 +1,10 @@
 """`rsi-jev`: the command installed with the package.
 
-    rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b [--port 8000] [--profile agent|server]
-    rsi-jev bench [v3.0-2b]
-    rsi-jev download v3.0-2b         # fetch into the Hugging Face cache, print the path
-    rsi-jev env                      # torch, device and kernels, without loading a model
+    rsi-jev serve shgao/rsi-jev-v4.0-vl-qwen3.5-2b [--port 8000] [--profile agent|server]
+    rsi-jev bench [v4.0-vl-2b]
+    rsi-jev download v4.0-vl-2b      # fetch into the Hugging Face cache, print the path
+    rsi-jev demo v4.0-vl-2b          # the playground page, images included
+    rsi-jev env                      # torch, device, kernels and the [vision] extra, no model loaded
 
 Each subcommand is a thin front for code that also runs from a clone as
 `python scripts/<name>.py`.
@@ -43,13 +44,19 @@ def build_parser() -> argparse.ArgumentParser:
     add_bench_args(p)
     p.set_defaults(func=run)
 
+    p = sub.add_parser("demo", help="the playground page on the served path (images too)")
+    from serve.demo import add_demo_args, run as run_demo
+    add_demo_args(p)
+    p.set_defaults(func=run_demo)
+
     p = sub.add_parser("download", help="download a release into the Hugging Face cache "
                                         "and print its local path")
     p.add_argument("model", help="Hugging Face repo id or alias, e.g. v3.0-2b")
     p.add_argument("--revision", default=None)
     p.set_defaults(func=_download)
 
-    p = sub.add_parser("env", help="print torch, device and kernel status, no model loaded")
+    p = sub.add_parser("env", help="print torch, device, kernel and [vision] extra status, "
+                                   "no model loaded")
     p.add_argument("--device", default=None)
     p.set_defaults(func=_env)
     return ap

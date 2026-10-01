@@ -108,10 +108,35 @@ class FitConfig:
     # (the load check: its suite must equal the parent's own record).
     init_from: str = ""
     init_sha256: str = ""
+    # Image states (rsijev/vision_fit.py, v4.0-VL on): {"root" | "roots", "budget",
+    # "model", ...}. {} = text only, exactly as before.
+    vision: dict = field(default_factory=dict)
     # RL stage (rsijev/rl2.py): {} = plain fit (earlier releases'
     # behaviour); otherwise fit_rl2 runs with this config after init_from.
     rl2: dict = field(default_factory=dict)
 
+
+
+def _lr_lambdas(groups, cfg: FitConfig):
+    """One LR multiplier per parameter group. Every tower group ("base" and v2.1's
+    "base_lower") follows `base_schedule`, the head follows `head_schedule`, and the rest
+    only warm up. The lower layers share the tower's schedule, as in the code that trained
+    v2.1 onwards; an earlier public copy matched only "base" and held them constant."""
+    n_warm = max(1, int(cfg.warmup * cfg.steps))
+
+    def warm(s):
+        return min(1.0, (s + 1) / n_warm)
+
+    def warm_cosine(s):
+        if s < n_warm:
+            return warm(s)
+        t = (s - n_warm) / max(1, cfg.steps - n_warm)
+        return 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
+
+    base_fn = warm_cosine if cfg.base_schedule == "cosine" else warm
+    head_fn = warm_cosine if cfg.head_schedule == "cosine" else warm
+    return [base_fn if gr["name"].startswith("base") else head_fn if gr["name"] == "head" else warm
+            for gr in groups]
 
 def _param_groups(model, cfg: FitConfig):
     """One group per role, plus an optional slower group for the lowest layers.
@@ -365,19 +390,7 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     random.Random(seed).shuffle(order)          # data order is part of the CRN
 
     opt = torch.optim.AdamW(_param_groups(model, cfg), weight_decay=cfg.weight_decay)
-    n_warm = max(1, int(cfg.warmup * cfg.steps))
-    def warm(s):
-        return min(1.0, (s + 1) / n_warm)
-    def warm_cosine(s):
-        if s < n_warm:
-            return warm(s)
-        t = (s - n_warm) / max(1, cfg.steps - n_warm)
-        return 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
-    base_fn = warm_cosine if cfg.base_schedule == "cosine" else warm
-    head_fn = warm_cosine if cfg.head_schedule == "cosine" else warm
-    lambdas = [base_fn if gr["name"] == "base" else head_fn if gr["name"] == "head" else warm
-               for gr in opt.param_groups]
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambdas)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, _lr_lambdas(opt.param_groups, cfg))
 
     # Scale probes: where does logit growth come from -- the features the head
     # reads, or the head's own weights? A pre-hook records the mean L2 norm of
@@ -408,6 +421,10 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     ret_perm, ret_cur = [], 0
     scale_map = dict(cfg.source_tower_scale or {})
 
+    vis = None
+    if cfg.vision:
+        from .vision_fit import VisionFeed
+        vis = VisionFeed(cfg.vision, tokenizer, model, device)
     model.train()
     history, ckpts = [], []
     stream = None
@@ -422,10 +439,13 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
             idx = [order[(cursor + i) % len(order)] for i in range(cfg.batch_size)]
         cursor += cfg.batch_size
         chunk = [pairs[i] for i in idx]
-        batch = collate(tokenizer,
-                        [encode_question(tokenizer, c.state, q, enc, rng=order_rng)
-                         for c, q in chunk],
-                        max_options=max_options, device=device)
+        if vis is not None:
+            batch = vis.batch(chunk, enc, order_rng, max_options)
+        else:
+            batch = collate(tokenizer,
+                            [encode_question(tokenizer, c.state, q, enc, rng=order_rng)
+                             for c, q in chunk],
+                            max_options=max_options, device=device)
         gold = gold_tensor([c for c, _ in chunk], [q.key for _, q in chunk],
                            max_options, device=device)
         if cfg.label_smoothing:
@@ -512,6 +532,7 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
 
         if logging:
             history.append({"step": step, "loss": float(loss.detach()),
+                            **({"image_rows": vis.n_image_rows} if vis is not None else {}),
                             **({"ret_kl": round(float(ret_kl.detach()), 5)}
                                if ret_kl is not None else {}),
                             "logit_absmax": round(logit_absmax, 2),

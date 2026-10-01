@@ -4,6 +4,7 @@
     d = Decider("shgao/rsi-jev-v3.0-qwen3.5-2b")
     d.decide("I was charged twice. Please refund.",
              {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
+    d.decide("<image> Is this receipt paid?", {...}, images=["receipt.png"])   # v4.0-VL on
 
 `decide(state, questions)` takes the `state` and `questions` of a `POST
 /v1/systemone` body and returns its `answers`. It is not a second implementation:
@@ -44,25 +45,49 @@ class Decider:
         self._scorer = make_scorer(self.served, batch_size)
 
     @classmethod
-    def from_scorer(cls, scorer, *, name: str = "rsi-jev") -> "Decider":
-        """A Decider over any scorer with the create_app signature. For tests."""
+    def from_scorer(cls, scorer, *, name: str = "rsi-jev",
+                    images: dict[str, Any] | None = None) -> "Decider":
+        """A Decider over any scorer with the create_app signature. For tests.
+        `images` is the image-limits dict to report (None: text-only)."""
         d = cls.__new__(cls)
         d.served, d.name, d.version = None, name, None
         d.device = d.dtype = None
         d.calibration = "none"
         d._scorer = scorer
+        d._image_limits = images or {"supported": False}
         return d
 
-    def request(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
-        """The full response body: {"model", "answers", "usage"}."""
-        req = SystemOneRequest.model_validate(
-            {"state": state, "model": self.name, "questions": questions})
+    @property
+    def image_limits(self) -> dict[str, Any]:
+        """What /v1/limits reports under `images` for this checkpoint."""
+        if self.served is None:
+            return getattr(self, "_image_limits", {"supported": False})
+        return self.served.image_limits
+
+    def request(self, state: Any, questions: dict[str, Any],
+                images: list | None = None) -> dict[str, Any]:
+        """The full response body: {"model", "answers", "usage"}.
+
+        `images` are what the HTTP request's `images` carries: data URLs. For
+        convenience a PIL image, a file path or raw bytes are also taken; each is
+        turned into a data URL first, so it goes through the server's own checks."""
+        body = {"state": state, "model": self.name, "questions": questions}
+        if images:
+            from serve.images import to_data_url
+            from serve.wire import RequestError
+            if not self.image_limits.get("supported"):
+                raise RequestError(self.image_limits.get("reason") or
+                                   f"{self.name} is a text-only model; it does not take images")
+            body["images"] = [to_data_url(im) for im in images]
+        req = SystemOneRequest.model_validate(body)
         answers, usage, _, _ = answer_request(self._scorer, req)
         return {"model": self.name, "answers": answers, "usage": usage}
 
-    def decide(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
-        """The `answers` object /v1/systemone returns for this state and questions."""
-        return self.request(state, questions)["answers"]
+    def decide(self, state: Any, questions: dict[str, Any],
+               images: list | None = None) -> dict[str, Any]:
+        """The `answers` object /v1/systemone returns for this state, questions and
+        (optionally) images."""
+        return self.request(state, questions, images)["answers"]
 
     def __repr__(self) -> str:
         return (f"Decider({self.name!r}, device={self.device!r}, dtype={self.dtype!r}, "

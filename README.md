@@ -8,11 +8,11 @@ retire their own champions when the evidence says to.
 [![License](https://img.shields.io/badge/code-MIT-black)](LICENSE)
 [![Weights](https://img.shields.io/badge/weights-🤗%20Hugging%20Face-black)](https://huggingface.co/shgao)
 [![API](https://img.shields.io/badge/API-Jev%20compatible-black)](serve/README.md)
-[![Release](https://img.shields.io/badge/release-v3.0-black)](versions/v3.0.md)
+[![Release](https://img.shields.io/badge/release-v4.0--VL-black)](versions/v4.0-vl.md)
 
-Ask one of these models a typed question about a document — yes/no, pick-one-of-*k*,
-rate-on-a-rubric — and a single forward pass returns a probability for every option instead of
-prose. Nothing is generated, so another decision about a document already read costs about
+Ask one of these models a typed question about a document or, from v4.0-VL, about an image —
+yes/no, pick-one-of-*k*, rate-on-a-rubric — and a single forward pass returns a probability for
+every option instead of prose. Nothing is generated, so another decision about a document already read costs about
 **10 ms**.
 
 The loop running the research is the **next version of
@@ -21,22 +21,62 @@ The loop running the research is the **next version of
 *Want to collaborate, or support the work with compute or funding? Reach out to
 **[Shanghua Gao](https://shgao.site)**.*
 
+## Reads images
+
+v4.0-VL answers the same typed questions about a photo, a screenshot or a chart. On VisA
+factory photos, with no defect examples, it scores 86.6 AUROC, against 82.9 for Gemma 4 12B and
+81.1 for Jev-Omni on the same 2,162 photos. More on the
+[project page](https://shanghua-gao.github.io/RSI-Jev/#images) and in the
+[full gallery](https://shanghua-gao.github.io/RSI-Jev/gallery.html), misses included.
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
+  <br><sub>Capsules photo from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+</p>
+<p align="center">
+  <a href="https://shanghua-gao.github.io/RSI-Jev/#images"><img src="site/assets/v4/breakout-poster.webp" width="640" alt="RSI-Jev v4.0-VL playing Breakout: each frame it picks which of five lanes holds the ball"></a>
+  <br><sub>Breakout from pixels: each frame, it says which of five lanes the ball is in (video on the project page). Game from hr98w/jev-visual (MIT).</sub>
+</p>
+
+On 30 image questions from the gallery pools, v4.0-VL served over HTTP answered in 69 ms
+(median) with a probability for every option. Qwen3.5-2B, the chat model released beside the
+base it is built on, writing a JSON answer, took 540 ms and gives no probability. Both were run on a GB10, one
+request at a time.
+
+<p align="center">
+  <img src="site/assets/v4/chat-vs-rsi.gif" width="640" alt="Replay at measured speed: RSI-Jev v4.0-VL shows probabilities for each answer in about a tenth of a second while Qwen3.5-2B, as a chat model, streams a JSON reply">
+  <br><sub>A replay of measured timings, not a live recording. The checkout screen and chart are ours; dog photo by Joselodos (CC0); capsules from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+</p>
+
+To try it in Colab: [`notebooks/rsi_jev_v4_vl_quickstart.ipynb`](https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v4_vl_quickstart.ipynb).
+
+To re-run what is shown here: the gallery ([`examples/gallery/`](examples/gallery/)), the chat-model
+comparison ([`examples/chat_vs_rsi/`](examples/chat_vs_rsi/)), Breakout ([`examples/breakout/`](examples/breakout/))
+and the image benchmarks ([`scripts/vision_benches/`](scripts/vision_benches/)).
+
 ## RSI process
 
 <p align="center">
   <img src="assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v3.0**, the current release, is **the first release where reinforcement learning works**.
-The loop found the reward RL needs here: one that scores the *order* of many candidates, which
-no per-item label can express. Trained with it, v3.0 ranks the right memory first
-**60% more often** than its own supervised parent (hippo R@1 0.192 → 0.308, 64 questions won
-against 6), with the rest of the suite held level. v3.0 is v2.1's lineage with more training
-data and that listwise reranking stage on top. [`versions/v3.0.md`](versions/v3.0.md) is its
-record; [`docs/rl.md`](docs/rl.md) is how the loop got there, across 59 reward-trained arms.
+**v4.0-VL**, the current release, **reads images.** Send one to four pictures with a request —
+a photo, a screenshot, a scanned page — and ask the same typed questions about them. On five
+image benchmarks held out from training it answers 80.3% correctly, and 45.8% with the images
+blanked out. On text it keeps v3.0's level (suite 0.756). It is v3.0's lineage with two rounds
+of image training and a new RL stage that charges a confident mistake four times what it charges
+a timid correct answer. [`versions/v4.0-vl.md`](versions/v4.0-vl.md) is its record.
 
 <details>
-<summary>the three releases behind it</summary>
+<summary>the four releases behind it</summary>
+
+**v3.0** is **the first release where reinforcement learning works**. The loop found the reward
+RL needs here: one that scores the *order* of many candidates, which no per-item label can
+express. Trained with it, v3.0 ranks the right memory first **60% more often** than its own
+supervised parent (hippo R@1 0.192 → 0.308, 64 questions won against 6), with the rest of the
+suite held level. [`versions/v3.0.md`](versions/v3.0.md) is its record;
+[`docs/rl.md`](docs/rl.md) is how the loop got there, across 59 reward-trained arms.
 
 **v2.1** is the first release better *everywhere it was checked*: ahead of v1.0 on three
 benchmarks it never trained on, and it recovers the general knowledge v2.0 had traded away by
@@ -65,7 +105,7 @@ one forward pass with nothing generated, so there is no reasoning trace to read.
 arms ask whether a decision-tuned tower can be given its words back without giving up the
 decision, and whether an explanation it produces is the reason or a plausible story.
 
-Of the 204 arms run since v1.0, these are the ones that got from one release to the next, each
+Of the 312 arms run since v1.0, these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
@@ -85,63 +125,72 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | a two-layer MLP combining the option and cross-attention features | suite 0.7589 on the new 15-benchmark suite | the readout had a little left in it: +0.002 |
 | a listwise reranking reward (NDCG@5 over 16 candidates) on top, against a KL anchor | hippo R@1 0.192 → 0.308, suite −0.003 | **the first RL stage kept**: a reward over the *order* of candidates carries what per-item labels cannot |
 | **v3.0** | suite **0.756**, ECE **0.066** | **the first release where RL works**: +60% reranking R@1 over its supervised parent, the rest held level |
+| image training on the train splits of twelve public datasets, with text replay | held-out image top-1 0.809 against 0.796 for a text-only control | the model reads images through the base model's frozen vision tower |
+| generated reasoning questions with soft targets where the model is at chance | held-out ECE after calibration, BBH excluded, 0.096 → 0.075 | the image rounds had made it overconfident; this repairs most of it |
+| an RL stage charging a confident mistake 4x a timid correct answer | held-out ECE before calibration 0.200 → 0.082 | against a matched supervised stage: better accuracy and calibration, no detectable ranking difference (one seed) |
+| **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
 
-The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm and why
-each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
+The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm through v3.0,
+and the v4.0-VL lineage, with why each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## RSI-Jev models
 
 | model | download | 15-benchmark suite | held-out (eval_final_v2) | calibration (ECE) | per decision |
 |---|---|---|---|---|---|
-| **RSI-Jev-v3.0-2B** | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) | **0.756** | **0.649** | 0.066 | ~10 ms |
+| **RSI-Jev-v4.0-VL-2B** · text and images | [**⬇ Hugging Face**](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) | **0.756** | **0.653** | **0.043** | ~10 ms text, ~0.1–0.3 s with an image |
+| RSI-Jev-v3.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) | 0.756 | 0.649 | 0.066 | ~10 ms |
 | RSI-Jev-v2.1-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) | 0.736 | 0.633 | 0.059 | ~10 ms |
 | RSI-Jev-v2.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) | – | – | – | ~10 ms |
 | RSI-Jev-v1.0-2B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) | 0.622 | 0.604 | – | ~10 ms |
 | RSI-Jev-v1.0-0.8B | [⬇ Hugging Face](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) | – | – | – | ~10 ms |
 
-v3.0, v2.1 and v1.0 were scored in one job by the same evaluator; v2.0 and the 0.8B were not
+v4.0-VL and v3.0 were scored in one job by the same evaluator, and v3.0, v2.1 and v1.0 in an
+earlier one with the same evaluator; v3.0 scores the same in both. v2.0 and the 0.8B were not
 re-scored on this suite, and their own cards have their numbers on the earlier twelve-benchmark
-one. v1.0 ships no calibration, so it has no calibrated ECE.
+one. v1.0 ships no calibration, so it has no calibrated ECE. Only v4.0-VL takes images.
 
-| benchmark | **v3.0** | v2.1 | v3.0 ECE |
+| benchmark | **v4.0-VL** | v3.0 | v4.0-VL ECE |
 |---|---|---|---|
-| typed-decisions | 0.791 | 0.791 | 0.091 |
-| Nimble public | 0.801 | **0.806** | 0.026 |
-| MMLU-Pro 1k | 0.364 | **0.383** | 0.144 |
-| Jev-Style panel | **0.835** | 0.750 | 0.011 |
-| Kev transfer | **0.792** | 0.754 | 0.048 |
-| Kev hard | **0.760** | 0.697 | 0.029 |
-| JevBench | 0.700 | **0.722** | 0.129 |
-| tasksource | **0.701** | 0.618 | 0.036 |
-| SemIf external | **0.921** | 0.885 | 0.076 |
-| scienthoon OOD | 0.705 | **0.774** | 0.076 |
-| Nimble holdout | **0.778** | 0.747 | 0.090 |
-| Kev documents | **0.869** | 0.859 | 0.074 |
-| Kev devtools | 0.715 | **0.716** | 0.056 |
-| procedural | 0.871 | **0.873** | 0.027 |
-| Open-Jev OOD | **0.838** | 0.651 | 0.048 |
-| **suite mean** | **0.756** | 0.736 | **0.066** |
+| typed-decisions | 0.787 | 0.791 | 0.025 |
+| Nimble public | 0.801 | 0.801 | 0.022 |
+| MMLU-Pro 1k | 0.385 | 0.364 | 0.078 |
+| Jev-Style panel | 0.823 | 0.835 | 0.026 |
+| Kev transfer | 0.784 | 0.792 | 0.034 |
+| Kev hard | 0.762 | 0.760 | 0.020 |
+| JevBench | 0.696 | 0.700 | 0.106 |
+| tasksource | 0.707 | 0.701 | 0.033 |
+| SemIf external | 0.913 | 0.921 | 0.122 |
+| scienthoon OOD | 0.754 | 0.705 | 0.042 |
+| Nimble holdout | 0.769 | 0.778 | 0.066 |
+| Kev documents | 0.856 | 0.869 | 0.060 |
+| Kev devtools | 0.717 | 0.715 | 0.043 |
+| procedural | 0.862 | 0.871 | 0.017 |
+| Open-Jev OOD | 0.828 | 0.838 | 0.045 |
+| **suite mean** | **0.756** | 0.756 | **0.043** |
 
-**v3.0 is ahead of v2.1 on a new held-out set, +0.016 (*p* = 0.011)**, and
-on the suite, 0.736 → 0.756. The suite gains are largest where new training data landed —
-Open-Jev, Jev-Style, tasksource — so treat those as in-domain; ten of the fifteen benchmarks
-contribute train-split data, and none of these figures is zero-shot. Pick v1.0 if you need a
-zero-shot number or the 0.8B size.
+| images, held out from training | **v4.0-VL** | images blanked |
+|---|---|---|
+| MMBench (dev) | 0.845 | 0.290 |
+| RealWorldQA | 0.707 | 0.371 |
+| POPE | 0.912 | 0.502 |
+| HallusionBench | 0.695 | 0.503 |
+| InfographicVQA (val) | 0.858 | 0.624 |
+| **mean** | **0.803** | 0.458 |
 
-**The reason for this release is reranking**: its RL stage puts the right memory first 60% more
-often than the same model without it (LongMemEval through hippo-memory, R@1 0.192 → 0.308).
-[`docs/rl.md`](docs/rl.md) is how the loop found a reward that works.
+Ten of the fifteen text benchmarks contribute train-split data, so none of those figures is
+zero-shot; the held-out set is the comparison that is. Pick v1.0 if you need a zero-shot number
+or the 0.8B size.
 
 Architecture, training recipe and limitations are on each model card.
 [`BENCHMARKS.md`](BENCHMARKS.md) is what these numbers mean and how to re-run them;
-[`versions/v3.0.md`](versions/v3.0.md) is the full record, every figure with its caveats.
+[`versions/v4.0-vl.md`](versions/v4.0-vl.md) is the full record, every figure with its caveats.
 
 To run one:
 
 ```bash
-pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --port 8000
+pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve shgao/rsi-jev-v4.0-vl-qwen3.5-2b --port 8000
 
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
@@ -152,9 +201,31 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 
 The first run downloads the checkpoint and its base model into the Hugging Face cache.
 `[fast]` adds the fused DeltaNet kernels (CUDA only, 1.25–1.6x on a GB10); the startup log
-says whether they are active. In Python, with no server:
-`from rsijev import Decider; Decider("shgao/rsi-jev-v3.0-qwen3.5-2b").decide(state, questions)`.
+says whether they are active; `[vision]` (Pillow, torchvision) is what image requests need.
 An existing Jev client works unchanged once its base URL points here.
+
+With an image, add an `images` list of data URLs and mark where each one goes in the state:
+
+```bash
+IMG=$(base64 -w0 photo.jpg)
+curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "model": "jev-latest",
+  "state": "Customer photo: <image>\nThe customer says it arrived damaged.",
+  "images": ["data:image/jpeg;base64,'"$IMG"'"],
+  "questions": {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}}
+}'
+```
+
+In Python, with no server:
+
+```python
+from rsijev import Decider
+d = Decider("shgao/rsi-jev-v4.0-vl-qwen3.5-2b")
+d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
+         {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
+         images=["photo.jpg"])     # a path, bytes, a PIL image or a data URL
+```
+
 [`docs/inference.md`](docs/inference.md) is the inference guide: which setup to pick, what
 each costs on a GB10, and what we tried to make it faster.
 
@@ -170,7 +241,7 @@ git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -
 | **Serve** | `python scripts/serve.py --ckpt DIR` | `POST /v1/systemone`, Jev's own request and answer shapes → [`serve/README.md`](serve/README.md). `--ckpt` also takes a Hugging Face id |
 | **Load** | `load_release(path, device="cuda")` | from `scripts/load_release.py`; a published checkpoint carries its own code |
 | **Score the suite** | `python scripts/suite.py --ckpt DIR` | the table above; `--list` names each benchmark's pinned source |
-| **Retrain** | `python scripts/release_train.py` | one H100, ~50 min per seed at 2B → [`rsijev/README.md`](rsijev/README.md) |
+| **Retrain** | `python scripts/release_train.py` | v3.0's text recipe: one H100, ~50 min per seed at 2B; the v4.0-VL image stages need an 80 GB GPU → [`rsijev/README.md`](rsijev/README.md) |
 | **Measure** | `bench.py`, `calibration.py`, `routing.py` | these tables, on your hardware → [`BENCHMARKS.md`](BENCHMARKS.md) |
 
 Runs on an **HP ZGX Nano** (NVIDIA GB10, where it is developed), any CUDA GPU, Apple Silicon, or plain
@@ -212,7 +283,7 @@ Thank you to the people who have sent that feedback:
 
 | | |
 |---|---|
-| [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v3.0.md`](versions/v3.0.md), [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
+| [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v4.0-vl.md`](versions/v4.0-vl.md), [`v3.0.md`](versions/v3.0.md), [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
 | [`EXPLORE.md`](EXPLORE.md) | **what the loop tried and rejected** between releases |
 | [`docs/rl.md`](docs/rl.md) | **where RL beat supervised training, and where it didn't** — 59 reward-trained arms, one kept |
 | [`docs/speed.md`](docs/speed.md) | **how AutoScientists made inference faster** — read the document once; 1.25–1.63x by default, up to 5.8x in agent loops |

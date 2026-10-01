@@ -4,7 +4,7 @@
 # The torch floor is the first version clear of all published torch advisories,
 # and the one the test suite is run against.
 torch>=2.13
-transformers>=5.17,<6
+transformers>=5.17,<5.18
 safetensors
 huggingface_hub
 

@@ -14,7 +14,7 @@ implements https://docs.typesafe.ai/api):
   * the answer shapes -- noul carries ONLY `noul`, choice carries `choice`,
     `probabilities` and `confidence`, score adds `legend` and reports the
     expected zero-based rubric index;
-  * `confidence` as 1 - H(p)/ln(K), clamped to [0, 1];
+  * `confidence` as (K * p_max - 1) / (K - 1), clamped to [0, 1];
   * the limits 1-64 questions and 2-64 options.
 
 What deliberately differs, because the wire contract is the compatibility

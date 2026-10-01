@@ -44,7 +44,7 @@ with fla, probabilities rounded to three places. `tests/test_documented_example.
 it against the checkpoint. Note that `score` is an index into the rubric, so 1.081 is
 "Urgent", not a fraction of the scale.
 
-The model is a checkpoint directory, a Hugging Face repo id, or an alias (`v3.0-2b`,
+The model is a checkpoint directory, a Hugging Face repo id, or an alias (`v4.0-vl-2b`, `v3.0-2b`,
 `v2.1-2b`, `v2.0-2b`, `v1.0-2b`, `v1.0-0.8b`). A repo id is downloaded once into the
 standard Hugging Face cache. The same request from Python, with no server:
 
@@ -107,6 +107,61 @@ returned name against the one it sent will need that check relaxed. Set
 `--api-key` (or `RSIJEV_API_KEY`) to require `Authorization: Bearer …` on
 everything except the health routes.
 
+## Images
+
+A release trained with images (v4.0-VL on) also takes **1–4 images per request**, as base64
+data URLs in an `images` list beside `state`. This is an extension: Jev's request has no
+images. The shape is the one imajev's Jev-style payloads use. The state refers to each
+image with the literal marker `<image>`, in order. A state with no markers gets its images
+put before it.
+
+```bash
+IMG=$(base64 -w0 receipt.png)
+curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "model": "jev-latest",
+  "state": "Customer photo: <image>\nThe customer says the order arrived damaged.",
+  "images": ["data:image/png;base64,'"$IMG"'"],
+  "questions": {
+    "damaged": {"type": "noul",   "instructions": "Does the photo show visible damage?"},
+    "item":    {"type": "choice", "instructions": "What is in the photo?",
+                "criteria": {"box": "A shipping box", "device": "An electronic device", "other": "Something else"}}
+  }
+}'
+```
+
+The answers have the same shapes as for a text request. `usage.input_tokens` counts the
+image tokens. From Python, `Decider.decide(state, questions, images=[...])` takes data URLs,
+file paths, raw bytes or PIL images. Each one becomes a data URL and goes through the same
+checks.
+
+**Limits.** Every violation is a 422 that names the image and says what to change:
+
+| | |
+|---|---|
+| images per request | 1–4 (`[]` or no field is a text request) |
+| encoding | `data:image/<png\|jpeg\|webp>;base64,…`; http(s) URLs are not fetched |
+| size | 20 MiB decoded, 20 million pixels, a single frame, aspect ratio at most 200:1 |
+| markers | none, or exactly one `<image>` per image; Qwen's `<\|image_pad\|>`-style tokens are refused in the state |
+| image tokens | 1,024 per question, split evenly: one image up to 1,024 tokens (~1 MP at 32x32 px per token), four up to 256 each. Larger images are scaled down |
+| total length | 2,048 text tokens plus the image budget. A longer state is cut from the start, as for text. If that would cut into an image, the request is refused. Shorten the state, or put the markers after the text |
+
+EXIF rotation is applied, so a phone photo is seen the way it is displayed. `GET /v1/limits`
+reports all of this under `images` (`supported: false` for a text-only release, with a
+`reason` when the release has images but Pillow/torchvision are missing: `pip install
+"rsi-jev[vision]"`).
+
+**Images are read once.** With several questions about one image state, the vision tower
+runs once and the shared prefix (the state with its image tokens, at their M-RoPE
+positions) runs once; every question continues from that cache, as a text state does. The
+positions of each question's tail are sliced from the whole sequence's own M-RoPE
+positions, so the cached pass computes what the per-question pass computes
+(`tests/test_image_cache.py`: fp32 on CPU agrees to ~3e-8). The same threshold as text
+decides when one read pays. Under `--profile agent` image states also go through the
+document cache, keyed on the token ids plus a hash of each image's decoded pixels and the
+resolution it was prepared at: the same image and state asked about again runs neither the
+vision tower nor the text tower on the state. `GET /v1/limits` reports `prefix_cache` and
+`document_cache` under `images`.
+
 ## What is copied exactly
 
 Taken from `reference/openjev-sglang`, which implements
@@ -159,7 +214,7 @@ inference procedures despite receiving equivalent payloads."*
   model never saw would be guessing; it arrives together with a model trained on it.
 - **A state longer than the model's context is cut from the start.** The encoder keeps the
   question, the options and the answer cue whole and drops the *beginning* of the state
-  until the request fits (2,048 tokens for v1.0–v3.0; `rsijev/encode.py`). Nothing reports
+  until the request fits (2,048 tokens for v1.0–v4.0-VL; `rsijev/encode.py`). Nothing reports
   that it happened. So a request that puts its query first — `"Query: …"` followed by long
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.
@@ -208,14 +263,17 @@ calibration moves by +0.0001.
 | file | role |
 |---|---|
 | `wire.py` | the contract: request → `Question`, distribution → answer. Pure Python, no torch, no HTTP |
-| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache |
+| `infer.py` | the forward pass, pinned to `evaluate.predict` by `tests/test_serve_parity.py`; the document cache; the image path (`score_image_questions_cached`, read once; `score_image_questions`, per question, the reference) |
+| `images.py` | image input: data URLs → validated images, the limits, `<image>` markers |
 | `accel.py` | the opt-in compile switch |
 | `app.py` | routes, schemas, auth, error envelopes |
 | `release.py` | finds a checkpoint (directory, Hugging Face id or alias) and loads it |
 | `server.py` | loads a release for serving, prints what is active, runs uvicorn |
 | `decider.py` | `Decider`: the same request path in-process, `from rsijev import Decider` |
-| `runtime.py` | device and precision choice, `--profile`, kernel detection for the startup log |
-| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `bench`, `download`, `env` |
+| `runtime.py` | device and precision choice, `--profile`, kernel and `[vision]` extra detection for the startup log |
+| `demo.py`, `ui.html`, `examples.json` | `rsi-jev demo`: the playground page on the served path, with image upload, drag-drop and paste when `/v1/limits` says the model takes images |
+| `demo_images.py` | draws the playground's image examples (chart, screenshot, receipt) |
+| `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `demo`, `bench`, `download`, `env` |
 | `../scripts/serve.py` | the same server from a clone, without installing |
 
 `infer.py` exists because `evaluate.predict` takes `Case` objects and a `Case`
