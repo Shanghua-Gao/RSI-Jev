@@ -412,6 +412,10 @@ footer a { color: var(--muted); }
     <video id="bo-video" muted loop playsinline preload="metadata" poster="assets/v4/breakout-poster.webp" width="1240" height="780" aria-label="Breakout played live by RSI-Jev v4.0-VL: the game board on the left, and on the right the game’s decision feed with each screenshot it was sent and its probability for each of five lanes."><source src="assets/v4/breakout.webm" type="video/webm"><source src="assets/v4/breakout.mp4" type="video/mp4"></video>
     <p>It plays Breakout from pixels: every frame it gets one screenshot and says which of five lanes the ball is in, and the paddle moves there.<br><span class="small">Recorded live, real speed: 79 ms per round trip, 200 decisions. The panel on the right is the game’s own feed, with all five lane probabilities for each screenshot. Game from hr98w/jev-visual (MIT), unchanged.</span></p>
   </div>
+  <div class="game">
+    <video id="pg-video" muted loop playsinline preload="metadata" poster="assets/v4/playground-poster.webp" width="1280" height="900" aria-label="The rsi-jev demo page: a beach photo is dropped in, three questions are asked, and the answers appear with their probabilities."><source src="assets/v4/playground-live.webm" type="video/webm"><source src="assets/v4/playground-live.mp4" type="video/mp4"></video>
+    <p>Drop in your own photo and ask. <code>rsi-jev demo</code> opens this page on your machine.<br><span class="small">Recorded live: child in the photo, yes 99.8%; the place, beach 99.8%; closest to the camera, the ball 89%. 90 ms on the server, one GB10.</span></p>
+  </div>
 
   <div class="live race" id="race">
     <div class="lhead"><h3>Same picture, same question: RSI-Jev and a chat model</h3><span class="replay">Replay of measured timings on one GB10</span></div>
@@ -431,15 +435,7 @@ footer a { color: var(--muted); }
     <p class="small">RSI-Jev’s time is its median over 9 calls; the chat model’s text appears at the token times of one streamed call (greedy, up to 256 tokens). Which one is more accurate is unresolved: most of the chat model’s invalid replies gave an answer under the wrong JSON key; read leniently, it gets 23 of 30 right to our 26, a gap 30 questions cannot settle. Leaves photo by Wald1siedel (CC BY-SA 3.0; the resized copy is shared under CC BY-SA 3.0). The receipt is generated; its blank lower half is cropped here.</p>
   </div>
 
-  <div class="live agent" id="agent">
-    <div class="lhead"><h3>An agent, one screen at a time</h3><span class="replay">Each step is a separate real request</span></div>
-    <div class="astage">
-      <div class="ascreen" id="a-screen"><img id="a-img" src="assets/v4/agent-form-3.webp" width="640" height="455" alt="A checkout form with email, card number and expiry filled in, and Pay and Cancel buttons." decoding="async"><span class="ring ref" id="a-ref"></span><span class="ring" id="a-ring"></span><svg class="cursor" id="a-cur" viewBox="0 0 22 22" aria-hidden="true"><path d="M3 2 L3 18 L7.5 14 L10.5 20.5 L13 19.4 L10.2 13 L16 13 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
-      <div class="aside"><p class="astep" id="a-step"></p><p class="atitle" id="a-title"></p><p class="vctx" id="a-ctx"></p><div class="aq" id="a-qs"></div><p class="asay" id="a-say" aria-live="polite"></p></div>
-    </div>
-    <div class="abar"><div class="adots" role="tablist" aria-label="Step" id="a-dots"></div><button class="lbtn" id="a-play" type="button" hidden>Pause</button></div>
-    <p class="small">Four screens we generated, each sent on its own with the goal or the user’s last message. The pointer acts on the model’s top answer. They are not one live session. The last one is a miss from the gallery.</p>
-  </div>
+  
 
   <div class="viewer" id="viewer">
     <div class="vstage">
@@ -903,5 +899,15 @@ footer a { color: var(--muted); }
 })();
 </script>
 
+<script>
+(function () {
+  var v = document.getElementById("pg-video"); if (!v) return;
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) { v.controls = true; return; }
+  var vis = true, inView = false;
+  function upd() { if (inView && !document.hidden) { var p = v.play(); if (p && p.catch) p.catch(function () { v.controls = true; }); } else v.pause(); }
+  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { inView = es[es.length - 1].isIntersecting; upd(); }, { threshold: 0.25 }).observe(v); else { inView = true; upd(); }
+  document.addEventListener("visibilitychange", upd);
+})();
+</script>
 </body>
 </html>
