@@ -19,7 +19,7 @@ Each request is what this curl sends (the image goes as a base64 data URL):
 
 The script first asks GET /v1/limits whether the model takes images at all.
 
-Output (v4.0-VL on an HP ZGX Nano, bf16; probabilities shortened):
+Output, measured with v4.0-VL on an HP ZGX Nano (bf16; probabilities shortened):
 
     images supported: True, up to 4 per request, 1024 tokens per question
     chart       {"trend": {"type": "choice", "choice": "down", "probabilities": {"up": 0.0006, "down": 0.9952, "flat": 0.0042}, "confidence": 0.9928}}   76 ms, 288 input tokens
