@@ -9,13 +9,13 @@ or flat, and does a screenshot show an error dialog. The pictures are drawn by
 serve/demo_images.py, so the right answers are known: down, and yes (a disk-full
 dialog). Both questions about one image read the image once.
 
-Output (fill after GPU run):
+Output (v4.0-VL on an HP ZGX Nano, bf16):
 
-    Decider('rsi-jev-v4.0-vl-qwen3.5-2b', device='cuda', dtype='bf16', ...)
-    chart       trend=?      p(up/down/flat) = ?/?/?
-                below_target: p(yes) = ?
-    screenshot  error dialog: p(yes) = ?
-                cause=?      p = ?
+    Decider('rsi-jev-v4.0-vl-qwen3.5-2b', device='cuda', dtype='bf16', calibration='oof_head_scorefloor')
+    chart       trend=down   p(up/down/flat) = 0.00/1.00/0.00
+                below_target: p(yes) = 0.95
+    screenshot  error dialog: p(yes) = 0.99
+                cause=storage p = 0.99
 """
 import sys
 from pathlib import Path
