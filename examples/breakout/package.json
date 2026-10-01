@@ -1,0 +1,9 @@
+{
+  "name": "rsi-jev-breakout-check",
+  "private": true,
+  "type": "module",
+  "description": "Drives hr98w/jev-visual's Breakout page against examples/breakout/adapter.py",
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
