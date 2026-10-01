@@ -50,6 +50,10 @@ request at a time.
 
 To try it in Colab: [`notebooks/rsi_jev_v4_vl_quickstart.ipynb`](notebooks/rsi_jev_v4_vl_quickstart.ipynb).
 
+To re-run what is shown here: the gallery ([`examples/gallery/`](examples/gallery/)), the chat-model
+comparison ([`examples/chat_vs_rsi/`](examples/chat_vs_rsi/)), Breakout ([`examples/breakout/`](examples/breakout/))
+and the image benchmarks ([`scripts/vision_benches/`](scripts/vision_benches/)).
+
 ## RSI process
 
 <p align="center">

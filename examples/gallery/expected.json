@@ -1,0 +1,1144 @@
+{
+ "about": "What v4.0-VL answered when the published numbers were made: the top answer and its probability per question, release calibration on, bf16 tower, batch 1, on an NVIDIA GB10. run.py --compare prints the questions whose answer differs.",
+ "model": "v4.0-vl-2b",
+ "n_items": 143,
+ "n_questions": 227,
+ "median_ms_per_question": 61.5,
+ "answers": {
+  "road-child-own_lane/action": {
+   "pick": "stop",
+   "p": 0.2828,
+   "correct": true
+  },
+  "road-child-own_lane/category": {
+   "pick": "person",
+   "p": 0.3695,
+   "correct": true
+  },
+  "road-child-oncoming_lane/action": {
+   "pick": "stop",
+   "p": 0.2913,
+   "correct": true
+  },
+  "road-child-oncoming_lane/category": {
+   "pick": "vehicle",
+   "p": 0.3156,
+   "correct": false
+  },
+  "road-child-near_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3079,
+   "correct": true
+  },
+  "road-child-near_sidewalk/category": {
+   "pick": "person",
+   "p": 0.2391,
+   "correct": true
+  },
+  "road-child-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3356,
+   "correct": false
+  },
+  "road-child-far_sidewalk/category": {
+   "pick": "person",
+   "p": 0.3161,
+   "correct": true
+  },
+  "road-teddy-own_lane/action": {
+   "pick": "stop",
+   "p": 0.2964,
+   "correct": true
+  },
+  "road-teddy-own_lane/category": {
+   "pick": "animal",
+   "p": 0.2554,
+   "correct": false
+  },
+  "road-teddy-oncoming_lane/action": {
+   "pick": "stop",
+   "p": 0.2713,
+   "correct": false
+  },
+  "road-teddy-oncoming_lane/category": {
+   "pick": "vehicle",
+   "p": 0.2692,
+   "correct": false
+  },
+  "road-teddy-near_sidewalk/action": {
+   "pick": "continue",
+   "p": 0.2778,
+   "correct": true
+  },
+  "road-teddy-near_sidewalk/category": {
+   "pick": "obstacle",
+   "p": 0.3465,
+   "correct": true
+  },
+  "road-teddy-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.34,
+   "correct": false
+  },
+  "road-teddy-far_sidewalk/category": {
+   "pick": "obstacle",
+   "p": 0.2758,
+   "correct": true
+  },
+  "road-dog-own_lane/action": {
+   "pick": "slow_down",
+   "p": 0.3782,
+   "correct": false
+  },
+  "road-dog-own_lane/category": {
+   "pick": "animal",
+   "p": 0.9515,
+   "correct": true
+  },
+  "road-dog-oncoming_lane/action": {
+   "pick": "slow_down",
+   "p": 0.3425,
+   "correct": true
+  },
+  "road-dog-oncoming_lane/category": {
+   "pick": "animal",
+   "p": 0.8725,
+   "correct": true
+  },
+  "road-dog-near_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.384,
+   "correct": true
+  },
+  "road-dog-near_sidewalk/category": {
+   "pick": "animal",
+   "p": 0.9225,
+   "correct": true
+  },
+  "road-dog-far_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.3941,
+   "correct": true
+  },
+  "road-dog-far_sidewalk/category": {
+   "pick": "animal",
+   "p": 0.9508,
+   "correct": true
+  },
+  "road-cat-own_lane/action": {
+   "pick": "slow_down",
+   "p": 0.3402,
+   "correct": false
+  },
+  "road-cat-own_lane/category": {
+   "pick": "animal",
+   "p": 0.9482,
+   "correct": true
+  },
+  "road-cat-oncoming_lane/action": {
+   "pick": "slow_down",
+   "p": 0.288,
+   "correct": true
+  },
+  "road-cat-oncoming_lane/category": {
+   "pick": "animal",
+   "p": 0.806,
+   "correct": true
+  },
+  "road-cat-near_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.3567,
+   "correct": true
+  },
+  "road-cat-near_sidewalk/category": {
+   "pick": "animal",
+   "p": 0.9193,
+   "correct": true
+  },
+  "road-cat-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3726,
+   "correct": false
+  },
+  "road-cat-far_sidewalk/category": {
+   "pick": "animal",
+   "p": 0.9471,
+   "correct": true
+  },
+  "road-bicycle-own_lane/action": {
+   "pick": "stop",
+   "p": 0.3816,
+   "correct": true
+  },
+  "road-bicycle-own_lane/category": {
+   "pick": "vehicle",
+   "p": 0.6743,
+   "correct": true
+  },
+  "road-bicycle-oncoming_lane/action": {
+   "pick": "stop",
+   "p": 0.3216,
+   "correct": false
+  },
+  "road-bicycle-oncoming_lane/category": {
+   "pick": "vehicle",
+   "p": 0.6698,
+   "correct": true
+  },
+  "road-bicycle-near_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.2779,
+   "correct": false
+  },
+  "road-bicycle-near_sidewalk/category": {
+   "pick": "vehicle",
+   "p": 0.6784,
+   "correct": true
+  },
+  "road-bicycle-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3677,
+   "correct": false
+  },
+  "road-bicycle-far_sidewalk/category": {
+   "pick": "vehicle",
+   "p": 0.716,
+   "correct": true
+  },
+  "road-car-own_lane/action": {
+   "pick": "continue",
+   "p": 0.3905,
+   "correct": false
+  },
+  "road-car-own_lane/category": {
+   "pick": "vehicle",
+   "p": 0.9798,
+   "correct": true
+  },
+  "road-car-oncoming_lane/action": {
+   "pick": "continue",
+   "p": 0.2839,
+   "correct": true
+  },
+  "road-car-oncoming_lane/category": {
+   "pick": "vehicle",
+   "p": 0.9723,
+   "correct": true
+  },
+  "road-car-near_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.3055,
+   "correct": true
+  },
+  "road-car-near_sidewalk/category": {
+   "pick": "vehicle",
+   "p": 0.9718,
+   "correct": true
+  },
+  "road-car-far_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.2424,
+   "correct": false
+  },
+  "road-car-far_sidewalk/category": {
+   "pick": "vehicle",
+   "p": 0.9645,
+   "correct": true
+  },
+  "road-stop-own_lane/action": {
+   "pick": "stop_then_go",
+   "p": 0.9094,
+   "correct": true
+  },
+  "road-stop-own_lane/category": {
+   "pick": "stop_sign",
+   "p": 0.9898,
+   "correct": true
+  },
+  "road-stop-oncoming_lane/action": {
+   "pick": "stop_then_go",
+   "p": 0.8993,
+   "correct": true
+  },
+  "road-stop-oncoming_lane/category": {
+   "pick": "stop_sign",
+   "p": 0.9894,
+   "correct": true
+  },
+  "road-stop-near_sidewalk/action": {
+   "pick": "stop_then_go",
+   "p": 0.792,
+   "correct": true
+  },
+  "road-stop-near_sidewalk/category": {
+   "pick": "stop_sign",
+   "p": 0.9817,
+   "correct": true
+  },
+  "road-stop-far_sidewalk/action": {
+   "pick": "stop_then_go",
+   "p": 0.8456,
+   "correct": true
+  },
+  "road-stop-far_sidewalk/category": {
+   "pick": "stop_sign",
+   "p": 0.9912,
+   "correct": true
+  },
+  "road-red-own_lane/action": {
+   "pick": "wait_for_green",
+   "p": 0.9669,
+   "correct": true
+  },
+  "road-red-own_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9972,
+   "correct": true
+  },
+  "road-red-oncoming_lane/action": {
+   "pick": "wait_for_green",
+   "p": 0.9652,
+   "correct": true
+  },
+  "road-red-oncoming_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9942,
+   "correct": true
+  },
+  "road-red-near_sidewalk/action": {
+   "pick": "wait_for_green",
+   "p": 0.9594,
+   "correct": true
+  },
+  "road-red-near_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.9922,
+   "correct": true
+  },
+  "road-red-far_sidewalk/action": {
+   "pick": "wait_for_green",
+   "p": 0.9737,
+   "correct": true
+  },
+  "road-red-far_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.9944,
+   "correct": true
+  },
+  "road-amber-own_lane/action": {
+   "pick": "wait_for_green",
+   "p": 0.9277,
+   "correct": true
+  },
+  "road-amber-own_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9983,
+   "correct": true
+  },
+  "road-amber-oncoming_lane/action": {
+   "pick": "wait_for_green",
+   "p": 0.9021,
+   "correct": true
+  },
+  "road-amber-oncoming_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9955,
+   "correct": true
+  },
+  "road-amber-near_sidewalk/action": {
+   "pick": "wait_for_green",
+   "p": 0.8814,
+   "correct": true
+  },
+  "road-amber-near_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.99,
+   "correct": true
+  },
+  "road-amber-far_sidewalk/action": {
+   "pick": "wait_for_green",
+   "p": 0.9069,
+   "correct": true
+  },
+  "road-amber-far_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.9948,
+   "correct": true
+  },
+  "road-green-own_lane/action": {
+   "pick": "go",
+   "p": 0.9619,
+   "correct": true
+  },
+  "road-green-own_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9989,
+   "correct": true
+  },
+  "road-green-oncoming_lane/action": {
+   "pick": "go",
+   "p": 0.9291,
+   "correct": true
+  },
+  "road-green-oncoming_lane/category": {
+   "pick": "traffic_light",
+   "p": 0.9973,
+   "correct": true
+  },
+  "road-green-near_sidewalk/action": {
+   "pick": "go",
+   "p": 0.9192,
+   "correct": true
+  },
+  "road-green-near_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.9921,
+   "correct": true
+  },
+  "road-green-far_sidewalk/action": {
+   "pick": "go",
+   "p": 0.9244,
+   "correct": true
+  },
+  "road-green-far_sidewalk/category": {
+   "pick": "traffic_light",
+   "p": 0.9967,
+   "correct": true
+  },
+  "road-limit80-own_lane/action": {
+   "pick": "change_speed",
+   "p": 0.9761,
+   "correct": true
+  },
+  "road-limit80-own_lane/category": {
+   "pick": "speed_limit_sign",
+   "p": 0.9982,
+   "correct": true
+  },
+  "road-limit80-own_lane/speed_limit": {
+   "pick": "80",
+   "p": 0.9973,
+   "correct": true
+  },
+  "road-limit80-oncoming_lane/action": {
+   "pick": "change_speed",
+   "p": 0.965,
+   "correct": true
+  },
+  "road-limit80-oncoming_lane/category": {
+   "pick": "speed_limit_sign",
+   "p": 0.9975,
+   "correct": true
+  },
+  "road-limit80-oncoming_lane/speed_limit": {
+   "pick": "80",
+   "p": 0.9967,
+   "correct": true
+  },
+  "road-limit80-near_sidewalk/action": {
+   "pick": "change_speed",
+   "p": 0.9034,
+   "correct": true
+  },
+  "road-limit80-near_sidewalk/category": {
+   "pick": "speed_limit_sign",
+   "p": 0.9955,
+   "correct": true
+  },
+  "road-limit80-near_sidewalk/speed_limit": {
+   "pick": "80",
+   "p": 0.9968,
+   "correct": true
+  },
+  "road-limit80-far_sidewalk/action": {
+   "pick": "change_speed",
+   "p": 0.9207,
+   "correct": true
+  },
+  "road-limit80-far_sidewalk/category": {
+   "pick": "speed_limit_sign",
+   "p": 0.9964,
+   "correct": true
+  },
+  "road-limit80-far_sidewalk/speed_limit": {
+   "pick": "80",
+   "p": 0.997,
+   "correct": true
+  },
+  "road-box-own_lane/action": {
+   "pick": "stop",
+   "p": 0.3546,
+   "correct": true
+  },
+  "road-box-own_lane/category": {
+   "pick": "obstacle",
+   "p": 0.4698,
+   "correct": true
+  },
+  "road-box-oncoming_lane/action": {
+   "pick": "stop",
+   "p": 0.3488,
+   "correct": false
+  },
+  "road-box-oncoming_lane/category": {
+   "pick": "obstacle",
+   "p": 0.4088,
+   "correct": true
+  },
+  "road-box-near_sidewalk/action": {
+   "pick": "continue",
+   "p": 0.315,
+   "correct": true
+  },
+  "road-box-near_sidewalk/category": {
+   "pick": "obstacle",
+   "p": 0.5457,
+   "correct": true
+  },
+  "road-box-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3689,
+   "correct": false
+  },
+  "road-box-far_sidewalk/category": {
+   "pick": "obstacle",
+   "p": 0.4284,
+   "correct": true
+  },
+  "road-bag-own_lane/action": {
+   "pick": "continue",
+   "p": 0.4101,
+   "correct": true
+  },
+  "road-bag-own_lane/category": {
+   "pick": "harmless_debris",
+   "p": 0.957,
+   "correct": true
+  },
+  "road-bag-oncoming_lane/action": {
+   "pick": "continue",
+   "p": 0.4413,
+   "correct": true
+  },
+  "road-bag-oncoming_lane/category": {
+   "pick": "harmless_debris",
+   "p": 0.948,
+   "correct": true
+  },
+  "road-bag-near_sidewalk/action": {
+   "pick": "continue",
+   "p": 0.337,
+   "correct": true
+  },
+  "road-bag-near_sidewalk/category": {
+   "pick": "harmless_debris",
+   "p": 0.9264,
+   "correct": true
+  },
+  "road-bag-far_sidewalk/action": {
+   "pick": "continue",
+   "p": 0.2962,
+   "correct": true
+  },
+  "road-bag-far_sidewalk/category": {
+   "pick": "harmless_debris",
+   "p": 0.9144,
+   "correct": true
+  },
+  "road-leaves-own_lane/action": {
+   "pick": "stop",
+   "p": 0.4295,
+   "correct": false
+  },
+  "road-leaves-own_lane/category": {
+   "pick": "other_sign",
+   "p": 0.7298,
+   "correct": false
+  },
+  "road-leaves-oncoming_lane/action": {
+   "pick": "stop",
+   "p": 0.3417,
+   "correct": false
+  },
+  "road-leaves-oncoming_lane/category": {
+   "pick": "other_sign",
+   "p": 0.5059,
+   "correct": false
+  },
+  "road-leaves-near_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.428,
+   "correct": false
+  },
+  "road-leaves-near_sidewalk/category": {
+   "pick": "other_sign",
+   "p": 0.7348,
+   "correct": false
+  },
+  "road-leaves-far_sidewalk/action": {
+   "pick": "stop",
+   "p": 0.3447,
+   "correct": false
+  },
+  "road-leaves-far_sidewalk/category": {
+   "pick": "other_sign",
+   "p": 0.8095,
+   "correct": false
+  },
+  "road-adult-own_lane/action": {
+   "pick": "stop",
+   "p": 0.3633,
+   "correct": true
+  },
+  "road-adult-own_lane/category": {
+   "pick": "person",
+   "p": 0.5168,
+   "correct": true
+  },
+  "road-adult-oncoming_lane/action": {
+   "pick": "slow_down",
+   "p": 0.3778,
+   "correct": true
+  },
+  "road-adult-oncoming_lane/category": {
+   "pick": "person",
+   "p": 0.4656,
+   "correct": true
+  },
+  "road-adult-near_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.3957,
+   "correct": true
+  },
+  "road-adult-near_sidewalk/category": {
+   "pick": "person",
+   "p": 0.5421,
+   "correct": true
+  },
+  "road-adult-far_sidewalk/action": {
+   "pick": "slow_down",
+   "p": 0.4456,
+   "correct": false
+  },
+  "road-adult-far_sidewalk/category": {
+   "pick": "person",
+   "p": 0.6559,
+   "correct": true
+  },
+  "pope-dog/has_dog": {
+   "pick": "true",
+   "p": 0.9983,
+   "correct": true
+  },
+  "pope-dog/has_cat": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "pope-dog/has_frisbee": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "pope-cat/has_cat": {
+   "pick": "true",
+   "p": 0.9989,
+   "correct": true
+  },
+  "pope-cat/has_dog": {
+   "pick": "false",
+   "p": 0.9955,
+   "correct": true
+  },
+  "pope-cat/has_house": {
+   "pick": "true",
+   "p": 0.9977,
+   "correct": true
+  },
+  "pope-child/has_ball": {
+   "pick": "true",
+   "p": 0.9948,
+   "correct": true
+  },
+  "pope-child/has_person": {
+   "pick": "true",
+   "p": 0.9906,
+   "correct": true
+  },
+  "pope-child/has_dog": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "pope-car/has_car": {
+   "pick": "true",
+   "p": 0.9983,
+   "correct": true
+  },
+  "pope-car/has_wind_turbine": {
+   "pick": "true",
+   "p": 0.9955,
+   "correct": true
+  },
+  "pope-car/has_person": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "pope-bicycle/has_bicycle": {
+   "pick": "true",
+   "p": 0.9985,
+   "correct": true
+  },
+  "pope-bicycle/has_person": {
+   "pick": "false",
+   "p": 0.9999,
+   "correct": true
+  },
+  "pope-bicycle/has_car": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "pope-teddy/has_teddy_bear": {
+   "pick": "true",
+   "p": 0.9984,
+   "correct": true
+  },
+  "pope-teddy/has_bench": {
+   "pick": "true",
+   "p": 0.9969,
+   "correct": true
+  },
+  "pope-teddy/has_child": {
+   "pick": "false",
+   "p": 0.9988,
+   "correct": true
+  },
+  "pope-adult/has_person": {
+   "pick": "true",
+   "p": 0.986,
+   "correct": true
+  },
+  "pope-adult/has_car": {
+   "pick": "true",
+   "p": 0.7962,
+   "correct": true
+  },
+  "pope-adult/has_umbrella": {
+   "pick": "false",
+   "p": 0.9369,
+   "correct": true
+  },
+  "pope-box/has_box": {
+   "pick": "true",
+   "p": 0.9986,
+   "correct": true
+  },
+  "pope-box/has_cat": {
+   "pick": "false",
+   "p": 0.9997,
+   "correct": true
+  },
+  "clevr-clevr-2819-7/q": {
+   "pick": "true",
+   "p": 0.9747,
+   "correct": true
+  },
+  "clevr-clevr-1803-5/q": {
+   "pick": "true",
+   "p": 0.8983,
+   "correct": false
+  },
+  "clevr-clevr-9113-9/q": {
+   "pick": "true",
+   "p": 0.6275,
+   "correct": false
+  },
+  "clevr-clevr-1863-2/q": {
+   "pick": "true",
+   "p": 0.8139,
+   "correct": true
+  },
+  "clevr-clevr-107-0/q": {
+   "pick": "true",
+   "p": 0.896,
+   "correct": true
+  },
+  "clevr-clevr-8763-3/q": {
+   "pick": "true",
+   "p": 0.5478,
+   "correct": false
+  },
+  "clevr-clevr-7357-1/q": {
+   "pick": "false",
+   "p": 0.8464,
+   "correct": true
+  },
+  "clevr-clevr-5004-6/q": {
+   "pick": "false",
+   "p": 0.8574,
+   "correct": true
+  },
+  "clevr-clevr-6234-3/q": {
+   "pick": "true",
+   "p": 0.9813,
+   "correct": true
+  },
+  "clevr-clevr-981-6/q": {
+   "pick": "true",
+   "p": 0.9585,
+   "correct": true
+  },
+  "clevr-clevr-134-2/q": {
+   "pick": "false",
+   "p": 0.9896,
+   "correct": true
+  },
+  "clevr-clevr-5697-0/q": {
+   "pick": "true",
+   "p": 0.7668,
+   "correct": false
+  },
+  "clevr-clevr-6607-1/q": {
+   "pick": "false",
+   "p": 0.9683,
+   "correct": true
+  },
+  "clevr-clevr-8886-6/q": {
+   "pick": "true",
+   "p": 0.9172,
+   "correct": true
+  },
+  "clevr-clevr-4099-5/q": {
+   "pick": "true",
+   "p": 0.6658,
+   "correct": true
+  },
+  "clevr-clevr-2582-0/q": {
+   "pick": "false",
+   "p": 0.9285,
+   "correct": true
+  },
+  "clevr-clevr-3848-0/q": {
+   "pick": "false",
+   "p": 0.5253,
+   "correct": true
+  },
+  "clevr-clevr-7548-4/q": {
+   "pick": "true",
+   "p": 0.8745,
+   "correct": true
+  },
+  "clevr-clevr-9327-6/q": {
+   "pick": "true",
+   "p": 0.7732,
+   "correct": true
+  },
+  "clevr-clevr-3336-2/q": {
+   "pick": "true",
+   "p": 0.8845,
+   "correct": true
+  },
+  "clevr-clevr-6607-5/q": {
+   "pick": "false",
+   "p": 0.963,
+   "correct": true
+  },
+  "clevr-clevr-9863-3/q": {
+   "pick": "true",
+   "p": 0.9736,
+   "correct": true
+  },
+  "clevr-clevr-3839-2/q": {
+   "pick": "false",
+   "p": 0.966,
+   "correct": true
+  },
+  "clevr-clevr-3234-1/q": {
+   "pick": "false",
+   "p": 0.9937,
+   "correct": true
+  },
+  "clevr-clevr-3113-5/q": {
+   "pick": "true",
+   "p": 0.5621,
+   "correct": true
+  },
+  "clevr-clevr-4571-8/q": {
+   "pick": "true",
+   "p": 0.8792,
+   "correct": true
+  },
+  "clevr-clevr-2193-7/q": {
+   "pick": "false",
+   "p": 0.9924,
+   "correct": true
+  },
+  "clevr-clevr-1273-9/q": {
+   "pick": "false",
+   "p": 0.9304,
+   "correct": true
+  },
+  "clevr-clevr-9445-8/q": {
+   "pick": "true",
+   "p": 0.9708,
+   "correct": true
+  },
+  "clevr-clevr-7655-9/q": {
+   "pick": "false",
+   "p": 0.9301,
+   "correct": false
+  },
+  "clevr-clevr-6273-9/q": {
+   "pick": "false",
+   "p": 0.9988,
+   "correct": true
+  },
+  "clevr-clevr-904-4/q": {
+   "pick": "true",
+   "p": 0.5251,
+   "correct": true
+  },
+  "clevr-clevr-4449-9/q": {
+   "pick": "true",
+   "p": 0.9423,
+   "correct": true
+  },
+  "clevr-clevr-7655-4/q": {
+   "pick": "false",
+   "p": 0.9949,
+   "correct": true
+  },
+  "clevr-clevr-4285-2/q": {
+   "pick": "false",
+   "p": 0.9994,
+   "correct": true
+  },
+  "clevr-clevr-7932-4/q": {
+   "pick": "true",
+   "p": 0.9474,
+   "correct": true
+  },
+  "clevr-clevr-3829-8/q": {
+   "pick": "true",
+   "p": 0.9482,
+   "correct": true
+  },
+  "clevr-clevr-2287-6/q": {
+   "pick": "true",
+   "p": 0.9844,
+   "correct": true
+  },
+  "clevr-clevr-4147-1/q": {
+   "pick": "true",
+   "p": 0.8113,
+   "correct": true
+  },
+  "clevr-clevr-4338-5/q": {
+   "pick": "true",
+   "p": 0.8324,
+   "correct": true
+  },
+  "count-1/count": {
+   "pick": "4",
+   "p": 0.6544,
+   "correct": true
+  },
+  "count-2/count": {
+   "pick": "4",
+   "p": 0.545,
+   "correct": false
+  },
+  "count-3/count": {
+   "pick": "2",
+   "p": 0.7028,
+   "correct": false
+  },
+  "count-4/count": {
+   "pick": "7",
+   "p": 0.5221,
+   "correct": true
+  },
+  "count-5/tri": {
+   "pick": "false",
+   "p": 0.9995,
+   "correct": true
+  },
+  "count-5/bsq": {
+   "pick": "true",
+   "p": 0.9801,
+   "correct": true
+  },
+  "count-5/gre": {
+   "pick": "false",
+   "p": 0.9998,
+   "correct": true
+  },
+  "chart-argmax/q": {
+   "pick": "Q3",
+   "p": 0.9997,
+   "correct": true
+  },
+  "chart-close/q": {
+   "pick": "North",
+   "p": 0.9996,
+   "correct": true
+  },
+  "chart-down/q": {
+   "pick": "falling",
+   "p": 0.9987,
+   "correct": true
+  },
+  "chart-up/q": {
+   "pick": "rising",
+   "p": 0.9958,
+   "correct": true
+  },
+  "chart-axis/q": {
+   "pick": "false",
+   "p": 0.9805,
+   "correct": true
+  },
+  "chart-pie/q": {
+   "pick": "Direct",
+   "p": 0.9997,
+   "correct": true
+  },
+  "chart-cross/q": {
+   "pick": "B",
+   "p": 0.9394,
+   "correct": true
+  },
+  "chart-scatter_pos/q": {
+   "pick": "positive",
+   "p": 0.9621,
+   "correct": true
+  },
+  "chart-food/producer": {
+   "pick": "Grass",
+   "p": 1.0,
+   "correct": true
+  },
+  "chart-food/fox_eats": {
+   "pick": "Rabbit",
+   "p": 0.9997,
+   "correct": true
+  },
+  "chart-ttt_win/q": {
+   "pick": "3",
+   "p": 0.5612,
+   "correct": true
+  },
+  "chart-ttt_block/q": {
+   "pick": "2",
+   "p": 0.3901,
+   "correct": false
+  },
+  "chart-rcpt_38_False/q": {
+   "pick": "approve",
+   "p": 0.9757,
+   "correct": true
+  },
+  "chart-rcpt_38_True/q": {
+   "pick": "approve",
+   "p": 0.8062,
+   "correct": false
+  },
+  "chart-rcpt_180_False/q": {
+   "pick": "review",
+   "p": 0.8872,
+   "correct": true
+  },
+  "ui-form-1/next": {
+   "pick": "pay",
+   "p": 0.9871,
+   "correct": false
+  },
+  "ui-form-2/next": {
+   "pick": "pay",
+   "p": 0.9956,
+   "correct": false
+  },
+  "ui-form-3/next": {
+   "pick": "pay",
+   "p": 0.9968,
+   "correct": true
+  },
+  "ui-dlg-low/sev": {
+   "pick": "low",
+   "p": 0.9273,
+   "correct": true
+  },
+  "ui-dlg-medium/sev": {
+   "pick": "low",
+   "p": 0.7587,
+   "correct": false
+  },
+  "ui-dlg-high/sev": {
+   "pick": "high",
+   "p": 0.8651,
+   "correct": true
+  },
+  "ui-ba-False/broke": {
+   "pick": "false",
+   "p": 0.9713,
+   "correct": true
+  },
+  "ui-ba-True/broke": {
+   "pick": "false",
+   "p": 0.7233,
+   "correct": false
+  },
+  "ui-delete/click": {
+   "pick": "cancel",
+   "p": 0.9938,
+   "correct": true
+  },
+  "ui-delete/undo": {
+   "pick": "false",
+   "p": 0.978,
+   "correct": true
+  },
+  "ui-declined/status": {
+   "pick": "declined",
+   "p": 0.997,
+   "correct": true
+  },
+  "ui-declined/next": {
+   "pick": "another_card",
+   "p": 0.7843,
+   "correct": true
+  },
+  "visa-capsules_Data_Images_Anomaly_045.JPG/inspection": {
+   "pick": "B",
+   "p": 0.678,
+   "correct": true
+  },
+  "visa-capsules_Data_Images_Normal_488.JPG/inspection": {
+   "pick": "A",
+   "p": 0.9147,
+   "correct": true
+  },
+  "visa-pcb4_Data_Images_Anomaly_008.JPG/inspection": {
+   "pick": "B",
+   "p": 0.756,
+   "correct": true
+  },
+  "visa-pcb4_Data_Images_Normal_0011.JPG/inspection": {
+   "pick": "A",
+   "p": 0.8561,
+   "correct": true
+  },
+  "visa-candle_Data_Images_Anomaly_000.JPG/inspection": {
+   "pick": "A",
+   "p": 0.9369,
+   "correct": false
+  },
+  "visa-chewinggum_Data_Images_Normal_487.JPG/inspection": {
+   "pick": "B",
+   "p": 0.8694,
+   "correct": false
+  }
+ }
+}

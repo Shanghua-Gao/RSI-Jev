@@ -1,0 +1,687 @@
+[
+ {
+  "id": "visa-candle_Data_Images_Anomaly_000.JPG/inspection",
+  "category": "visa",
+  "images": [
+   "../gallery/images/visa/candle_Anomaly_000.JPG"
+  ],
+  "state": "Production-line inspection photo of candles.",
+  "key": "inspection",
+  "spec": {
+   "type": "choice",
+   "instructions": "Is everything in the photo good, or is at least one part defective?",
+   "criteria": {
+    "A": "all good",
+    "B": "defective"
+   }
+  },
+  "ref": [
+   "B"
+  ],
+  "max_side": 1536,
+  "labels": {
+   "A": "All good",
+   "B": "Defective"
+  },
+  "license": "CC BY 4.0",
+  "credit": "Amazon Science, VisA dataset"
+ },
+ {
+  "id": "visa-pcb4_Data_Images_Anomaly_008.JPG/inspection",
+  "category": "visa",
+  "images": [
+   "../gallery/images/visa/pcb4_Anomaly_008.JPG"
+  ],
+  "state": "Production-line inspection photo of a printed circuit board.",
+  "key": "inspection",
+  "spec": {
+   "type": "choice",
+   "instructions": "Is everything in the photo good, or is at least one part defective?",
+   "criteria": {
+    "A": "all good",
+    "B": "defective"
+   }
+  },
+  "ref": [
+   "B"
+  ],
+  "max_side": 1536,
+  "labels": {
+   "A": "All good",
+   "B": "Defective"
+  },
+  "license": "CC BY 4.0",
+  "credit": "Amazon Science, VisA dataset"
+ },
+ {
+  "id": "visa-capsules_Data_Images_Normal_488.JPG/inspection",
+  "category": "visa",
+  "images": [
+   "../gallery/images/visa/capsules_Normal_488.JPG"
+  ],
+  "state": "Production-line inspection photo of green gel capsules.",
+  "key": "inspection",
+  "spec": {
+   "type": "choice",
+   "instructions": "Is everything in the photo good, or is at least one part defective?",
+   "criteria": {
+    "A": "all good",
+    "B": "defective"
+   }
+  },
+  "ref": [
+   "A"
+  ],
+  "max_side": 1536,
+  "labels": {
+   "A": "All good",
+   "B": "Defective"
+  },
+  "license": "CC BY 4.0",
+  "credit": "Amazon Science, VisA dataset"
+ },
+ {
+  "id": "visa-capsules_Data_Images_Anomaly_045.JPG/inspection",
+  "category": "visa",
+  "images": [
+   "../gallery/images/visa/capsules_Anomaly_045.JPG"
+  ],
+  "state": "Production-line inspection photo of green gel capsules.",
+  "key": "inspection",
+  "spec": {
+   "type": "choice",
+   "instructions": "Is everything in the photo good, or is at least one part defective?",
+   "criteria": {
+    "A": "all good",
+    "B": "defective"
+   }
+  },
+  "ref": [
+   "B"
+  ],
+  "max_side": 1536,
+  "labels": {
+   "A": "All good",
+   "B": "Defective"
+  },
+  "license": "CC BY 4.0",
+  "credit": "Amazon Science, VisA dataset"
+ },
+ {
+  "id": "road-red-far_sidewalk/category",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/red.jpg"
+  ],
+  "state": "location: on the sidewalk across the road, beyond the oncoming lane, not on the road",
+  "key": "category",
+  "spec": {
+   "type": "choice",
+   "instructions": "What kind of thing is the object in the image?",
+   "criteria": {
+    "person": "One or more people of any age: a child, an adult, pedestrians",
+    "animal": "An animal, such as a dog, cat, deer or bird",
+    "vehicle": "A vehicle, such as a car, truck, bus, motorbike, bicycle or scooter",
+    "traffic_light": "A traffic light",
+    "stop_sign": "A stop sign",
+    "speed_limit_sign": "A speed limit sign",
+    "other_sign": "Any other sign",
+    "obstacle": "A solid object that could damage the car or block the road, such as a box, rock, toy or furniture",
+    "harmless_debris": "Something light the car can safely drive over, such as a plastic or paper bag, leaves or litter",
+    "unclear": "the object in the image is too vague to tell what it is"
+   }
+  },
+  "ref": [
+   "traffic_light"
+  ],
+  "license": "CC BY-SA 3.0",
+  "credit": "Jacklee"
+ },
+ {
+  "id": "road-stop-own_lane/action",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/stop.jpg"
+  ],
+  "state": "location: on the road, in the car's lane, ahead of the car",
+  "key": "action",
+  "spec": {
+   "type": "choice",
+   "instructions": "What should the car do about the object in the image, which is `location`?",
+   "criteria": {
+    "continue": "Drive on at the current speed: it can't get into the car's way, or it is light enough to drive over, such as a bag, paper or leaves",
+    "slow_down": "Drive on at half speed until past it: a person or animal that is not in the car's lane, but could move into it",
+    "stop": "Stop before it and wait until it is gone: a person, animal, vehicle or solid object blocks the car's lane",
+    "stop_then_go": "Stop at it, wait two seconds, then drive on: a stop sign",
+    "wait_for_green": "Stop at it and wait until a light turns green: a red or amber traffic light",
+    "go": "Drive on, and go again if waiting at a light: a green traffic light",
+    "change_speed": "Change the car's speed to the number on it: a speed limit sign"
+   }
+  },
+  "ref": [
+   "stop_then_go"
+  ],
+  "license": "Public domain",
+  "credit": "Dori"
+ },
+ {
+  "id": "road-teddy-oncoming_lane/category",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/teddy.jpg"
+  ],
+  "state": "location: on the road, in the oncoming lane next to the car's lane",
+  "key": "category",
+  "spec": {
+   "type": "choice",
+   "instructions": "What kind of thing is the object in the image?",
+   "criteria": {
+    "person": "One or more people of any age: a child, an adult, pedestrians",
+    "animal": "An animal, such as a dog, cat, deer or bird",
+    "vehicle": "A vehicle, such as a car, truck, bus, motorbike, bicycle or scooter",
+    "traffic_light": "A traffic light",
+    "stop_sign": "A stop sign",
+    "speed_limit_sign": "A speed limit sign",
+    "other_sign": "Any other sign",
+    "obstacle": "A solid object that could damage the car or block the road, such as a box, rock, toy or furniture",
+    "harmless_debris": "Something light the car can safely drive over, such as a plastic or paper bag, leaves or litter",
+    "unclear": "the object in the image is too vague to tell what it is"
+   }
+  },
+  "ref": [
+   "obstacle"
+  ],
+  "license": "CC0",
+  "credit": "Pixabay"
+ },
+ {
+  "id": "road-leaves-oncoming_lane/category",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/leaves.jpg"
+  ],
+  "state": "location: on the road, in the oncoming lane next to the car's lane",
+  "key": "category",
+  "spec": {
+   "type": "choice",
+   "instructions": "What kind of thing is the object in the image?",
+   "criteria": {
+    "person": "One or more people of any age: a child, an adult, pedestrians",
+    "animal": "An animal, such as a dog, cat, deer or bird",
+    "vehicle": "A vehicle, such as a car, truck, bus, motorbike, bicycle or scooter",
+    "traffic_light": "A traffic light",
+    "stop_sign": "A stop sign",
+    "speed_limit_sign": "A speed limit sign",
+    "other_sign": "Any other sign",
+    "obstacle": "A solid object that could damage the car or block the road, such as a box, rock, toy or furniture",
+    "harmless_debris": "Something light the car can safely drive over, such as a plastic or paper bag, leaves or litter",
+    "unclear": "the object in the image is too vague to tell what it is"
+   }
+  },
+  "ref": [
+   "harmless_debris"
+  ],
+  "license": "CC BY-SA 3.0",
+  "credit": "Wald1siedel"
+ },
+ {
+  "id": "road-limit80-near_sidewalk/speed_limit",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/limit80.jpg"
+  ],
+  "state": "location: on the sidewalk right beside the car's lane, not on the road",
+  "key": "speed_limit",
+  "spec": {
+   "type": "choice",
+   "instructions": "Which speed limit number is written on the object in the image?",
+   "criteria": {
+    "30": "The number 30",
+    "50": "The number 50",
+    "80": "The number 80",
+    "120": "The number 120",
+    "none": "No speed limit number is written on the object in the image"
+   }
+  },
+  "ref": [
+   "80"
+  ],
+  "license": "Public domain",
+  "credit": "P.Ctnt"
+ },
+ {
+  "id": "road-box-near_sidewalk/action",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/box.jpg"
+  ],
+  "state": "location: on the sidewalk right beside the car's lane, not on the road",
+  "key": "action",
+  "spec": {
+   "type": "choice",
+   "instructions": "What should the car do about the object in the image, which is `location`?",
+   "criteria": {
+    "continue": "Drive on at the current speed: it can't get into the car's way, or it is light enough to drive over, such as a bag, paper or leaves",
+    "slow_down": "Drive on at half speed until past it: a person or animal that is not in the car's lane, but could move into it",
+    "stop": "Stop before it and wait until it is gone: a person, animal, vehicle or solid object blocks the car's lane",
+    "stop_then_go": "Stop at it, wait two seconds, then drive on: a stop sign",
+    "wait_for_green": "Stop at it and wait until a light turns green: a red or amber traffic light",
+    "go": "Drive on, and go again if waiting at a light: a green traffic light",
+    "change_speed": "Change the car's speed to the number on it: a speed limit sign"
+   }
+  },
+  "ref": [
+   "continue",
+   "slow_down"
+  ],
+  "license": "CC BY-SA 4.0",
+  "credit": "MrBeastRapper"
+ },
+ {
+  "id": "road-cat-near_sidewalk/category",
+  "category": "road",
+  "images": [
+   "../gallery/images/photos/cat.jpg"
+  ],
+  "state": "location: on the sidewalk right beside the car's lane, not on the road",
+  "key": "category",
+  "spec": {
+   "type": "choice",
+   "instructions": "What kind of thing is the object in the image?",
+   "criteria": {
+    "person": "One or more people of any age: a child, an adult, pedestrians",
+    "animal": "An animal, such as a dog, cat, deer or bird",
+    "vehicle": "A vehicle, such as a car, truck, bus, motorbike, bicycle or scooter",
+    "traffic_light": "A traffic light",
+    "stop_sign": "A stop sign",
+    "speed_limit_sign": "A speed limit sign",
+    "other_sign": "Any other sign",
+    "obstacle": "A solid object that could damage the car or block the road, such as a box, rock, toy or furniture",
+    "harmless_debris": "Something light the car can safely drive over, such as a plastic or paper bag, leaves or litter",
+    "unclear": "the object in the image is too vague to tell what it is"
+   }
+  },
+  "ref": [
+   "animal"
+  ],
+  "license": "CC BY-SA 4.0",
+  "credit": "Grendelkhan"
+ },
+ {
+  "id": "clevr-clevr-5004-6/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-5004-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "There is a large block; is it the same color as the cylinder behind the blue thing?"
+  },
+  "ref": [
+   "false"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "clevr-clevr-4338-5/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-4338-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "Is there any other thing that is the same color as the tiny metal ball?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "clevr-clevr-4449-9/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-4449-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "Are there any other things that have the same shape as the large red thing?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "clevr-clevr-2819-7/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-2819-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "Are any brown objects visible?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "clevr-clevr-7548-4/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-7548-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "Are there more big blocks right of the large green block than small brown things?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "clevr-clevr-4099-5/q",
+  "category": "clevr",
+  "images": [
+   "../gallery/images/clevr/clevr-4099-0.jpg"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "Are there any other cyan objects that have the same shape as the tiny cyan matte thing?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY 4.0",
+  "credit": "Johnson et al., CLEVR (2017)"
+ },
+ {
+  "id": "pope-teddy/has_teddy_bear",
+  "category": "hallucination",
+  "images": [
+   "../gallery/images/photos/teddy.jpg"
+  ],
+  "state": "<image>",
+  "key": "has_teddy_bear",
+  "spec": {
+   "type": "noul",
+   "instructions": "Is there a teddy bear in the image?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC0",
+  "credit": "Pixabay"
+ },
+ {
+  "id": "pope-bicycle/has_car",
+  "category": "hallucination",
+  "images": [
+   "../gallery/images/photos/bicycle.jpg"
+  ],
+  "state": "<image>",
+  "key": "has_car",
+  "spec": {
+   "type": "noul",
+   "instructions": "Is there a car in the image?"
+  },
+  "ref": [
+   "false"
+  ],
+  "license": "Public domain",
+  "credit": "Ingolfson"
+ },
+ {
+  "id": "pope-dog/has_dog",
+  "category": "hallucination",
+  "images": [
+   "../gallery/images/photos/dog.jpg"
+  ],
+  "state": "<image>",
+  "key": "has_dog",
+  "spec": {
+   "type": "noul",
+   "instructions": "Is there a dog in the image?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC0",
+  "credit": "Joselodos"
+ },
+ {
+  "id": "pope-box/has_box",
+  "category": "hallucination",
+  "images": [
+   "../gallery/images/photos/box.jpg"
+  ],
+  "state": "<image>",
+  "key": "has_box",
+  "spec": {
+   "type": "noul",
+   "instructions": "Is there a box in the image?"
+  },
+  "ref": [
+   "true"
+  ],
+  "license": "CC BY-SA 4.0",
+  "credit": "MrBeastRapper"
+ },
+ {
+  "id": "chart-down/q",
+  "category": "charts",
+  "images": [
+   "../gallery/images/generated/line_down.png"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "choice",
+   "instructions": "What is the overall trend?",
+   "criteria": {
+    "rising": null,
+    "flat": null,
+    "falling": null
+   }
+  },
+  "ref": [
+   "falling"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "chart-up/q",
+  "category": "charts",
+  "images": [
+   "../gallery/images/generated/line_up.png"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "choice",
+   "instructions": "What is the overall trend?",
+   "criteria": {
+    "rising": null,
+    "flat": null,
+    "falling": null
+   }
+  },
+  "ref": [
+   "rising"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "chart-axis/q",
+  "category": "charts",
+  "images": [
+   "../gallery/images/generated/bars_trunc.png"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "noul",
+   "instructions": "The vertical axis starts at zero."
+  },
+  "ref": [
+   "false"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "chart-cross/q",
+  "category": "charts",
+  "images": [
+   "../gallery/images/generated/two_lines.png"
+  ],
+  "state": "<image>",
+  "key": "q",
+  "spec": {
+   "type": "choice",
+   "instructions": "Which plan is cheaper in the last month shown?",
+   "criteria": {
+    "A": "Plan A",
+    "B": "Plan B"
+   }
+  },
+  "ref": [
+   "B"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "chart-rcpt_38_False/q",
+  "category": "charts",
+  "images": [
+   "../gallery/images/generated/rcpt_38_False.png"
+  ],
+  "state": "Expense policy: meals up to $60 are approved automatically; alcohol is never reimbursable; anything else needs review.\n<image>",
+  "key": "q",
+  "spec": {
+   "type": "choice",
+   "instructions": "What should happen to this expense?",
+   "criteria": {
+    "approve": null,
+    "review": null,
+    "reject": null
+   }
+  },
+  "ref": [
+   "approve"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "ui-dlg-low/sev",
+  "category": "ui",
+  "images": [
+   "../gallery/images/generated/dlg_low.png"
+  ],
+  "state": "<image>",
+  "key": "sev",
+  "spec": {
+   "type": "choice",
+   "instructions": "How urgently does an on-call engineer need to act on this?",
+   "criteria": {
+    "low": null,
+    "medium": null,
+    "high": null
+   }
+  },
+  "ref": [
+   "low"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "ui-ba-False/broke",
+  "category": "ui",
+  "images": [
+   "../gallery/images/generated/layout_before.png",
+   "../gallery/images/generated/layout_after_False.png"
+  ],
+  "state": "Before deploy:\n<image>\nAfter deploy:\n<image>",
+  "key": "broke",
+  "spec": {
+   "type": "noul",
+   "instructions": "The page layout changed or broke between the two screenshots."
+  },
+  "ref": [
+   "false"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "ui-declined/status",
+  "category": "ui",
+  "images": [
+   "../gallery/images/generated/payment_failed.png"
+  ],
+  "state": "Goal: finish paying for the order.\n<image>",
+  "key": "status",
+  "spec": {
+   "type": "choice",
+   "instructions": "What happened to the payment?",
+   "criteria": {
+    "paid": "The payment went through",
+    "declined": "The card was declined",
+    "pending": "The payment is still processing"
+   }
+  },
+  "ref": [
+   "declined"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ },
+ {
+  "id": "ui-dlg-medium/sev",
+  "category": "ui",
+  "images": [
+   "../gallery/images/generated/dlg_medium.png"
+  ],
+  "state": "<image>",
+  "key": "sev",
+  "spec": {
+   "type": "choice",
+   "instructions": "How urgently does an on-call engineer need to act on this?",
+   "criteria": {
+    "low": null,
+    "medium": null,
+    "high": null
+   }
+  },
+  "ref": [
+   "medium"
+  ],
+  "license": "CC0 (generated)",
+  "credit": "RSI-Jev authors"
+ }
+]
