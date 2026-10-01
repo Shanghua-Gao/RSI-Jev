@@ -106,13 +106,14 @@ class ModelRunner:
 
     def _plan_images(self, state, questions, images) -> dict:
         from serve.images import state_too_long, text_only_error
-        from serve.infer import plan_image_request
+        from serve.infer import default_vision_cache, plan_image_request
         if self.prep is None:
             raise text_only_error(self.name, self.image_error)
         try:
             with self._tok_lock:
+                vc = default_vision_cache(self.model)
                 return plan_image_request(self.tok, self.prep, state, images, questions,
-                                          self.venc)
+                                          self.venc, **({"vision_cache": vc} if vc else {}))
         except ValueError as e:
             err = state_too_long(e, self.venc.max_length)
             if err is None:

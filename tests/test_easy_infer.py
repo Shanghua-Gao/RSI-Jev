@@ -147,11 +147,10 @@ def test_decider_is_importable_from_rsijev():
 # ---------------------------------------------------------------------------
 
 def test_profiles_map_to_the_env_flags():
-    assert runtime.PROFILES == {"agent": {"RSIJEV_DOC_CACHE": "1"},
-                                "server": {"RSIJEV_COMPILE": "1"}}
+    agent = {"RSIJEV_DOC_CACHE": "1", "RSIJEV_VISION_CACHE": "1"}
+    assert runtime.PROFILES == {"agent": agent, "server": {"RSIJEV_COMPILE": "1"}}
     env = {}
-    assert runtime.apply_profile("agent", env) == {"RSIJEV_DOC_CACHE": "1"} and env == {
-        "RSIJEV_DOC_CACHE": "1"}
+    assert runtime.apply_profile("agent", env) == agent and env == agent
     env = {}
     runtime.apply_profile("server", env)
     assert env == {"RSIJEV_COMPILE": "1"}
@@ -164,8 +163,8 @@ def test_no_profile_changes_nothing():
 
 def test_an_env_var_already_set_wins_over_the_profile():
     env = {"RSIJEV_DOC_CACHE": "0"}
-    assert runtime.apply_profile("agent", env) == {}
-    assert env == {"RSIJEV_DOC_CACHE": "0"}
+    assert runtime.apply_profile("agent", env) == {"RSIJEV_VISION_CACHE": "1"}
+    assert env == {"RSIJEV_DOC_CACHE": "0", "RSIJEV_VISION_CACHE": "1"}
 
 
 def test_an_unknown_profile_is_refused():
@@ -177,7 +176,7 @@ def test_the_profiles_reach_the_switches(monkeypatch):
     """agent turns on the document cache serve.infer reads; server turns on the
     compile serve.accel applies."""
     from serve import accel, infer
-    for k in ("RSIJEV_DOC_CACHE", "RSIJEV_COMPILE"):
+    for k in ("RSIJEV_DOC_CACHE", "RSIJEV_VISION_CACHE", "RSIJEV_COMPILE"):
         monkeypatch.setenv(k, "0")          # so teardown removes what the profile sets
         monkeypatch.delenv(k)
     monkeypatch.setattr(infer, "_DOC_CACHE", None)

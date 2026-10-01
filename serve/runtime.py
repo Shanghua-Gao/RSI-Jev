@@ -19,7 +19,8 @@ FAST_INSTALL = 'pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao
 # A profile only sets defaults. A variable already in the environment wins, so
 # `RSIJEV_DOC_CACHE=0 rsi-jev serve ... --profile agent` still runs without it.
 PROFILES: dict[str, dict[str, str]] = {
-    "agent": {"RSIJEV_DOC_CACHE": "1"},     # same or growing state asked about again
+    # same or growing state asked about again; the same images with other questions
+    "agent": {"RSIJEV_DOC_CACHE": "1", "RSIJEV_VISION_CACHE": "1"},
     "server": {"RSIJEV_COMPILE": "1"},      # long-running: pays ~40 s of compile once
 }
 

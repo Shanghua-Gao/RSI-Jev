@@ -84,6 +84,10 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
             s.vision_error = (f"image requests need Pillow and torchvision ({e}); "
                               f'install them with: pip install "rsi-jev[vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"')
         else:
+            # The vision tower's rotary embedding as one fused, bit-exact kernel
+            # (serve/kernels.py); RSIJEV_VISION_ROPE=0 turns it off.
+            from serve.kernels import install
+            install()
             s.prep = ImagePrep(meta["base_model"], VisionConfig(
                 image_token_budget=v["image_token_budget"],
                 min_tokens_per_image=v["min_tokens_per_image"]), revision=v.get("revision"))
