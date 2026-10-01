@@ -66,7 +66,9 @@ a photo, a screenshot, a scanned page — and ask the same typed questions about
 image benchmarks held out from training it answers 80.3% correctly, and 45.8% with the images
 blanked out. On text it keeps v3.0's level (suite 0.756). It is v3.0's lineage with two rounds
 of image training and a new RL stage that charges a confident mistake four times what it charges
-a timid correct answer. [`versions/v4.0-vl.md`](versions/v4.0-vl.md) is its record.
+a timid correct answer. That stage takes held-out ECE before calibration from 0.200 to 0.082,
+one seed ([how it works](docs/rl.md#v40-vl-a-reward-that-prices-confident-mistakes)).
+[`versions/v4.0-vl.md`](versions/v4.0-vl.md) is its record.
 
 <details>
 <summary>the four releases behind it</summary>
@@ -76,7 +78,7 @@ RL needs here: one that scores the *order* of many candidates, which no per-item
 express. Trained with it, v3.0 ranks the right memory first **60% more often** than its own
 supervised parent (hippo R@1 0.192 → 0.308, 64 questions won against 6), with the rest of the
 suite held level. [`versions/v3.0.md`](versions/v3.0.md) is its record;
-[`docs/rl.md`](docs/rl.md) is how the loop got there, across 59 reward-trained arms.
+[`docs/rl.md`](docs/rl.md) is how the loop got there; it now covers 63 reward-trained arms.
 
 **v2.1** is the first release better *everywhere it was checked*: ahead of v1.0 on three
 benchmarks it never trained on, and it recovers the general knowledge v2.0 had traded away by
@@ -130,8 +132,8 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | an RL stage charging a confident mistake 4x a timid correct answer | held-out ECE before calibration 0.200 → 0.082 | against a matched supervised stage: better accuracy and calibration, no detectable ranking difference (one seed) |
 | **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
 
-The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm through v3.0,
-and the v4.0-VL lineage, with why each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
+The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm through v3.0
+and every arm on v4.0-VL's line, with why each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## RSI-Jev models
@@ -285,7 +287,7 @@ Thank you to the people who have sent that feedback:
 |---|---|
 | [`versions/`](versions/) | **one record per release, kept** — how it was built, what it scores, what it costs, its limitations. Currently [`v4.0-vl.md`](versions/v4.0-vl.md), [`v3.0.md`](versions/v3.0.md), [`v2.1.md`](versions/v2.1.md), [`v2.0.md`](versions/v2.0.md) and [`v1.0.md`](versions/v1.0.md) |
 | [`EXPLORE.md`](EXPLORE.md) | **what the loop tried and rejected** between releases |
-| [`docs/rl.md`](docs/rl.md) | **where RL beat supervised training, and where it didn't** — 59 reward-trained arms, one kept |
+| [`docs/rl.md`](docs/rl.md) | **where RL beat supervised training, and where it didn't** — 63 reward-trained arms, two kept |
 | [`docs/speed.md`](docs/speed.md) | **how AutoScientists made inference faster** — read the document once; 1.25–1.63x by default, up to 5.8x in agent loops |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | **what each number means** and how to reproduce it |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | **what to send and what happens to it** |
