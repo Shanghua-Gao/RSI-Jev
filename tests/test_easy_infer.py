@@ -225,7 +225,7 @@ def test_missing_fla_on_cuda_prints_the_install_command(monkeypatch):
     _fake_install(monkeypatch, fla=None, conv=None)
     lines = runtime.describe_kernels(runtime.kernel_report("cuda"), "cuda")
     assert "fla not installed" in lines[0]
-    assert len(lines) == 2 and 'pip install "rsi-jev[fast]"' in lines[1]
+    assert len(lines) == 2 and 'pip install "rsi-jev[fast] @ git+' in lines[1]
 
 
 def test_fla_off_cuda_is_installed_but_not_used(monkeypatch):

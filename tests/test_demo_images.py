@@ -105,7 +105,7 @@ def test_env_reports_the_vision_extra():
     from serve.runtime import describe_vision
     assert "installed" in describe_vision({"pillow": "12", "torchvision": "0.2"})
     line = describe_vision({"pillow": None, "torchvision": "0.2"})
-    assert "pillow" in line and 'pip install "rsi-jev[vision]"' in line
+    assert "pillow" in line and 'pip install "rsi-jev[vision] @ git+' in line
 
 
 @pytest.mark.parametrize("name", ["image_check.py", "image_http.py"])

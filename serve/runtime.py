@@ -14,7 +14,7 @@ import os
 import sys
 from typing import Mapping, MutableMapping
 
-FAST_INSTALL = 'pip install "rsi-jev[fast]"'
+FAST_INSTALL = 'pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"'
 
 # A profile only sets defaults. A variable already in the environment wins, so
 # `RSIJEV_DOC_CACHE=0 rsi-jev serve ... --profile agent` still runs without it.
@@ -204,7 +204,7 @@ def describe_kernels(report: dict[str, dict], device: str) -> list[str]:
     return lines
 
 
-VISION_INSTALL = 'pip install "rsi-jev[vision]"'
+VISION_INSTALL = 'pip install "rsi-jev[vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"'
 
 
 def vision_report() -> dict[str, str | None]:

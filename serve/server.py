@@ -82,7 +82,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
             import torchvision   # noqa: F401
         except ImportError as e:
             s.vision_error = (f"image requests need Pillow and torchvision ({e}); "
-                              f'install them with: pip install "rsi-jev[vision]"')
+                              f'install them with: pip install "rsi-jev[vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"')
         else:
             s.prep = ImagePrep(meta["base_model"], VisionConfig(
                 image_token_budget=v["image_token_budget"],
