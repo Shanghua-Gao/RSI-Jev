@@ -1,7 +1,8 @@
 """Multi-benchmark evaluation suite: a PROPOSED extension of rsijev/targets.py.
 
-The twelve-benchmark suite: what each benchmark is, where its test split comes
-from (pinned by commit) and its licence. This module is not protected and
+The benchmark registry: what each benchmark is, where its test split comes
+from (pinned by commit) and its licence, plus the weighted suites the releases report
+(`SUITES`: "v2", twelve benchmarks, for v2.x; "v3", fifteen, from v3.0 on). This module is not protected and
 NOT wired into the evaluator. The orchestrator integrates it into the frozen tree.
 Until then it must not be imported by any arm.
 
@@ -81,6 +82,13 @@ class _Unset:
 def _root(env: str, what: str):
     v = os.environ.get(env)
     return Path(v) if v else _Unset(env, what)
+
+
+def _bench_cache() -> Path:
+    """Where downloaded benchmark files are cached: $RSIJEV_BENCH_CACHE, else
+    ~/.cache/rsi-jev-benches. The same convention as scripts/vision_benches."""
+    v = os.environ.get("RSIJEV_BENCH_CACHE")
+    return Path(v) if v else Path.home() / ".cache" / "rsi-jev-benches"
 
 
 KEV_ROOT = _root("KEV_ROOT", "a checkout of the Kev benchmark repo")
@@ -346,7 +354,6 @@ def _single(source: str, i, state: str, mode: str, instructions: str, options, c
 
 def load_jev_style_panel(tasks=None) -> list[Case]:
     import dataclasses
-    import hashlib as _h
     import urllib.request
     from datasets import load_dataset
     from .data import SOURCES, recast
@@ -411,10 +418,13 @@ def load_jev_style_panel(tasks=None) -> list[Case]:
                         int(ds[i]["label"])) for i in _sample(len(ds), JEV_STYLE_N, "enron_spam")]
 
     def hans():
-        cache = LAB / "data/suite_refs/hans_heuristics_evaluation_set.txt"
+        cache = _bench_cache() / "suite_refs" / "hans_heuristics_evaluation_set.txt"
         if not cache.exists():
             cache.parent.mkdir(parents=True, exist_ok=True)
-            urllib.request.urlretrieve(HANS_URL, cache)
+            part = cache.with_name(cache.name + ".part")
+            urllib.request.urlretrieve(HANS_URL, part)
+            _checked(part, HANS_SHA256)     # a bad download is never left in the cache
+            part.replace(cache)
         _checked(cache, HANS_SHA256)
         lines = open(cache).read().splitlines()
         head = lines[0].split("\t")
@@ -738,15 +748,30 @@ SUITE: dict[str, Bench] = {
 }
 
 
-# The recommended suite: weights sum to 1. The metric per benchmark is pooled
-# top-1; nimble_public and jev_style_panel report the MACRO over their subsets
-# (Case.source), as Nimble and chaoliangUNSW do. typed_decisions_test and
-# mmlu_pro_1k are read in canonical and reversed order; everything else canonical only.
-RECOMMENDED: dict[str, float] = {
+# The weighted suites. Each sums to 1. The metric per benchmark is pooled top-1;
+# nimble_public and jev_style_panel report the MACRO over their subsets (Case.source),
+# as Nimble and chaoliangUNSW do. typed_decisions_test and mmlu_pro_1k are read in
+# canonical and reversed order; everything else canonical only.
+#
+# "v2": the twelve-benchmark suite behind v2.0 and v2.1 (their records, section 4).
+SUITE_V2: dict[str, float] = {
     "typed_decisions_test": 0.20, "nimble_public": 0.15, "mmlu_pro_1k": 0.10, "jev_style_panel": 0.10,
     "kev_transfer_v4": 0.08, "kev_hard_v1": 0.08, "jevbench_public": 0.06, "kev_documents_v1": 0.05,
     "kev_devtools_v1": 0.05, "nimble_holdout": 0.05, "procedural_test": 0.04, "open_jev_ood": 0.04,
 }
+# "v3": the fifteen-benchmark suite behind v3.0 and v4.0-VL (their records, section 4.2).
+# v2.1's three held-out benchmarks join at 0.05 each; typed-decisions keeps 0.20 and the
+# other eleven are scaled down to make room.
+SUITE_V3: dict[str, float] = {
+    "typed_decisions_test": 0.20, "nimble_public": 0.121, "mmlu_pro_1k": 0.081, "jev_style_panel": 0.081,
+    "kev_transfer_v4": 0.065, "kev_hard_v1": 0.065, "jevbench_public": 0.049, "kev_documents_v1": 0.041,
+    "kev_devtools_v1": 0.041, "nimble_holdout": 0.041, "procedural_test": 0.033, "open_jev_ood": 0.032,
+    "tasksource_jev_test": 0.05, "semif_external": 0.05, "scienthoon_ood": 0.05,
+}
+SUITES: dict[str, dict[str, float]] = {"v2": SUITE_V2, "v3": SUITE_V3}
+# The suite the current releases report.
+DEFAULT_SUITE = "v3"
+RECOMMENDED = SUITES[DEFAULT_SUITE]
 MACRO_OVER_SOURCE = {"nimble_public", "jev_style_panel"}
 # Eval cases that overlap training data we hold, per the decontamination report;
 # dropped at load time.
@@ -754,10 +779,10 @@ DECONTAM = _root("SUITE_DECONTAM", "the decontamination report naming eval cases
                  "overlap training data, dropped at load time")
 
 
-def load_suite(names=None, *, decontam: bool = True) -> dict[str, list[Case]]:
-    """Load benchmarks (default: the recommended suite), minus the eval cases the
-    decontamination check found in training data."""
-    names = list(RECOMMENDED) if names is None else list(names)
+def load_suite(names=None, *, decontam: bool = True, suite: str = DEFAULT_SUITE) -> dict[str, list[Case]]:
+    """Load benchmarks (default: every benchmark in SUITES[suite]), minus the eval
+    cases the decontamination check found in training data."""
+    names = list(SUITES[suite]) if names is None else list(names)
     drop = json.loads(DECONTAM.read_text())["drop"] if decontam else {}
     out = {}
     for n in names:

@@ -1,12 +1,19 @@
-"""Score a checkpoint on the twelve-benchmark suite: the headline in every release record.
+"""Score a checkpoint on the benchmark suite: the headline in every release record.
 
-    python scripts/suite.py --ckpt DIR                    # all twelve, weighted mean
+    python scripts/suite.py --ckpt DIR                    # the fifteen-benchmark suite, weighted mean
+    python scripts/suite.py --ckpt DIR --suite v2         # the twelve-benchmark suite of v2.0 and v2.1
     python scripts/suite.py --ckpt DIR --only typed_decisions_test,kev_hard_v1
     python scripts/suite.py --ckpt DIR --json out.json
+
+Two suites are defined in `rsijev/targets_suite.py` (`SUITES`). `--suite v3`, the default,
+is the fifteen benchmarks and weights that v3.0 and v4.0-VL report (their records, section
+4.2). `--suite v2` is the twelve that v2.0 and v2.1 report. A number is only comparable
+with a release record when it is on that record's suite.
 
 Each benchmark's TEST split is fetched from a pinned upstream repository, so this needs
 the roots those live under. `--list` prints every benchmark with its origin, its licence
 and the variable that points at it, and exits; nothing is redistributed by this repo.
+A benchmark whose root is unset stops the run and names the variable; none is skipped.
 
 Two benchmarks are read in canonical and reversed option order and the pair is reported;
 `nimble_public` and `jev_style_panel` are averaged over their subsets rather than pooled,
@@ -58,6 +65,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ckpt")
+    ap.add_argument("--suite", default=ts.DEFAULT_SUITE, choices=sorted(ts.SUITES),
+                    help="v3: the fifteen benchmarks of v3.0 and v4.0-VL (default); "
+                         "v2: the twelve of v2.0 and v2.1")
     ap.add_argument("--only", default=None, help="comma-separated benchmark names")
     ap.add_argument("--json", default=None)
     ap.add_argument("--batch-size", type=int, default=32)
@@ -68,11 +78,13 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="print the registry and exit")
     a = ap.parse_args()
 
+    weights = ts.SUITES[a.suite]
     if a.list:
+        print(f"suite {a.suite}: {len(weights)} benchmarks")
         print(f"{'benchmark':22s} {'weight':>7s}  licence / origin")
-        for name, w in ts.RECOMMENDED.items():
+        for name, w in weights.items():
             b = ts.SUITE[name]
-            print(f"{name:22s} {w:7.2f}  {b.licence}\n{'':32s}{b.origin}")
+            print(f"{name:22s} {w:7.3f}  {b.licence}\n{'':32s}{b.origin}")
         return 0
     if not a.ckpt:
         ap.error("--ckpt is required unless --list")
@@ -88,7 +100,7 @@ def main() -> int:
     print(f"loaded: calibration {meta['calibration']}, tower {a.dtype or 'fp32'}, "
           f"kernel {meta['linear_attn_kernel']}")
 
-    names = a.only.split(",") if a.only else list(ts.RECOMMENDED)
+    names = a.only.split(",") if a.only else list(weights)
     suite = ts.load_suite(names, decontam=not a.no_decontam)
     out, weighted, wsum = {}, 0.0, 0.0
     for name in names:
@@ -103,7 +115,7 @@ def main() -> int:
         # The suite metric: macro over subsets where the authors report a macro.
         top1 = (sum(r["by_source"].values()) / len(r["by_source"])
                 if name in ts.MACRO_OVER_SOURCE and r["by_source"] else r["top1"])
-        w = ts.RECOMMENDED.get(name, 0.0)
+        w = weights.get(name, 0.0)
         weighted += w * top1
         wsum += w
         out[name] = {**rows, "metric_top1": round(top1, 4), "weight": w,
@@ -111,14 +123,17 @@ def main() -> int:
         extra = f"  reversed {rows['reversed']['top1']}" if "reversed" in rows else ""
         print(f"  {name:22s} top-1 {top1:.4f}  ECE {r['ece']:.4f}  n={r['n']}{extra}")
 
-    summary = {"suite_mean": round(weighted / wsum, 4) if wsum else None,
+    missing = [n for n in weights if n not in out]
+    summary = {"suite": a.suite, "missing": missing, "suite_mean": round(weighted / wsum, 4) if wsum else None,
                "weight_covered": round(wsum, 4),
-               "suite_ece": round(sum(ts.RECOMMENDED.get(k, 0) * v["canonical"]["ece"]
+               "suite_ece": round(sum(weights.get(k, 0) * v["canonical"]["ece"]
                                       for k, v in out.items()) / wsum, 4) if wsum else None}
-    print(f"\n  suite mean {summary['suite_mean']}  suite ECE {summary['suite_ece']}"
+    print(f"\n  suite {a.suite} mean {summary['suite_mean']}  suite ECE {summary['suite_ece']}"
           f"  (weight covered {summary['weight_covered']})")
-    if wsum < 0.999:
-        print("  NOTE: a partial suite. The release records' suite mean is over all twelve.")
+    if missing:
+        print(f"  NOTE: a partial suite. Not scored: {', '.join(missing)}. The mean above is "
+              f"renormalised over the weight covered, so it is not comparable with a release "
+              f"record, whose suite mean is over all {len(weights)}.")
     if a.json:
         Path(a.json).write_text(json.dumps({"benchmarks": out, **summary,
                                             "calibration": meta["calibration"]}, indent=2) + "\n")
