@@ -57,7 +57,8 @@ class Served:
 
 def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None,
                      revision: str | None = None, max_length: int | None = None,
-                     truncate: str | None = None, fixed_exit: bool | None = None) -> Served:
+                     truncate: str | None = None, fixed_exit: bool | None = None,
+                     adaptive: str | None = None) -> Served:
     """Resolve `ref`, load it the way the server does, and apply the opt-in speed
     paths the environment asks for (RSIJEV_COMPILE; the document cache needs
     nothing here).
@@ -65,7 +66,9 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     `max_length` and `truncate` override the input cap and the over-cap policy the
     checkpoint's meta.json gives (serve.release.load_release; RSIJEV_MAX_LENGTH and
     RSIJEV_TRUNCATE do the same). Left unset, every release is served as it was
-    trained. `fixed_exit` (RSIJEV_FIXED_EXIT) turns a release's adaptive exit off."""
+    trained. `adaptive` (auto / on / off, RSIJEV_ADAPTIVE) picks which requests of a
+    release with aux exits use adaptive exit; `fixed_exit` (RSIJEV_FIXED_EXIT) is an alias
+    for off (serve.release.adaptive_mode)."""
     import torch
     from serve.accel import apply_env
     from serve.runtime import keep_fused_kernels_off
@@ -76,7 +79,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype,
                                          max_length=max_length, truncate=truncate,
-                                         fixed_exit=fixed_exit)
+                                         fixed_exit=fixed_exit, adaptive=adaptive)
     applied = apply_env(model)
     name = checkpoint_name(ref, path)
     s = Served(model, tok, enc, meta, device, dtype_name, path, name,
@@ -217,11 +220,17 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                          "v4.0-VL); 'middle' keeps its first line, head and tail around a "
                          "marker, and responses then carry a `truncated` field. Default: "
                          "meta.json spec.truncate, else left. Also RSIJEV_TRUNCATE.")
+    ap.add_argument("--adaptive", default=os.environ.get("RSIJEV_ADAPTIVE", "").strip().lower() or None,
+                    choices=["auto", "on", "off"],
+                    help="adaptive exit, for a release with aux exits and a tuned tau: "
+                         "'auto' for multi-question requests only (single questions take "
+                         "the fixed exit), 'on' for every request, 'off' never. Image "
+                         "requests and micro-batched rows always take the fixed exit. "
+                         "Default: meta.json adaptive.serving, else auto. Also RSIJEV_ADAPTIVE.")
     ap.add_argument("--fixed-exit", action="store_true",
                     default=os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower()
                     not in ("", "0", "false", "no", "off"),
-                    help="serve a release with adaptive exit at its fixed (main) exit for "
-                         "every request. Also RSIJEV_FIXED_EXIT=1.")
+                    help="the same as --adaptive off. Also RSIJEV_FIXED_EXIT=1.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -242,7 +251,8 @@ def serve(a: argparse.Namespace) -> int:
     s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision,
                          max_length=getattr(a, "max_length", None),
                          truncate=getattr(a, "truncate", None),
-                         fixed_exit=getattr(a, "fixed_exit", None) or None)
+                         fixed_exit=getattr(a, "fixed_exit", None) or None,
+                         adaptive=getattr(a, "adaptive", None))
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
     from serve.batcher import model_worker
@@ -282,8 +292,11 @@ def serve(a: argparse.Namespace) -> int:
         print(f"images: off ({il['reason']})", flush=True)
     sv = s.meta.get("serving") or {}
     if sv.get("adaptive"):
-        print(f"adaptive exit: exits {sv['adaptive']['exits']}, tau {sv['adaptive']['tau']} "
-              f"(single-question requests; usage.depth reports the layers run)", flush=True)
+        ad = sv["adaptive"]
+        which = {"auto": "multi-question requests; one question takes the fixed exit",
+                 "on": "every text request"}.get(ad.get("mode"), ad.get("mode"))
+        print(f"adaptive exit {ad.get('mode')}: exits {ad['exits']}, tau {ad['tau']} "
+              f"({which}; usage.depth reports the layers run)", flush=True)
     elif sv.get("adaptive_off"):
         print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
     print(f"input cap {s.enc.max_length} tokens, over-cap states cut "

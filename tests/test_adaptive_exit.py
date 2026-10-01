@@ -6,14 +6,17 @@ serving path:
 
   * with the aux heads ignored the model IS the fixed-exit model, bitwise;
   * each aux exit is bitwise a fixed exit-L model whose scorer is that aux head;
-  * tau = 2 (never exits early) is bitwise the fixed served path, plain and through the
-    document cache, with the release's calibration on;
+  * tau = 2 (never exits early) is bitwise the fixed served path for multi-question
+    requests read in full, read once and through the document cache (and for one
+    question under --adaptive on), with the release's calibration on and off;
   * a mixed tau: stopped rows answer with their exit's logits, are dropped from the
     next stage (the deeper layers run on the other rows only), and the deep rows
     agree with the fixed path; StageReplica is bitwise a fresh replica per stage;
-  * load_release takes tau and the per-exit calibrators from the checkpoint; no tau,
-    --fixed-exit, multi-question and pooled requests all take the fixed exit;
-  * usage.depth reports the layers run, for models with aux exits only.
+  * the policy: auto sends one question to the fixed exit and several to adaptive exit,
+    on sends both, off neither; pooled requests take the fixed exit;
+  * load_release takes tau and the per-exit calibrators from the checkpoint; --adaptive,
+    RSIJEV_ADAPTIVE, --fixed-exit / RSIJEV_FIXED_EXIT and meta.json adaptive.serving;
+  * usage.depth reports the layers run per question, for models with aux exits only.
 
     python -m pytest tests/test_adaptive_exit.py -q
 """
@@ -248,8 +251,8 @@ def test_stage_replica_is_a_fresh_replica_per_stage(tok, models):
 # the served path
 # ---------------------------------------------------------------------------
 
-def _served_pair(models, tau, calibrated=True):
-    """(fixed-exit release, the same release with adaptive exit at tau)."""
+def _served_pair(models, tau, calibrated=True, mode="auto"):
+    """(fixed-exit release, the same release with adaptive exit at tau, served `mode`)."""
     tower, _, ada, _ = models
     fx = copy.deepcopy(ada)
     ad = copy.deepcopy(ada)
@@ -258,54 +261,120 @@ def _served_pair(models, tau, calibrated=True):
             _main_cal(m)
         m.adaptive_policy = None
     ad.adaptive_policy = _policy(ad, tau)
+    ad.adaptive_mode = mode
     return fx, ad
 
 
+# min_saved_tokens / doc cache that put a multi-question request on each text path
+PATHS = {"plain": dict(min_saved_tokens=10 ** 9, doc=False),
+         "cached": dict(min_saved_tokens=0, doc=False),
+         "doc": dict(min_saved_tokens=0, doc=True)}
+
+
+def _dc(doc):
+    return infer.DocCache(max_entries=4, max_bytes=1 << 30, holdback=8) if doc else False
+
+
 @pytest.mark.parametrize("calibrated", [False, True])
-@pytest.mark.parametrize("doc", [False, True])
-def test_served_tau_2_is_the_fixed_served_path_bitwise(tok, models, calibrated, doc):
+@pytest.mark.parametrize("path", list(PATHS))
+def test_served_tau_2_is_the_fixed_served_path_bitwise(tok, models, calibrated, path):
+    """Multi-question requests under auto, in several row batches (batch_size 2 over
+    3 questions), on every text path: tau 2 gives the fixed path's probabilities."""
     fx, ad = _served_pair(models, 2.0, calibrated)
+    cfg = PATHS[path]
+    for state in STATES[:4]:
+        kw = dict(max_options=8, device="cpu", batch_size=2)
+        ref, rt = infer.score_questions_cached(fx, tok, state, QS, ENC, doc_cache=_dc(cfg["doc"]),
+                                               min_saved_tokens=cfg["min_saved_tokens"], **kw)
+        plan = infer.plan_request(tok, state, QS, ENC, min_saved_tokens=cfg["min_saved_tokens"],
+                                  doc_cache=_dc(cfg["doc"]))
+        assert plan["path"] == path and infer.adaptive_applies(ad, plan)
+        got, gt = infer.score_planned(ad, tok, plan, **kw)
+        assert plan["depth"] == [EXIT] * len(QS) and gt == rt
+        assert [p.probs for p in got] == [p.probs for p in ref], (state[:20], path)
+
+
+@pytest.mark.parametrize("doc", [False, True])
+def test_served_tau_2_single_question_on_is_the_fixed_path_bitwise(tok, models, doc):
+    fx, ad = _served_pair(models, 2.0, mode="on")
     for state in STATES[:4]:
         for q in QS:
             kw = dict(max_options=8, device="cpu", min_saved_tokens=0)
-            dc = (lambda: infer.DocCache(max_entries=4, max_bytes=1 << 30, holdback=8)) if doc else (lambda: False)
-            ref, rt = infer.score_questions_cached(fx, tok, state, [q], ENC, doc_cache=dc(), **kw)
-            plan = infer.plan_request(tok, state, [q], ENC, min_saved_tokens=0, doc_cache=dc())
+            ref, rt = infer.score_questions_cached(fx, tok, state, [q], ENC, doc_cache=_dc(doc), **kw)
+            plan = infer.plan_request(tok, state, [q], ENC, min_saved_tokens=0, doc_cache=_dc(doc))
             assert plan["path"] == ("doc" if doc else "plain") and infer.adaptive_applies(ad, plan)
             got, gt = infer.score_planned(ad, tok, plan, max_options=8, device="cpu")
             assert plan["depth"] == [EXIT] and gt == rt
             assert [p.probs for p in got] == [p.probs for p in ref], (state[:20], q.key)
 
 
-def test_served_early_answers_carry_their_exits_calibration(tok, models):
-    _, _, ada, short = models
-    fx, ad = _served_pair(models, -1.0)                   # every question stops at AUX
-    for q in QS:
-        plan = infer.plan_request(tok, STATES[1], [q], ENC, doc_cache=False)
-        got, _ = infer.score_planned(ad, tok, plan, max_options=8, device="cpu")
-        assert plan["depth"] == [AUX]
-        b = collate(tok, plan["encoded"], max_options=8, device="cpu", option_tokens=False)
-        with torch.no_grad():
-            z = short(**b)                                    # the aux exit, uncalibrated
-            hs = None
-            with short.exit_tower():
-                hs = short.tower(input_ids=b["input_ids"], attention_mask=b["attention_mask"]).last_hidden_state
-            dh = hs[torch.arange(1), b["decision_index"]].float()
-            lt = A.calibrate_logt(z.float(), dh, b["mode_id"], ad.adaptive_policy.cal[AUX])
-            zc = infer.unpermute_logits(z.float() / torch.exp(lt)[:, None], b["option_perm"], b["option_mask"])
-            want = torch.softmax(zc, -1)[0, :len(q.options)]
-        assert torch.allclose(torch.tensor(got[0].probs), want, atol=1e-6)
-        assert float(lt[0]) != 0.0                            # the calibrator really acted
+def _aux_answer(tok, short, ad, row):
+    """What one encoded question answered at AUX with AUX's calibration should get."""
+    b = collate(tok, [row], max_options=8, device="cpu", option_tokens=False)
+    with torch.no_grad():
+        z = short(**b)                                        # the aux exit, uncalibrated
+        with short.exit_tower():
+            hs = short.tower(input_ids=b["input_ids"], attention_mask=b["attention_mask"]).last_hidden_state
+        dh = hs[torch.arange(1), b["decision_index"]].float()
+        lt = A.calibrate_logt(z.float(), dh, b["mode_id"], ad.adaptive_policy.cal[AUX])
+        zc = infer.unpermute_logits(z.float() / torch.exp(lt)[:, None], b["option_perm"], b["option_mask"])
+    assert float(lt[0]) != 0.0                                # the calibrator really acted
+    return torch.softmax(zc, -1)[0, :len(row["option_index"])]
 
 
-def test_multi_question_requests_keep_the_fixed_exit(tok, models):
+@pytest.mark.parametrize("path", list(PATHS))
+def test_served_early_answers_carry_their_exits_calibration(tok, models, path):
+    """tau -1: every question of a multi-question request stops at AUX and answers with
+    AUX's calibrator, on every text path."""
+    _, _, _, short = models
     fx, ad = _served_pair(models, -1.0)
-    plan = infer.plan_request(tok, STATES[2], QS, ENC, min_saved_tokens=0, doc_cache=False)
-    assert not infer.adaptive_applies(ad, plan)
-    got, _ = infer.score_planned(ad, tok, plan, max_options=8, device="cpu")
-    ref, _ = infer.score_questions_cached(fx, tok, STATES[2], QS, ENC, max_options=8, device="cpu",
-                                          min_saved_tokens=0, doc_cache=False)
-    assert [p.probs for p in got] == [p.probs for p in ref] and plan["depth"] == [EXIT] * 3
+    cfg = PATHS[path]
+    plan = infer.plan_request(tok, STATES[1], QS, ENC, min_saved_tokens=cfg["min_saved_tokens"],
+                              doc_cache=_dc(cfg["doc"]))
+    assert plan["path"] == path
+    got, _ = infer.score_planned(ad, tok, plan, max_options=8, device="cpu", batch_size=2)
+    assert plan["depth"] == [AUX] * len(QS)
+    for p, row in zip(got, plan["encoded"]):
+        assert torch.allclose(torch.tensor(p.probs), _aux_answer(tok, short, ad, row), atol=1e-5)
+
+
+def test_policy_routes_by_question_count(tok, models):
+    """auto: one question -> fixed exit (bitwise the fixed release), several -> adaptive;
+    on: both adaptive; off: neither. tau -1 makes the adaptive route visible (depth AUX)."""
+    fx, ad = _served_pair(models, -1.0)
+    one, many = [QS[0]], QS
+    for mode, want_one, want_many in (("auto", EXIT, AUX), ("on", AUX, AUX), ("off", EXIT, EXIT)):
+        ad.adaptive_mode = mode
+        for qs, want in ((one, want_one), (many, want_many)):
+            for path, cfg in PATHS.items():
+                plan = infer.plan_request(tok, STATES[2], qs, ENC, min_saved_tokens=cfg["min_saved_tokens"],
+                                          doc_cache=_dc(cfg["doc"]))
+                assert infer.adaptive_applies(ad, plan) == (want == AUX), (mode, len(qs), path)
+                got, _ = infer.score_planned(ad, tok, plan, max_options=8, device="cpu")
+                assert plan["depth"] == [want] * len(qs), (mode, len(qs), path)
+                if want == EXIT:
+                    ref, _ = infer.score_questions_cached(fx, tok, STATES[2], qs, ENC, max_options=8,
+                                                          device="cpu", doc_cache=_dc(cfg["doc"]),
+                                                          min_saved_tokens=cfg["min_saved_tokens"])
+                    assert [p.probs for p in got] == [p.probs for p in ref], (mode, len(qs), path)
+    ad.adaptive_policy = None                                 # no policy: never adaptive
+    ad.adaptive_mode = "on"
+    assert not infer.adaptive_applies(ad, infer.plan_request(tok, STATES[2], many, ENC, doc_cache=False))
+
+
+def test_pooled_requests_keep_the_fixed_exit(tok, models):
+    from serve.batcher import ModelRunner
+    fx, ad = _served_pair(models, -1.0, mode="on")
+    runner = ModelRunner(ad, tok, ENC, spec_max_options=8, device="cpu")
+    plans = [runner.plan(STATES[i], QS[:2]) for i in range(3)]
+    assert all(runner.poolable(p) for p in plans)
+    out = runner.run(plans)
+    for i, (p, (probs, _)) in enumerate(zip(plans, out)):
+        assert p["depth"] == [EXIT, EXIT]
+        ref, _ = infer.score_questions_cached(fx, tok, STATES[i], QS[:2], ENC, max_options=8, device="cpu",
+                                              doc_cache=False)
+        for got, r in zip(probs, ref):
+            assert torch.allclose(torch.tensor(got), torch.tensor(r.probs), atol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +411,7 @@ def stub_lm(monkeypatch, tok):
         return SimpleNamespace(model=tower, config=SimpleNamespace(text_config=tc))
     monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", staticmethod(fake_lm))
     monkeypatch.delenv("RSIJEV_FIXED_EXIT", raising=False)
+    monkeypatch.delenv("RSIJEV_ADAPTIVE", raising=False)
 
 
 def test_the_policy_is_read_from_the_checkpoint(stub_lm, tmp_path, models, monkeypatch):
@@ -350,7 +420,8 @@ def test_the_policy_is_read_from_the_checkpoint(stub_lm, tmp_path, models, monke
     d = _write_release(tmp_path / "ada", ada, tau=0.8725)
     model, _, _, meta = load_release(d, "cpu")
     assert meta["adaptive"]["tau"] == 0.8725
-    assert meta["serving"]["adaptive"] == {"exits": [AUX, EXIT], "tau": 0.8725}
+    assert meta["serving"]["adaptive"] == {"exits": [AUX, EXIT], "tau": 0.8725, "mode": "auto"}
+    assert model.adaptive_mode == "auto"
     pol = model.adaptive_policy
     assert pol.tau == 0.8725 and pol.exits == [AUX, EXIT]
     assert all(torch.equal(pol.cal[AUX][k], v.float()) for k, v in _cal(11).items())
@@ -374,6 +445,61 @@ def test_aux_exits_without_a_tau_serve_the_fixed_exit(stub_lm, tmp_path, models)
         load_release(d, "cpu")
 
 
+def _set_serving(d: Path, mode):
+    meta = json.loads((d / "meta.json").read_text())
+    meta["adaptive"]["serving"] = mode
+    (d / "meta.json").write_text(json.dumps(meta))
+
+
+def test_adaptive_flags(stub_lm, tmp_path, models, monkeypatch):
+    """--adaptive / RSIJEV_ADAPTIVE beat --fixed-exit / RSIJEV_FIXED_EXIT (an alias for
+    off), which beat meta.json adaptive.serving, which beats the default auto."""
+    from serve.release import load_release
+    from serve.server import add_serve_args
+    import argparse
+    _, _, ada, _ = models
+    d = _write_release(tmp_path / "flags", ada, tau=0.9)
+
+    def mode(**kw):
+        m, _, _, meta = load_release(d, "cpu", **kw)
+        got = m.adaptive_mode
+        assert (m.adaptive_policy is None) == (got == "off")
+        assert (meta["serving"]["adaptive"] or {}).get("mode", "off") == got
+        return got
+    assert mode() == "auto"
+    for m in ("auto", "on", "off"):
+        assert mode(adaptive=m) == m
+    assert mode(fixed_exit=True) == "off" and mode(fixed_exit=True, adaptive="off") == "off"
+    with pytest.raises(ValueError, match="contradicts"):
+        load_release(d, "cpu", fixed_exit=True, adaptive="on")
+    with pytest.raises(ValueError, match="adaptive must be"):
+        load_release(d, "cpu", adaptive="sometimes")
+    monkeypatch.setenv("RSIJEV_ADAPTIVE", "on")
+    assert mode() == "on" and mode(adaptive="off") == "off"
+    monkeypatch.delenv("RSIJEV_ADAPTIVE")
+    monkeypatch.setenv("RSIJEV_FIXED_EXIT", "1")
+    assert mode() == "off" and mode(fixed_exit=False) == "auto"
+    monkeypatch.delenv("RSIJEV_FIXED_EXIT")
+    _set_serving(d, "on")                                     # the release's own default
+    assert mode() == "on" and mode(adaptive="auto") == "auto" and mode(fixed_exit=True) == "off"
+    _set_serving(d, "off")
+    m, _, _, meta = load_release(d, "cpu")
+    assert m.adaptive_policy is None and "adaptive.serving" in meta["serving"]["adaptive_off"]
+    assert mode(adaptive="auto") == "auto"
+    # the server's arguments
+    ap = argparse.ArgumentParser()
+    add_serve_args(ap, positional=False)
+    assert ap.parse_args([]).adaptive is None and not ap.parse_args([]).fixed_exit
+    assert ap.parse_args(["--adaptive", "on"]).adaptive == "on"
+    assert ap.parse_args(["--fixed-exit"]).fixed_exit
+    with pytest.raises(SystemExit):
+        ap.parse_args(["--adaptive", "sometimes"])
+    monkeypatch.setenv("RSIJEV_ADAPTIVE", "off")
+    ap = argparse.ArgumentParser()
+    add_serve_args(ap, positional=False)
+    assert ap.parse_args([]).adaptive == "off"
+
+
 def test_responses_report_the_depth_used(stub_lm, tmp_path, models):
     from fastapi.testclient import TestClient
     from serve.app import create_app
@@ -381,22 +507,26 @@ def test_responses_report_the_depth_used(stub_lm, tmp_path, models):
     from serve.decider import Decider
     from serve.server import load_for_serving, make_scorer
     _, _, ada, _ = models
-    d = _write_release(tmp_path / "srv", ada, tau=-1.0)      # every single question stops at AUX
-    s = load_for_serving(str(d), device="cpu", dtype="fp32")
+    d = _write_release(tmp_path / "srv", ada, tau=-1.0)      # every adaptive question stops at AUX
     one = {"model": "srv", "state": "My card was charged twice.",
            "questions": {"refund": {"type": "noul", "instructions": "Does the user want a refund?"}}}
     many = {**one, "questions": {**one["questions"],
                                  "team": {"type": "choice", "instructions": "Which team?",
                                           "criteria": {"billing": "Payments", "tech": "Bugs"}}}}
-    for scorer in (model_worker(s), make_scorer(s)):
-        c = TestClient(create_app(scorer, served_model_name="srv"))
-        assert c.post("/v1/systemone", json=one).json()["usage"]["depth"] == {"refund": AUX}
-        assert c.post("/v1/systemone", json=many).json()["usage"]["depth"] == {"refund": EXIT, "team": EXIT}
-    dec = Decider.from_scorer(make_scorer(s), name="srv")
-    assert dec.request(one["state"], one["questions"])["usage"]["depth"] == {"refund": AUX}
+    want = {"auto": ({"refund": EXIT}, {"refund": AUX, "team": AUX}),
+            "on": ({"refund": AUX}, {"refund": AUX, "team": AUX}),
+            "off": ({"refund": EXIT}, {"refund": EXIT, "team": EXIT})}
+    for mode, (w1, wn) in want.items():
+        s = load_for_serving(str(d), device="cpu", dtype="fp32", adaptive=mode)
+        for scorer in (model_worker(s), make_scorer(s)):
+            c = TestClient(create_app(scorer, served_model_name="srv"))
+            assert c.post("/v1/systemone", json=one).json()["usage"]["depth"] == w1, mode
+            assert c.post("/v1/systemone", json=many).json()["usage"]["depth"] == wn, mode
+        dec = Decider.from_scorer(make_scorer(s), name="srv")
+        assert dec.request(one["state"], many["questions"])["usage"]["depth"] == wn, mode
     fixed = load_for_serving(str(d), device="cpu", dtype="fp32", fixed_exit=True)
     c = TestClient(create_app(model_worker(fixed), served_model_name="srv"))
-    assert c.post("/v1/systemone", json=one).json()["usage"]["depth"] == {"refund": EXIT}
+    assert c.post("/v1/systemone", json=many).json()["usage"]["depth"] == {"refund": EXIT, "team": EXIT}
 
 
 def test_models_without_aux_exits_keep_their_usage(tok, models):

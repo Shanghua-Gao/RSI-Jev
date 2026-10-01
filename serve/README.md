@@ -230,10 +230,13 @@ inference procedures despite receiving equivalent payloads."*
 - **Adaptive exit (4B releases with aux exits).** A release that carries extra heads at
   shallower exits (`spec.arch_extra.aux_exits`, `aux_scorers.safetensors`) and a policy
   tuned on held-out data (`meta.json` `adaptive.tau`, one calibrator per exit in
-  `adaptive_calibration.safetensors`) answers a single-question request at the first exit
-  whose calibrated top answer reaches tau, and reports the layers it ran in
-  `usage.depth`. Requests with several questions, micro-batched requests and image
-  requests run the full exit. `--fixed-exit` (or `RSIJEV_FIXED_EXIT=1`) turns it off.
+  `adaptive_calibration.safetensors`) answers each question of a multi-question request
+  at the first exit whose calibrated top answer reaches tau, and reports the layers each
+  question ran in `usage.depth`. Single-question requests run the full exit: on the GB10,
+  adaptive exit was 6-9% faster on 8- and 32-question requests and 1-7% slower on one
+  question. `--adaptive on` uses it for every request, `--adaptive off` (or
+  `--fixed-exit`) for none; `RSIJEV_ADAPTIVE` and `meta.json` `adaptive.serving` set the
+  same. Micro-batched requests and image requests always run the full exit.
 
 ## Speed
 

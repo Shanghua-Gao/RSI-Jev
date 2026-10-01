@@ -5,9 +5,14 @@ tuned on DEV and one cal-4b per aux exit. A release carries the same thing as fi
 the server reads without unpickling anything:
 
   adaptive_calibration.safetensors   "<exit>.<mean|W|mu|sd|w|b>" for every aux exit
-  meta.json "adaptive"               {"exits", "tau", "calibration", "source"}
+  meta.json "adaptive"               {"exits", "tau", "calibration", "source"[, "serving"]}
 
     python scripts/pack_adaptive_policy.py --release DIR --policy policy.pt [--source TEXT]
+        [--serving auto|on|off]
+
+`--serving` records which requests the server runs adaptive (serve.release.adaptive_mode;
+left out, the server's default, auto: multi-question requests). Repacking keeps a
+"serving" already in meta.json unless --serving is given.
 
 The release must already hold aux_scorers.safetensors and spec.arch_extra.aux_exits;
 the policy's exits must be those aux exits plus the main exit.
@@ -21,7 +26,7 @@ from pathlib import Path
 CAL_KEYS = ("mean", "W", "mu", "sd", "w", "b")
 
 
-def pack(release: Path, policy: dict, source: str | None = None) -> dict:
+def pack(release: Path, policy: dict, source: str | None = None, serving: str | None = None) -> dict:
     from safetensors.torch import save_file
     meta_path = release / "meta.json"
     meta = json.loads(meta_path.read_text())
@@ -41,9 +46,14 @@ def pack(release: Path, policy: dict, source: str | None = None) -> dict:
         for k in CAL_KEYS:
             flat[f"{L}.{k}"] = cal[k].detach().float().contiguous().cpu().reshape(cal[k].shape)
     save_file(flat, str(release / "adaptive_calibration.safetensors"))
+    if serving is not None and serving not in ("auto", "on", "off"):
+        raise SystemExit(f"--serving must be auto, on or off, not {serving!r}")
+    serving = serving if serving is not None else (meta.get("adaptive") or {}).get("serving")
     meta["adaptive"] = {"exits": exits, "tau": float(policy["tau"]),
                         "calibration": "adaptive_calibration.safetensors",
                         "source": source or "tau and per-exit cal-4b tuned on DEV (policy.pt)"}
+    if serving is not None:
+        meta["adaptive"]["serving"] = serving
     meta_path.write_text(json.dumps(meta, indent=1) + "\n")
     return meta["adaptive"]
 
@@ -54,9 +64,10 @@ def main() -> int:
     ap.add_argument("--release", required=True)
     ap.add_argument("--policy", required=True)
     ap.add_argument("--source", default=None)
+    ap.add_argument("--serving", default=None, choices=["auto", "on", "off"])
     a = ap.parse_args()
     pol = torch.load(a.policy, map_location="cpu", weights_only=True)
-    print(json.dumps(pack(Path(a.release), pol, a.source)))
+    print(json.dumps(pack(Path(a.release), pol, a.source, a.serving)))
     return 0
 
 

@@ -21,9 +21,13 @@ confidence reaches tau; the last exit always answers.
 Only torch is imported, so the serving adapter can load this file from a different
 rsijev tree (importlib, by path).
 
-Ported from the private branch adaexit (4dc31ff). The one addition is `finalize` on
-staged_scores: the served path uses it to give each row the calibration of the exit
-that answered it (serve/infer.score_adaptive). Without it, behaviour is the original.
+Ported from the private branch adaexit: 4dc31ff (staged_scores, StageReplica,
+staged_scores_bucketed) and AX-4 eb42d54 (staged_scores_fast, the "opt" path: masks and
+rotary once per request, direct layer calls, one host read per exit, the exact calibrator
+skip, no aux heads at tau > 1; bitwise vs staged_scores). The served path
+(serve/infer.score_adaptive) runs staged_scores_fast, which hands the document-cache path
+to staged_scores. `finalize` (on both) is this tree's: it gives each row the calibration
+of the exit that answered it. Without it, behaviour is the original.
 """
 from __future__ import annotations
 
@@ -468,5 +472,203 @@ def staged_scores_bucketed(tm, scorers: dict, policy: Policy, batch: dict, *, gr
         h = torch.cat(nh)
         if i == 0:
             key = torch.cat(nk)
+        lo = L
+    return out, depth
+
+
+def _pool_cache(batch, T, dtype, device):
+    """readout()'s option-span indicator and its denominator for the full batch: the same
+    tensors at every exit (they depend on spans, width and dtype only), built once."""
+    s0, s1 = batch.get("option_span_start"), batch.get("option_span_end")
+    if s0 is None:
+        return None
+    t = torch.arange(T, device=device).view(1, 1, -1)
+    inside = ((t >= s0.unsqueeze(-1)) & (t < s1.unsqueeze(-1))).to(dtype)
+    return inside, inside.sum(-1, keepdim=True).clamp_min(1.0)
+
+
+def _readout_pooled(scorer, h, batch, rows, pool, option_pool="mean", logit_cap=None):
+    """readout() with the pooling indicator from _pool_cache (rows selects it): same math."""
+    if pool is None or option_pool != "mean":
+        return readout(scorer, h, batch, rows=rows, option_pool=option_pool, logit_cap=logit_cap)
+    def g(k):
+        v = batch.get(k)
+        return v if (v is None or rows is None) else v[rows]
+    di, mask = g("decision_index"), g("option_mask")
+    inside, denom = pool if rows is None else (pool[0][rows], pool[1][rows])
+    b = torch.arange(h.shape[0], device=h.device)
+    decision_h = h[b, di]
+    option_h = torch.einsum("bkt,bth->bkh", inside, h) / denom
+    dtype = next(scorer.parameters()).dtype
+    decision_h, option_h = decision_h.to(dtype), option_h.to(dtype)
+    with torch.autocast(decision_h.device.type, enabled=False):
+        logits = scorer(decision_h=decision_h, option_h=option_h, option_mask=mask,
+                        mode_id=g("mode_id"), option_perm=g("option_perm"))
+    if logit_cap:
+        c = float(logit_cap)
+        logits = (c * torch.tanh(logits / c)).masked_fill(~mask, float("-inf"))
+    return logits, decision_h.float()
+
+
+CONF_BOUND_MARGIN = 1e-5
+
+
+def conf_upper_bound(z, mode):
+    """An upper bound on calibrated_conf for any calibrator: the top-1 probability is
+    non-increasing in the temperature, and calibrate_logt is clamped to >= -CAL_LOGT_CLAMP
+    (>= 0 on score rows). Rows whose bound is below tau - CONF_BOUND_MARGIN cannot stop,
+    whatever the calibrator says."""
+    z = z.float()
+    lt = torch.full((z.shape[0],), -CAL_LOGT_CLAMP, device=z.device)
+    lt = _floor(lt, mode == SCORE)
+    return torch.softmax(z / torch.exp(lt)[:, None], -1).max(-1).values
+
+
+# ---------------------------------------------------------------- AX-4 fast staged path
+class _StageRunner:
+    """The text model's forward, split at the exits, with the per-request work done ONCE.
+
+    `run_layers` re-enters tm.forward for every stage, and each entry rebuilds the causal and
+    recurrent masks (each with a host-synchronising `.all()` padding check), the rotary
+    tables and a DynamicCache. Here those are built once for the request's rows and reused
+    by every stage while the row set is unchanged; when rows drop (B > 1) they are rebuilt
+    for the remaining rows, which is exactly what the current path computes for them. The
+    decoder layers get the same arguments tm.forward gives them (merge_with_config_defaults:
+    use_cache and is_causal from the config; a fresh DynamicCache per stage when use_cache,
+    so the masks see an empty cache, as in the current path)."""
+
+    def __init__(self, tm, input_ids, attention_mask):
+        import sys
+        self.tm, self.cfg = tm, tm.config
+        self.mod = sys.modules[type(tm).__module__]
+        self.layers = list(_stages(tm).full)
+        self.types = list(self.cfg.layer_types)
+        self.use_cache = getattr(self.cfg, "use_cache", None)
+        self.kw = {}
+        if getattr(self.cfg, "is_causal", None) is not None:
+            self.kw["is_causal"] = self.cfg.is_causal
+        self.ids, self.am = input_ids, attention_mask
+        self.key = None
+
+    def _cache(self):
+        if not self.use_cache:
+            return None
+        from transformers.cache_utils import DynamicCache
+        return DynamicCache(config=self.cfg)
+
+    def prepare(self, rows, x, full: bool):
+        """Masks / rotary for `rows` (x: their (n, T, H) stage input); rebuilt only when the
+        row set changed since the last stage."""
+        if self.key is not None:
+            return
+        n, T = x.shape[0], x.shape[1]
+        am = None if self.am is None else (self.am if full else self.am[rows])
+        cache = self._cache()
+        pos = torch.arange(T, device=x.device).view(1, 1, -1).expand(4, n, -1)
+        self.tpos, rpos = pos[0], pos[1:]
+        mk = {"config": self.cfg, "inputs_embeds": x, "attention_mask": am, "past_key_values": cache,
+              "position_ids": self.tpos}
+        # transformers >= 5.17 builds the linear-attention mask with
+        # create_recurrent_attention_mask; earlier 5.x forwards call the text model's own
+        # _update_linear_attn_mask(attention_mask, cache). Either way, what tm.forward uses.
+        rec = getattr(self.mod, "create_recurrent_attention_mask", None)
+        self.masks = {"full_attention": self.mod.create_causal_mask(**mk),
+                      "linear_attention": rec(**mk) if rec is not None
+                      else self.tm._update_linear_attn_mask(am, cache)}
+        self.pe = self.tm.rotary_emb(x, rpos)
+        self.key = True
+
+    def run(self, lo, hi, x):
+        cache = self._cache()
+        for j in range(lo, hi):
+            x = self.layers[j](x, position_embeddings=self.pe, attention_mask=self.masks[self.types[j - lo]],
+                               position_ids=self.tpos, past_key_values=cache, use_cache=self.use_cache,
+                               **self.kw)
+        return x
+
+
+@torch.no_grad()
+def staged_scores_fast(tm, scorers: dict, policy: Policy, batch: dict, *, cache_factory=None,
+                       position_ids=None, option_pool="mean", logit_cap=None, stats: dict | None = None,
+                       stage_cache=None, finalize=None):
+    """staged_scores (same arguments, same results) with the stage-boundary overhead cut (AX-4):
+      * masks, rotary tables built once per request (_StageRunner), not once per stage;
+      * the decoder layers are called directly (no tm.forward re-entry per stage);
+      * the exit decision is ONE device->host read per non-final exit (stop flags for all rows
+        in a single copy); a single-row request then answers / continues with no boolean
+        indexing (each boolean index is another hidden sync), B > 1 drops rows with index
+        tensors built from that one host copy;
+      * the readout at an exit runs on the rows still undecided, as before.
+    The document-cache path (stage_cache / cache_factory) is delegated to staged_scores."""
+    if stage_cache is not None or cache_factory is not None:
+        return staged_scores(tm, scorers, policy, batch, cache_factory=cache_factory,
+                             position_ids=position_ids, option_pool=option_pool, logit_cap=logit_cap,
+                             stats=stats, stage_cache=stage_cache, finalize=finalize)
+    ids, am = batch["input_ids"], batch.get("attention_mask")
+    B = ids.shape[0]
+    dev = ids.device
+    per = layer_period(tm)
+    if any(L % per for L in policy.exits[:-1]):
+        raise ValueError(f"exits {policy.exits} are not multiples of the layer-type period {per}")
+    R = _StageRunner(tm, ids, am)
+    rows = torch.arange(B, device=dev)
+    rows_host = list(range(B))
+    full = True
+    out = None
+    depth = torch.full((B,), policy.exits[-1], dtype=torch.long, device=dev)
+    h = tm.embed_tokens(ids)
+    lo = 0
+    pool = None
+    # tau > 1: no exit but the last can ever be taken (conf <= 1), so no aux head runs
+    exits = policy.exits if policy.tau <= 1.0 else policy.exits[-1:]
+    for i, L in enumerate(exits):
+        last = i == len(exits) - 1
+        R.prepare(rows, h, full)
+        h = R.run(lo, L, h)
+        rsel = None if full else rows
+        if pool is None:
+            pool = _pool_cache(batch, h.shape[1], h.dtype, h.device)
+        z, dh = _readout_pooled(scorers[L], tm.norm(h), batch, rsel, pool, option_pool=option_pool,
+                                logit_cap=logit_cap)
+        if out is None:
+            out = torch.full((B, z.shape[1]), float("-inf"), dtype=z.dtype, device=z.device)
+        if stats is not None:
+            stats.setdefault("rows_at", {})[L] = stats.get("rows_at", {}).get(L, 0) + len(rows_host)
+        if last:
+            zf = z if finalize is None else finalize(L, z, dh, rows).to(out.dtype)
+            if full:
+                out.copy_(zf)
+            else:
+                out[rows] = zf
+            break
+        mode = batch["mode_id"] if full else batch["mode_id"][rows]
+        # exact skip: if no row can reach tau under ANY calibration, the calibrator is not run
+        if not any((conf_upper_bound(z, mode) >= policy.tau - CONF_BOUND_MARGIN).tolist()):
+            if stats is not None:
+                stats["cal_skipped"] = stats.get("cal_skipped", 0) + 1
+            lo = L
+            continue
+        conf = calibrated_conf(z, dh, mode, policy.cal[L])
+        stop_host = (conf >= policy.tau).tolist()          # the one host read at this exit
+        if any(stop_host):
+            zs = z if finalize is None else finalize(L, z, dh, rows).to(out.dtype)
+            si = [k for k, s in enumerate(stop_host) if s]
+            ki = [k for k, s in enumerate(stop_host) if not s]
+            if not ki:                                      # every row answered here
+                if full:
+                    out.copy_(zs)
+                    depth.fill_(L)
+                else:
+                    out[rows] = zs
+                    depth[rows] = L
+                break
+            sidx = torch.tensor(si, device=dev)
+            kidx = torch.tensor(ki, device=dev)
+            out[rows[sidx]] = zs[sidx]
+            depth[rows[sidx]] = L
+            rows, h = rows[kidx], h[kidx]
+            rows_host = [rows_host[k] for k in ki]
+            full = False
+            R.key = None                                    # row set changed: rebuild masks/rotary
         lo = L
     return out, depth

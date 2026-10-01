@@ -111,7 +111,7 @@ def serving_encoder(spec: dict, max_length: int | None = None,
 
     TODO (not in this release): order averaging (score each question in 2 or 5
     option orders and average; 2x/5x cost) is a kept result that is not served yet.
-    Adaptive exit is served for single-question requests (see `adaptive_policy`)."""
+    Adaptive exit is served for multi-question requests (see `adaptive_mode`)."""
     if max_length is None:
         env = os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
         max_length = int(env) if env else None
@@ -135,21 +135,65 @@ def adaptive_block(meta: dict) -> dict | None:
     return meta.get("adaptive") or (meta.get("release") or {}).get("adaptive")
 
 
-def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | None = None):
-    """(rsijev.adaptive.Policy or None, why it is off or None).
+ADAPTIVE_MODES = ("auto", "on", "off")
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def adaptive_mode(meta: dict, adaptive: str | None = None,
+                  fixed_exit: bool | None = None) -> tuple[str, str]:
+    """(mode, where it came from) for a release with aux exits.
+
+      auto  adaptive exit for multi-question requests, the fixed exit for one question
+            (the default; GB10 five-repeat check: adaptive 6-9% faster on 8- and
+            32-question batches, 1-7% slower on single questions)
+      on    adaptive exit for every text request the model runs on its own
+      off   the fixed exit for every request
+
+    `adaptive` (--adaptive, else RSIJEV_ADAPTIVE) wins, then `fixed_exit` (--fixed-exit,
+    else RSIJEV_FIXED_EXIT=1, an alias for off), then meta.json `adaptive.serving`, then
+    auto. Asking for on or auto together with the fixed exit is an error."""
+    if adaptive is None:
+        adaptive = os.environ.get("RSIJEV_ADAPTIVE", "").strip().lower() or None
+    if fixed_exit is None:
+        fixed_exit = _env_flag("RSIJEV_FIXED_EXIT")
+    if adaptive is not None:
+        adaptive = str(adaptive).strip().lower()
+        if adaptive not in ADAPTIVE_MODES:
+            raise ValueError(f"adaptive must be one of {ADAPTIVE_MODES}, got {adaptive!r}")
+        if fixed_exit and adaptive != "off":
+            raise ValueError(f"--adaptive {adaptive} contradicts --fixed-exit / RSIJEV_FIXED_EXIT")
+        return adaptive, "--adaptive / RSIJEV_ADAPTIVE"
+    if fixed_exit:
+        return "off", "--fixed-exit / RSIJEV_FIXED_EXIT"
+    block = adaptive_block(meta) or {}
+    if block.get("serving") is not None:
+        mode = str(block["serving"]).strip().lower()
+        if mode not in ADAPTIVE_MODES:
+            raise ValueError(f"meta.json adaptive.serving must be one of {ADAPTIVE_MODES}, got {mode!r}")
+        return mode, "meta.json adaptive.serving"
+    return "auto", "default"
+
+
+def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | None = None,
+                    adaptive: str | None = None):
+    """(rsijev.adaptive.Policy or None, why it is off or None). Sets model.adaptive_mode.
 
     A release serves adaptive exit when it has aux exits (spec.arch_extra.aux_exits,
     heads in aux_scorers.safetensors) AND a policy: meta.json `adaptive` with the tau
     tuned on DEV, and one cal-4b per aux exit in adaptive_calibration.safetensors
     (keys "<exit>.<mean|W|mu|sd|w|b>"; scripts/pack_adaptive_policy.py writes both from
-    the tuning run's policy.pt). Nothing about the policy is a code constant.
-    `fixed_exit` (or RSIJEV_FIXED_EXIT=1) serves the fixed exit instead."""
+    the tuning run's policy.pt). Nothing about the policy is a code constant. Which
+    requests use it is `adaptive_mode` (auto: multi-question requests only); mode off
+    serves the fixed exit and loads no policy."""
+    model.adaptive_mode = "off"
     if not getattr(model.cfg, "aux_exits", ()):
         return None, None
-    if fixed_exit is None:
-        fixed_exit = os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower() not in ("", "0", "false", "no", "off")
-    if fixed_exit:
-        return None, "fixed exit forced (--fixed-exit / RSIJEV_FIXED_EXIT)"
+    mode, src = adaptive_mode(meta, adaptive, fixed_exit)
+    if mode == "off":
+        return None, f"fixed exit forced ({src})"
     block = adaptive_block(meta)
     if not block or block.get("tau") is None:
         return None, "the release has aux exits but no tuned tau (meta.json adaptive.tau)"
@@ -168,12 +212,14 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
         if set(c) != {"mean", "W", "mu", "sd", "w", "b"}:
             raise RuntimeError(f"{path.name}: exit {L} has {sorted(c)}, not a cal-4b")
         cal[L] = A.cal_to(c, device)
+    model.adaptive_mode = mode
     return A.Policy(exits, cal, float(block["tau"])), None
 
 
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                  vision: bool | None = None, max_length: int | None = None,
-                 truncate: str | None = None, fixed_exit: bool | None = None):
+                 truncate: str | None = None, fixed_exit: bool | None = None,
+                 adaptive: str | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
@@ -195,9 +241,10 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     was used.
 
     Adaptive exit (aux exits plus a tuned policy, see `adaptive_policy`): the aux heads
-    load from aux_scorers.safetensors and `model.adaptive_policy` holds the policy; a
-    single-question request then stops at the first exit confident enough
-    (serve/infer.score_adaptive). Every other model gets `adaptive_policy = None`.
+    load from aux_scorers.safetensors, `model.adaptive_policy` holds the policy and
+    `model.adaptive_mode` which requests use it (`adaptive_mode`; auto: multi-question
+    requests, each question stopping at the first exit confident enough,
+    serve/infer.score_adaptive). Every other model gets `adaptive_policy = None`.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -271,11 +318,11 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
                        option_order="canonical", max_length=cap, truncate=policy)
-    ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit)
+    ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
     model.adaptive_policy = ada
+    served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
     meta["serving"] = {"max_length": cap, "truncate": policy,
-                       "exit_layer": arch.exit_layer,
-                       "adaptive": None if ada is None else {"exits": ada.exits, "tau": ada.tau}}
+                       "exit_layer": arch.exit_layer, "adaptive": served_ada}
     if why:
         meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta
