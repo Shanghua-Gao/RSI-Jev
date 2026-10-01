@@ -118,7 +118,9 @@ d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
 ```
 
 Over HTTP the same request carries `"images": ["data:image/jpeg;base64,..."]` next to
-`state`. Full limits and an example: [`serve/README.md`](../serve/README.md#images). In short:
+`state`. Full limits and an example: [`serve/README.md`](../serve/README.md#images). Larger worked
+examples, each with its expected output: [`examples/gallery/`](../examples/gallery/) (227 questions
+through `Decider`) and [`examples/breakout/`](../examples/breakout/) (a game played over HTTP). In short:
 
 - 1–4 PNG, JPEG or WebP images per request, as data URLs; http(s) URLs are not fetched.
 - 1,024 image tokens per question, split evenly: one image up to about one megapixel, four up
