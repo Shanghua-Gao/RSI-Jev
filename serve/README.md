@@ -219,6 +219,15 @@ inference procedures despite receiving equivalent payloads."*
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.
 
+  A release trained at a longer cap or with the middle cut records it in meta.json
+  (`spec.max_length`, `spec.truncate: "middle"`), and is served that way. The middle cut
+  keeps the state's first line, its head and its tail around a marker
+  (`[... N tokens of the state omitted ...]`), and every response then carries
+  `"truncated": {"state_tokens_omitted", "option_desc_tokens_omitted",
+  "question_tokens_omitted", "max_length"}` next to `usage`. `--max-length` and
+  `--truncate left|middle` (or `RSIJEV_MAX_LENGTH`, `RSIJEV_TRUNCATE`) override both for
+  any release. A release without these fields is served as before.
+
 ## Speed
 
 **Install `fla`** (`pip install "rsi-jev[fast]"`, or `pip install -e ".[fast]"` in a

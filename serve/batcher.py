@@ -114,7 +114,7 @@ class ModelRunner:
                 return plan_image_request(self.tok, self.prep, state, images, questions,
                                           self.venc)
         except ValueError as e:
-            err = state_too_long(e, self.venc.max_length)
+            err = state_too_long(e, self.venc.max_length, self.venc)
             if err is None:
                 raise
             raise err from None

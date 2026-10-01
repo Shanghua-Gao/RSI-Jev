@@ -13,6 +13,7 @@ Hugging Face cache, so a second run downloads nothing.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -93,8 +94,42 @@ def release_version(name: str) -> str | None:
         (found.group(1) or "").upper()
 
 
+# The input cap of every release that does not record its own (v1.0 - v4.0-VL).
+DEFAULT_MAX_LENGTH = 2048
+
+
+def serving_encoder(spec: dict, max_length: int | None = None,
+                    truncate: str | None = None) -> tuple[int, str]:
+    """(input cap, over-cap policy) a release is served with.
+
+    The cap is the one the checkpoint was trained at, `spec.max_length` in its
+    meta.json, or 2048 when it records none (every release up to v4.0-VL). The
+    policy is `spec.truncate`: "left" (the default, every release so far) or
+    "middle" (the long-context encoder, rsijev/encode.py). An explicit argument, or
+    RSIJEV_MAX_LENGTH / RSIJEV_TRUNCATE, overrides either; that is a choice made at
+    serving time, not what the model was gated with.
+
+    TODO (not in this release): order averaging (score each question in 2 or 5
+    option orders and average; 2x/5x cost) and adaptive exit (12/16/20, pending its
+    own verdict) are kept results that are not served yet."""
+    if max_length is None:
+        env = os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
+        max_length = int(env) if env else None
+    if truncate is None:
+        truncate = os.environ.get("RSIJEV_TRUNCATE", "").strip() or None
+    cap = int(max_length if max_length is not None
+              else (spec.get("max_length") or DEFAULT_MAX_LENGTH))
+    policy = truncate or spec.get("truncate") or "left"
+    if policy not in ("left", "middle"):
+        raise ValueError(f"truncate must be 'left' or 'middle', got {policy!r}")
+    if cap < 64:
+        raise ValueError(f"max_length {cap} is too small to hold a question")
+    return cap, policy
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
-                 vision: bool | None = None):
+                 vision: bool | None = None, max_length: int | None = None,
+                 truncate: str | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
@@ -105,6 +140,15 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     `rsijev.vision.VisionDecisionModel`; a text request runs exactly the text
     path. `vision=False` loads it text-only. `meta["vision"]` then says what an
     image request may carry; a text-only model's meta has no such key.
+
+    An early-exit checkpoint (the 4B releases: `spec.arch_extra.exit_layer`, e.g. 20
+    of 32) is read the same way: ArchConfig takes exit_layer / exit_norm from
+    arch_extra, and every tower call -- the scoring pass, the prefix and document
+    caches, image states -- runs only the first exit_layer layers and the head reads
+    that layer. A checkpoint without exit_layer loads exactly as before.
+
+    `max_length` / `truncate`: see `serving_encoder`. `meta["serving"]` records what
+    was used.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -137,6 +181,12 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     if vb:
         from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
                                    vision_revision)
+        # Training loads the vision tower named in the vision block; serving loads the
+        # base model's. They must be the same model (a 2B ViT emits 2048-wide features,
+        # the 4B tower embeds 2560).
+        if vb.get("model") and vb["model"] != meta["base_model"]:
+            raise RuntimeError(f"the checkpoint was trained with the vision tower of "
+                               f"{vb['model']}, but its base model is {meta['base_model']}")
         vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
         revision = vision_revision(vb, meta["base_model"])
         # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
@@ -163,8 +213,11 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
         meta["calibration"] = "none"
     model.scorer.to(torch.float32)          # never follows the tower down
     model.eval()
+    cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
-                       option_order="canonical")
+                       option_order="canonical", max_length=cap, truncate=policy)
+    meta["serving"] = {"max_length": cap, "truncate": policy,
+                       "exit_layer": arch.exit_layer}
     return model, tok, enc, meta
 
 

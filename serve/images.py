@@ -171,11 +171,17 @@ def to_data_url(image) -> str:
     return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
 
 
-def state_too_long(e: ValueError, max_length: int) -> RequestError | None:
+def state_too_long(e: ValueError, max_length: int, enc=None) -> RequestError | None:
     """The 422 for an image request whose state would be cut into an image, or None
-    when `e` is some other ValueError (which stays a 500)."""
+    when `e` is some other ValueError (which stays a 500). `enc` (the image encoder
+    config) says how a long state is cut; without it, from the left."""
     if "cut into an image" not in str(e) and "markers" not in str(e):
         return None
+    if getattr(enc, "truncate", "left") == "middle":
+        return RequestError(
+            "the state is too long to keep its images whole: the input is "
+            f"capped at {max_length} tokens and a longer state loses its middle. "
+            f"Shorten the state or move the <image> markers near its start or end ({e})")
     return RequestError(
         "the state is too long to keep its images whole: the input is "
         f"capped at {max_length} tokens and a longer state is cut from "

@@ -280,8 +280,22 @@ def encode_questions(tokenizer, state: str, questions: Sequence[Question],
         rows.append({"input_ids": row, "option_index": [e - 1 for _, e in spans],
                      "option_span": spans, "decision_index": len(row) - 1,
                      "options": [q.options[i] for i in order],
-                     "option_perm": order, "mode": q.mode})
+                     "option_perm": order, "mode": q.mode, "state_cut": 0, "options_cut": 0})
     return rows, list(lead_ids)
+
+
+def truncation_report(encoded: Sequence[dict], enc: EncodeConfig) -> dict | None:
+    """What the encoder cut from one request, for the response's `truncated` field,
+    or None when this model is not served with the long-context encoder (the field
+    is then left out, as it always was). The state is one text, so its count is the
+    most any question lost of it; description and question counts add up over the
+    questions. All 0 when nothing was cut."""
+    if getattr(enc, "truncate", "left") != "middle":
+        return None
+    return {"state_tokens_omitted": max((int(e.get("state_cut", 0)) for e in encoded), default=0),
+            "option_desc_tokens_omitted": sum(int(e.get("options_cut", 0)) for e in encoded),
+            "question_tokens_omitted": sum(int(e.get("question_cut", 0)) for e in encoded),
+            "max_length": int(enc.max_length)}
 
 
 def _shared_prefix(tokenizer, state: str, enc: EncodeConfig, encoded: list[dict],
@@ -621,7 +635,8 @@ def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: Enco
     else:
         path = "cached"
     return {"encoded": encoded, "prefix": prefix, "path": path, "doc_cache": doc_cache,
-            "options": [len(q.options) for q in questions]}
+            "options": [len(q.options) for q in questions],
+            "truncated": truncation_report(encoded, enc)}
 
 
 @torch.no_grad()
@@ -744,7 +759,8 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
     encoded = [encode_vision_question(tokenizer, prep, state, images, q, enc,
                                       prepared=(pv, grid, ntok)) for q in questions]
     plan = {"path": "image", "image_path": "plain", "encoded": encoded, "pixel_values": pv,
-            "grid": grid, "options": [len(q.options) for q in questions]}
+            "grid": grid, "options": [len(q.options) for q in questions],
+            "truncated": truncation_report(encoded, enc)}
     if not read_once:
         return plan
     if doc_cache is None:

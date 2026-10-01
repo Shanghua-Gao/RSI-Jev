@@ -132,12 +132,27 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
+def _split(result, plan=None):
+    """A scorer's or worker's result -> (probs, prompt_tokens, truncated or None).
+
+    A scorer returns (probs, tokens), or (probs, tokens, truncated) when the model is
+    served with the long-context encoder (serve.infer.truncation_report); a worker's
+    plan carries the same report under "truncated"."""
+    probs, tokens = result[0], result[1]
+    truncated = result[2] if len(result) > 2 else None
+    if truncated is None and isinstance(plan, dict):
+        truncated = plan.get("truncated")
+    return probs, tokens, truncated
+
+
+def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
+                   report: dict | None = None):
     """One validated request -> (answers, usage, prepare_ms, infer_ms).
 
     `serve.decider.Decider` calls this, and the route runs the same `prepare` and
     `finish` around the same scorer, so the Python API and the HTTP API cannot give
-    different answers to the same request."""
+    different answers to the same request. `report`, if given, receives
+    "truncated" (what the long-context encoder cut, or None)."""
     t0 = time.perf_counter()
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
@@ -146,11 +161,13 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None):
 
     t1 = time.perf_counter()
     if lock is None:
-        probs, prompt_tokens = scorer(*args)
+        probs, prompt_tokens, truncated = _split(scorer(*args))
     else:
         with lock:
-            probs, prompt_tokens = scorer(*args)
+            probs, prompt_tokens, truncated = _split(scorer(*args))
     infer_ms = (time.perf_counter() - t1) * 1000
+    if report is not None:
+        report["truncated"] = truncated
 
     answers, usage = finish(questions, probs, prompt_tokens)
     return answers, usage, prepared_ms, infer_ms
@@ -218,11 +235,16 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
             plan = await run_in_threadpool(worker.plan, state, questions, pics)
         else:
             plan = worker.plan(state, questions, pics)
-        probs, prompt_tokens = await asyncio.wrap_future(worker.enqueue(plan))
+        probs, prompt_tokens, truncated = _split(
+            await asyncio.wrap_future(worker.enqueue(plan)), plan)
         infer_ms = (time.perf_counter() - t1) * 1000
         answers, usage = finish(questions, probs, prompt_tokens)
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}
+        # Only a model served with the long-context encoder reports what it cut;
+        # every other response keeps its shape.
+        if truncated is not None:
+            body["truncated"] = truncated
         return FastJSONResponse(body, headers={
             "x-typesafe-request-id": uuid4().hex,
             "x-rsijev-model": served_model_name,
