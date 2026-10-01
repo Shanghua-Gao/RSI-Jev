@@ -20,6 +20,7 @@
   --accent: #7C95FF;
   --track: #1F2632;
   --base: #4C5566;
+  --ok: #4AC26B;
   --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -28,12 +29,12 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #F5F7FA; --panel: #FFFFFF; --raise: #EEF1F5; --ink: #11151C; --muted: #5A6473; --line: #DEE3EA;
-    --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; color-scheme: light;
+    --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; --ok: #1A7F37; color-scheme: light;
   }
 }
 :root[data-theme="light"] {
   --bg: #F5F7FA; --panel: #FFFFFF; --raise: #EEF1F5; --ink: #11151C; --muted: #5A6473; --line: #DEE3EA;
-  --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; color-scheme: light;
+  --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; --ok: #1A7F37; color-scheme: light;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.6 var(--body); margin: 0; padding-inline: 20px; }
@@ -134,26 +135,104 @@ footer a { color: var(--muted); }
 /* images */
 .kicker { display: inline-flex; gap: 8px; align-items: center; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 15px; font-weight: 500; text-decoration: none; }
 .kicker b { color: var(--accent); font-weight: 600; }
-.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; text-align: left; }
-.cards figure { margin: 0; display: grid; gap: 8px; align-content: start; }
-.cards figure.lead { grid-column: 1 / -1; }
-.cards a { display: block; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
-.cards img { display: block; width: 100%; height: auto; }
-.cards figcaption { font-size: 15px; color: var(--muted); }
-.cards figcaption b { color: var(--ink); font-weight: 600; }
 .visa { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: grid; gap: 14px; text-align: left; }
 .visa h3 { margin: 0; font: 700 21px/1.25 var(--display); letter-spacing: -0.01em; }
 .game { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: center; width: 100%; text-align: left; }
 .game img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); }
 .game p { font-size: 18px; }
-.visa .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+
+/* image viewer */
+.viewer { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; text-align: left; }
+.vstage { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+.vpics, .vside { display: grid; min-width: 0; }
+.vpics > *, .vside > * { grid-area: 1 / 1; min-width: 0; }
+.vpics { background: var(--raise); border-right: 1px solid var(--line); }
+.vimg { margin: 0; position: relative; min-height: 440px; display: flex; flex-direction: column; justify-content: flex-end; transition: opacity .3s ease; }
+.vimg img { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - 34px); object-fit: contain; display: block; padding: 20px 20px 4px; }
+.vimg figcaption { font-size: 12.5px; color: var(--muted); padding: 0 20px 12px; text-align: center; }
+.vimg figcaption a { color: var(--muted); }
+.vpanel { padding: 28px 28px 24px; display: flex; flex-direction: column; gap: 14px; transition: opacity .3s ease; }
+.vimg[hidden], .vpanel[hidden] { display: flex; visibility: hidden; opacity: 0; }
+.vpanel[hidden] { display: flex; }
+.vhead { font: 600 15px/1.35 var(--body); color: var(--accent); }
+.vctx { font-size: 15px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
+.vq { font: 700 clamp(21px, 2.3vw, 25px)/1.25 var(--display); letter-spacing: -0.01em; text-wrap: pretty; }
+.vpick { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.vnum { font: 800 clamp(52px, 6.4vw, 68px)/0.95 var(--display); letter-spacing: -0.035em; color: var(--accent); font-variant-numeric: tabular-nums; }
+.vlab { font: 700 24px/1.1 var(--display); }
+.opts { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.opt { display: grid; grid-template-columns: minmax(0, 128px) 1fr 52px; gap: 10px; align-items: center; font-size: 15px; color: var(--muted); }
+.opt .ol { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .ob { height: 10px; border-radius: 5px; background: var(--track); overflow: hidden; }
+.opt .ob i { display: block; height: 100%; width: var(--w); background: var(--base); border-radius: 5px; transition: width .8s cubic-bezier(.2, .7, .2, 1); }
+.opt .op { text-align: right; font: 500 14px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.opt.pick { color: var(--ink); font-weight: 600; }
+.opt.pick .ob i { background: var(--accent); }
+.vpanel.pre .ob i { width: 0; transition: none; }
+.vfoot { display: flex; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; font-size: 14px; }
+.vfoot .ok { color: var(--ok); font-weight: 600; }
+.vfoot .lat { color: var(--muted); font-variant-numeric: tabular-nums; }
+.opt.rest { display: block; font-size: 13px; }
+.also { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 6px; }
+.also .tag { font: 600 11.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.also ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.also li { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--muted); }
+.also b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.vbar { display: flex; gap: 10px; align-items: center; padding: 10px; border-top: 1px solid var(--line); background: var(--raise); }
+.vtabs { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.vtabs button { position: relative; display: grid; gap: 5px; justify-items: center; padding: 5px 4px 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); font: 500 12.5px/1.15 var(--body); cursor: pointer; overflow: hidden; min-width: 0; }
+.vtabs button img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; display: block; opacity: .55; transition: opacity .2s; background: var(--panel); }
+.vtabs button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vtabs button:hover img { opacity: .85; }
+.vtabs button[aria-selected="true"] { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.vtabs button[aria-selected="true"] img { opacity: 1; }
+.vtabs .prog { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); }
+.viewer.auto button[aria-selected="true"] .prog { animation: vprog 5s linear forwards; }
+.viewer.held button[aria-selected="true"] .prog { animation-play-state: paused; }
+@keyframes vprog { to { width: 100%; } }
+.vplay { flex: none; font: 500 13px/1 var(--body); padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
+/* VisA bars */
+.vbars { display: grid; gap: 12px; }
+.vr, .vaxis { display: grid; grid-template-columns: minmax(0, 260px) 1fr 74px; gap: 14px; align-items: center; }
+.vr .vn { font-size: 16px; color: var(--muted); }
+.vr.us .vn { color: var(--ink); font-weight: 600; }
+.vt { height: 22px; background: var(--track); border-radius: 6px; overflow: hidden; }
+.vt i { display: block; height: 100%; background: var(--base); border-radius: 6px; }
+.vr.us .vt i { background: var(--accent); }
+.vr b { font: 800 34px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.vr.us b { color: var(--accent); }
+.vticks { position: relative; height: 16px; border-top: 1px solid var(--line); }
+.vticks span { position: absolute; top: 4px; transform: translateX(-50%); font: 500 12px/1 var(--mono); color: var(--muted); }
+.vticks span:first-child { transform: none; }
+.vticks span:last-child { transform: translateX(-100%); }
+.vaxis { margin-top: -6px; }
+.vnote { margin-top: -4px; }
+@media (max-width: 820px) {
+  .vstage { grid-template-columns: 1fr; }
+  .vpics { border-right: 0; border-bottom: 1px solid var(--line); }
+  .vimg { min-height: 0; }
+  .vimg img { position: static; aspect-ratio: 4 / 3; height: auto; padding: 12px 12px 4px; }
+  .vimg figcaption { padding: 0 12px 10px; }
+  .vpanel { padding: 20px 16px; gap: 12px; }
+  .vpanel[hidden] { display: none; }
+  .opt { grid-template-columns: minmax(0, 112px) 1fr 50px; font-size: 14.5px; }
+  .vbar { flex-direction: column; align-items: stretch; padding: 8px; }
+  .vtabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .vplay { align-self: flex-end; }
+  .also li { flex-direction: column; gap: 0; }
+  .vr, .vaxis { grid-template-columns: 1fr 58px; gap: 4px 12px; }
+  .vr .vn { grid-column: 1 / -1; font-size: 15px; }
+  .vaxis .vn { display: none; }
+  .vr b { font-size: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vimg, .vpanel, .opt .ob i, .vtabs button img { transition: none; }
+  .viewer.auto button[aria-selected="true"] .prog { animation: none; }
+}
 
 @media (max-width: 820px) {
-  .cards, .game { grid-template-columns: 1fr; }
+  .game { grid-template-columns: 1fr; }
   .visa { padding: 18px 14px; }
-  .visa .stat { padding: 16px 6px; }
-  .visa .stat b { font-size: 34px; }
-  .visa .stat span { font-size: 13px; }
   .stats, .flow3 { grid-template-columns: 1fr; }
   .show { grid-template-columns: 1fr; }
   .arrow { transform: rotate(90deg); justify-self: center; }
@@ -192,50 +271,23 @@ footer a { color: var(--muted); }
 
 <section class="center" id="images">
   <h2>Show it a picture. It picks the answer, with a confidence.</h2>
-  <p class="sub">Send one to four images with a request: a photo, a screenshot, a chart. Ask the same typed questions as with text. One pass gives a probability for every option, and nothing is generated.</p>
-  <div class="cards">
-    <figure>
-      <a href="assets/v4/capsules-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/capsules-light.webp"><img src="assets/v4/capsules-dark.webp" width="1200" height="675" loading="lazy" alt="A tray of green gel capsules, one of them leaking. Asked whether everything is good or at least one part is defective, RSI-Jev v4.0-VL answers defective, 68%."></picture></a>
-      <figcaption><b>A tray of gel capsules, one leaking.</b> Defective, 68% sure. It had never been shown a defect.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/circuit-board-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/circuit-board-light.webp"><img src="assets/v4/circuit-board-dark.webp" width="1200" height="675" loading="lazy" alt="A small circuit board with a burnt spot. Answer: defective, 76%."></picture></a>
-      <figcaption><b>A burnt spot on a circuit board.</b> Defective, 76% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/red-light-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/red-light-light.webp"><img src="assets/v4/red-light-dark.webp" width="1200" height="675" loading="lazy" alt="A red traffic light ahead. Asked what the car should do, it answers wait for green, 97%."></picture></a>
-      <figcaption><b>A red light ahead.</b> Wait for green, 97% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/speed-limit-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/speed-limit-light.webp"><img src="assets/v4/speed-limit-dark.webp" width="1200" height="675" loading="lazy" alt="A speed limit 80 sign. Asked what the car should do, it answers change speed, 98%."></picture></a>
-      <figcaption><b>A speed-limit sign in the car’s lane.</b> Change speed, 98% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/teddy-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/teddy-light.webp"><img src="assets/v4/teddy-dark.webp" width="1200" height="675" loading="lazy" alt="A teddy bear on a wooden bench. Asked whether there is a teddy bear, it answers yes, 100%."></picture></a>
-      <figcaption><b>Is there a teddy bear?</b> Yes, 100% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/chart-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/chart-light.webp"><img src="assets/v4/chart-dark.webp" width="1200" height="675" loading="lazy" alt="A line chart where plan B falls below plan A. Asked which plan is cheaper in the last month, it answers B, 94%."></picture></a>
-      <figcaption><b>Two cost lines that cross.</b> Plan B is cheaper in the last month, 94% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/keep-file-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/keep-file-light.webp"><img src="assets/v4/keep-file-dark.webp" width="1200" height="675" loading="lazy" alt="A delete-file dialog. The user said keep the file; asked which button to click, it answers cancel, 99%."></picture></a>
-      <figcaption><b>The user said keep the file.</b> The agent should click Cancel, 99% sure.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/v4/payment-declined-light.webp"><picture><source media="(prefers-color-scheme: light)" srcset="assets/v4/payment-declined-light.webp"><img src="assets/v4/payment-declined-dark.webp" width="1200" height="675" loading="lazy" alt="A checkout page saying the card was declined. Asked what happened to the payment, it answers declined, 100%."></picture></a>
-      <figcaption><b>A checkout page.</b> The payment was declined, 100% sure.</figcaption>
-    </figure>
+  <p class="sub">Send one to four images with a request: a photo, a screenshot, a chart. Ask the same typed questions as with text. One pass gives a probability for every answer.</p>
+  <div class="viewer" id="viewer">
+    <div class="vstage">
+      <div class="vpics"><figure class="vimg on" id="vi-0"><img src="assets/v4/ex-capsules.webp" alt="A tray of green gel capsules; one of them is leaking." decoding="async"><figcaption>VisA, Zou et al. 2022, CC BY 4.0, resized</figcaption></figure><figure class="vimg" id="vi-1" hidden><img src="assets/v4/ex-pcb.webp" alt="A small printed circuit board with a burnt spot." decoding="async" loading="lazy"><figcaption>VisA, Zou et al. 2022, CC BY 4.0, resized</figcaption></figure><figure class="vimg" id="vi-2" hidden><img src="assets/v4/ex-red-light.webp" alt="A traffic light showing red." decoding="async" loading="lazy"><figcaption>Photo: Jacklee, Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>, resized</figcaption></figure><figure class="vimg" id="vi-3" hidden><img src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." decoding="async" loading="lazy"><figcaption>Photo: P.Ctnt, Wikimedia Commons, public domain</figcaption></figure><figure class="vimg" id="vi-4" hidden><img src="assets/v4/ex-teddy.webp" alt="A teddy bear sitting on a wooden bench." decoding="async" loading="lazy"><figcaption>Photo via Pixabay, CC0</figcaption></figure><figure class="vimg" id="vi-5" hidden><img src="assets/v4/ex-chart.webp" alt="A line chart of monthly cost: plan B starts high and falls, plan A starts low and rises; they cross at month 4." decoding="async" loading="lazy"><figcaption>Chart generated by us</figcaption></figure><figure class="vimg" id="vi-6" hidden><img src="assets/v4/ex-keep-file.webp" alt="A dialog asking to delete Q3-report.xlsx, with Cancel and Delete buttons." decoding="async" loading="lazy"><figcaption>Screen generated by us</figcaption></figure><figure class="vimg" id="vi-7" hidden><img src="assets/v4/ex-declined.webp" alt="A checkout page saying the card was declined, with buttons to use another card or try again." decoding="async" loading="lazy"><figcaption>Screen generated by us</figcaption></figure></div>
+      <div class="vside"><div class="vpanel on" id="vp-0" role="tabpanel" aria-labelledby="vt-0"><p class="vhead">One leaking capsule in the tray, and it has never seen a defect example</p><p class="vctx">Production-line inspection photo of green gel capsules.</p><p class="vq">Is everything in the photo good, or is at least one part defective?</p><div class="vpick"><b class="vnum" data-p="0.678">68%</b><span class="vlab">Defective</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Defective</span><span class="ob"><i style="--w:67.8%"></i></span><span class="op">68%</span></li><li class="opt"><span class="ol">All good</span><span class="ob"><i style="--w:32.2%"></i></span><span class="op">32%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">254 ms on one GB10</span></p></div><div class="vpanel" id="vp-1" role="tabpanel" aria-labelledby="vt-1" hidden><p class="vhead">A burnt spot on a circuit board</p><p class="vctx">Production-line inspection photo of a printed circuit board.</p><p class="vq">Is everything in the photo good, or is at least one part defective?</p><div class="vpick"><b class="vnum" data-p="0.756">76%</b><span class="vlab">Defective</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Defective</span><span class="ob"><i style="--w:75.6%"></i></span><span class="op">76%</span></li><li class="opt"><span class="ol">All good</span><span class="ob"><i style="--w:24.4%"></i></span><span class="op">24%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">245 ms on one GB10</span></p></div><div class="vpanel" id="vp-2" role="tabpanel" aria-labelledby="vt-2" hidden><p class="vhead">Red light ahead: wait for green</p><p class="vq">What should the car do about the object in the image, which is on the road, in the car&#x27;s lane, ahead of the car?</p><div class="vpick"><b class="vnum" data-p="0.9669">97%</b><span class="vlab">Wait for green</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Wait for green</span><span class="ob"><i style="--w:96.7%"></i></span><span class="op">97%</span></li><li class="opt"><span class="ol">Stop then go</span><span class="ob"><i style="--w:2.3%"></i></span><span class="op">2%</span></li><li class="opt"><span class="ol">Stop</span><span class="ob"><i style="--w:0.8%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Go</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Continue</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li><li class="opt rest">+ 2 more answers, each under 1%</li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">65 ms on one GB10</span></p><div class="also"><span class="tag">Also asked about this image</span><ul><li><span>What kind of thing is the object in the image?</span><b>Traffic light 99.7% ✓</b></li></ul></div></div><div class="vpanel" id="vp-3" role="tabpanel" aria-labelledby="vt-3" hidden><p class="vhead">Reads the sign and changes speed</p><p class="vq">What should the car do about the object in the image, which is on the road, in the car&#x27;s lane, ahead of the car?</p><div class="vpick"><b class="vnum" data-p="0.9761">98%</b><span class="vlab">Change speed</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Change speed</span><span class="ob"><i style="--w:97.6%"></i></span><span class="op">98%</span></li><li class="opt"><span class="ol">Stop then go</span><span class="ob"><i style="--w:0.7%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Continue</span><span class="ob"><i style="--w:0.6%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Go</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Slow down</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li><li class="opt rest">+ 2 more answers, each under 1%</li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">65 ms on one GB10</span></p><div class="also"><span class="tag">Also asked about this image</span><ul><li><span>What kind of thing is the object in the image?</span><b>Speed limit sign 99.8% ✓</b></li><li><span>Which speed limit number is written on the object in the image?</span><b>80 99.7% ✓</b></li></ul></div></div><div class="vpanel" id="vp-4" role="tabpanel" aria-labelledby="vt-4" hidden><p class="vhead">A teddy bear on a bench, and no child</p><p class="vq">Is there a teddy bear in the image?</p><div class="vpick"><b class="vnum" data-p="0.9984">99.8%</b><span class="vlab">Yes</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Yes</span><span class="ob"><i style="--w:99.8%"></i></span><span class="op">99.8%</span></li><li class="opt"><span class="ol">No</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">60 ms on one GB10</span></p><div class="also"><span class="tag">Also asked about this image</span><ul><li><span>Is there a bench in the image?</span><b>Yes 99.7% ✓</b></li><li><span>Is there a child in the image?</span><b>No 99.9% ✓</b></li></ul></div></div><div class="vpanel" id="vp-5" role="tabpanel" aria-labelledby="vt-5" hidden><p class="vhead">Which plan ends cheaper?</p><p class="vq">Which plan is cheaper in the last month shown?</p><div class="vpick"><b class="vnum" data-p="0.9394">94%</b><span class="vlab">Plan B</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Plan B</span><span class="ob"><i style="--w:93.9%"></i></span><span class="op">94%</span></li><li class="opt"><span class="ol">Plan A</span><span class="ob"><i style="--w:6.1%"></i></span><span class="op">6%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">117 ms on one GB10</span></p></div><div class="vpanel" id="vp-6" role="tabpanel" aria-labelledby="vt-6" hidden><p class="vhead">The user said keep the file</p><p class="vctx">The user said: &quot;Actually, keep that file.&quot;</p><p class="vq">Which button should the agent click?</p><div class="vpick"><b class="vnum" data-p="0.9938">99.4%</b><span class="vlab">Cancel</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Cancel</span><span class="ob"><i style="--w:99.4%"></i></span><span class="op">99.4%</span></li><li class="opt"><span class="ol">Delete</span><span class="ob"><i style="--w:0.6%"></i></span><span class="op">&lt;1%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">79 ms on one GB10</span></p><div class="also"><span class="tag">Also asked about this image</span><ul><li><span>The screen says the action can be undone.</span><b>No 98% ✓</b></li></ul></div></div><div class="vpanel" id="vp-7" role="tabpanel" aria-labelledby="vt-7" hidden><p class="vhead">Card declined: what next?</p><p class="vctx">Goal: finish paying for the order.</p><p class="vq">What happened to the payment?</p><div class="vpick"><b class="vnum" data-p="0.997">99.7%</b><span class="vlab">Declined</span></div><ul class="opts" aria-label="Probability of each answer"><li class="opt pick"><span class="ol">Declined</span><span class="ob"><i style="--w:99.7%"></i></span><span class="op">99.7%</span></li><li class="opt"><span class="ol">Pending</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li><li class="opt"><span class="ol">Paid</span><span class="ob"><i style="--w:0.4%"></i></span><span class="op">&lt;1%</span></li></ul><p class="vfoot"><span class="ok">✓ matches the reference</span><span class="lat">121 ms on one GB10</span></p><div class="also"><span class="tag">Also asked about this image</span><ul><li><span>What should the agent do next?</span><b>Another card 78% ✓</b></li></ul></div></div></div>
+    </div>
+    <div class="vbar">
+      <div class="vtabs" role="tablist" aria-label="Examples"><button type="button" role="tab" id="vt-0" aria-controls="vp-0" aria-selected="true" tabindex="0"><img src="assets/v4/ex-capsules.webp" alt="" decoding="async"><span>Capsules</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-1" aria-controls="vp-1" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-pcb.webp" alt="" decoding="async"><span>Board</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-2" aria-controls="vp-2" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-red-light.webp" alt="" decoding="async"><span>Red light</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-3" aria-controls="vp-3" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-speed-80.webp" alt="" decoding="async"><span>Speed limit</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-4" aria-controls="vp-4" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-teddy.webp" alt="" decoding="async"><span>Teddy bear</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-5" aria-controls="vp-5" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-chart.webp" alt="" decoding="async"><span>Chart</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-6" aria-controls="vp-6" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-keep-file.webp" alt="" decoding="async"><span>Dialog</span><i class="prog" aria-hidden="true"></i></button><button type="button" role="tab" id="vt-7" aria-controls="vp-7" aria-selected="false" tabindex="-1"><img src="assets/v4/ex-declined.webp" alt="" decoding="async"><span>Checkout</span><i class="prog" aria-hidden="true"></i></button></div>
+      <button type="button" class="vplay" id="vplay" hidden>Pause</button>
+    </div>
   </div>
-  <p class="small">Real output from v4.0-VL on one GB10. Tap a card to see it full size. Photos: VisA (Zou et al. 2022, CC BY 4.0, resized); Wikimedia Commons speed sign by P.Ctnt (public domain) and traffic light by Jacklee (CC BY-SA 3.0; the red-light card is shared under CC BY-SA 3.0) and teddy bear via Pixabay (CC0). The charts and screens are generated by us.</p>
+  <p class="small">Real output from v4.0-VL on one GB10; the time is the whole call. Photos: VisA (Zou et al. 2022, CC BY 4.0, resized); Wikimedia Commons speed sign by P.Ctnt (public domain) and traffic light by Jacklee (CC BY-SA 3.0; the resized red-light photo is shared under CC BY-SA 3.0) and teddy bear via Pixabay (CC0). The charts and screens are generated by us.</p>
 
   <div class="visa">
     <h3>Finding defects on factory parts, with no defect examples</h3>
-    <div class="stats">
-      <div class="stat"><b style="color:var(--accent)">86.6</b><span>RSI-Jev v4.0-VL, 2B</span></div>
-      <div class="stat"><b>82.9</b><span>Gemma 4 12B</span></div>
-      <div class="stat"><b>81.1</b><span>Jev-Omni (Gemma 4 12B + head)</span></div>
-    </div>
+    <div class="vbars"><div class="vr us"><span class="vn">RSI-Jev v4.0-VL, 2B</span><span class="vt"><i style="width:73.2%"></i></span><b>86.6</b></div><div class="vr"><span class="vn">Gemma 4 12B</span><span class="vt"><i style="width:65.8%"></i></span><b>82.9</b></div><div class="vr"><span class="vn">Jev-Omni (Gemma 4 12B + head)</span><span class="vt"><i style="width:62.2%"></i></span><b>81.1</b></div><div class="vaxis" aria-hidden="true"><span class="vn"></span><span class="vticks"><span style="left:0%">50</span><span style="left:20%">60</span><span style="left:40%">70</span><span style="left:60%">80</span><span style="left:80%">90</span><span style="left:100%">100</span></span><b></b></div></div>
+    <p class="small vnote">AUROC. Bars start at 50, the score of a coin flip.</p>
     <p class="small">VisA: the same 2,162 photos of 12 kinds of parts for all three, one photo at a time, no defect examples. Score is AUROC: 50 is a coin flip, 100 is perfect. Ours 95% CI 85.1–88.1. The other two are scored from their authors’ published predictions.</p>
   </div>
 
@@ -382,6 +434,52 @@ footer a { color: var(--muted); }
     render(byId[id], document.getElementById("ex-ans"));
   }
   show(ORDER[0]);
+  (function () {
+    var root = document.getElementById("viewer"); if (!root) return;
+    var tabs = [].slice.call(root.querySelectorAll('[role="tab"]')), play = document.getElementById("vplay");
+    var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var cur = 0, auto = !calm, inView = true, timer = null;
+    function fmt(p) { return p < 0.01 ? "<1%" : p > 0.99 ? (100 * p).toFixed(1) + "%" : Math.round(100 * p) + "%"; }
+    function countUp(el) {
+      var p = +el.getAttribute("data-p"), t0 = null;
+      function step(t) { if (t0 === null) t0 = t; var k = Math.min(1, (t - t0) / 700); el.textContent = fmt(p * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); }
+      requestAnimationFrame(step);
+    }
+    function show(i, focus) {
+      cur = (i + tabs.length) % tabs.length;
+      tabs.forEach(function (b, j) {
+        var on = j === cur;
+        b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+        document.getElementById("vp-" + j).hidden = !on; document.getElementById("vi-" + j).hidden = !on;
+        var im = document.querySelector("#vi-" + j + " img"); if (on && im.loading === "lazy") im.loading = "eager";
+      });
+      if (focus) tabs[cur].focus();
+      var pane = document.getElementById("vp-" + cur);
+      if (!calm) { pane.classList.add("pre"); void pane.offsetWidth; pane.classList.remove("pre"); countUp(pane.querySelector(".vnum")); }
+      var pr = tabs[cur].querySelector(".prog"); pr.style.animation = "none"; void pr.offsetWidth; pr.style.animation = "";
+      schedule();
+    }
+    function running() { return auto && inView && !document.hidden; }
+    function schedule() {
+      clearTimeout(timer); root.classList.toggle("auto", auto); root.classList.toggle("held", auto && !running());
+      if (running()) timer = setTimeout(function () { show(cur + 1); }, 5000);
+    }
+    function stop() { if (!auto) return; auto = false; play.textContent = "Play"; schedule(); }
+    tabs.forEach(function (b, j) { b.addEventListener("click", function () { stop(); show(j); }); });
+    root.querySelector('[role="tablist"]').addEventListener("keydown", function (e) {
+      var d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (e.key === "Home") d = -cur; if (e.key === "End") d = tabs.length - 1 - cur;
+      if (d === undefined) return; e.preventDefault(); stop(); show(cur + d, true);
+    });
+    if (!calm) {
+      play.hidden = false;
+      play.addEventListener("click", function () { if (auto) stop(); else { auto = true; play.textContent = "Pause"; show(cur + 1); } });
+      root.addEventListener("touchstart", function (e) { if (!play.contains(e.target)) stop(); }, { passive: true });
+    }
+    document.addEventListener("visibilitychange", function () { var pr = tabs[cur].querySelector(".prog"); pr.style.animation = "none"; void pr.offsetWidth; pr.style.animation = ""; schedule(); });
+    if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { inView = es[0].isIntersecting; schedule(); }, { threshold: 0.35 }).observe(root);
+    schedule();
+  })();
   document.querySelectorAll(".copy").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var code = btn.parentElement.querySelector("code"), text = code.textContent;
