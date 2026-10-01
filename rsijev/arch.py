@@ -534,16 +534,10 @@ class DecisionModel(nn.Module):
         if all_states:
             return hs, final
         if self.mix_logits is not None:
-            if mode_id is None:
-                raise ValueError("a layer mixture needs mode_id in the batch")
-            n = len(hs)
-            stack = torch.stack([hs[_norm_layer(int(c), n)] for c in self._mix_candidates])
-            w = torch.softmax(self.mix_logits, dim=-1)[mode_id]      # (B, C)
-            h = torch.einsum("cbth,bc->bth", stack.to(w.dtype), w)
-            return self._readout(h, final, b, decision_index, option_index,
-                                 option_span_start, option_span_end,
-                                 option_token_ids, option_mask, want_base,
-                                 mode_id=mode_id, option_perm=option_perm)
+            # A layer mixture weights the layers per question mode, so there is no
+            # single readout state without mode_id. _compute mixes from all_states.
+            raise ValueError("hidden_states() is single-layer; a layer mixture "
+                             "must go through forward()")
         layer = self.cfg.readout_layer
         if isinstance(layer, dict):
             raise ValueError("hidden_states() is single-layer; a per-mode readout "
@@ -712,7 +706,7 @@ class DecisionModel(nn.Module):
         """
         if self.lm_head is None:
             raise ValueError("base_logits needs the lm_head")
-        _, final = self._run_tower(input_ids, attention_mask)
+        _, final = self._run_tower(input_ids, attention_mask, all_states=True)
         b = torch.arange(final.shape[0], device=final.device)
         vocab = self.lm_head(final[b, decision_index])
         out = vocab.gather(1, option_token_ids).float()
