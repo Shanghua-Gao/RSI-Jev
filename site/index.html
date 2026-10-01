@@ -240,6 +240,142 @@ footer a { color: var(--muted); }
   .stage .msg { border-right: 0; border-bottom: 1px solid var(--line); }
   section { padding-block: 60px; }
 }
+/* live demos (v4.0-VL): race, factory line, Breakout video, agent steps */
+:root { --good: #5BC0D6; --bad: #FF8A6B; --bad-soft: rgba(255, 138, 107, .16); --ok-soft: rgba(74, 194, 107, .16); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --good: #1D7F96; --bad: #C2412D; --bad-soft: rgba(194, 65, 45, .10); --ok-soft: rgba(26, 127, 55, .10); } }
+:root[data-theme="light"] { --good: #1D7F96; --bad: #C2412D; --bad-soft: rgba(194, 65, 45, .10); --ok-soft: rgba(26, 127, 55, .10); }
+.live { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px; display: grid; gap: 16px; text-align: left; min-width: 0; }
+.live > * { min-width: 0; }
+.lhead { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; }
+.lhead h3 { margin: 0; font: 700 21px/1.25 var(--display); letter-spacing: -0.01em; }
+.replay { font: 500 12px/1.3 var(--mono); color: var(--muted); letter-spacing: .02em; }
+.replay::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 7px; vertical-align: 1px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pills button, .lbtn { font: 500 14px/1 var(--body); padding: 9px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--raise); color: var(--muted); cursor: pointer; }
+.pills button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.lbtn { color: var(--ink); }
+.lbtn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+/* race */
+.rq { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: center; }
+.rq img { width: 100%; height: 150px; object-fit: contain; background: var(--raise); border-radius: 12px; display: block; }
+.rq .vctx { font-size: 14px; }
+.rq .rqq { font: 700 19px/1.3 var(--display); margin-top: 6px; }
+.lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.lane { border: 1px solid var(--line); border-radius: 14px; background: var(--bg); display: grid; grid-template-rows: auto 1fr auto; min-width: 0; overflow: hidden; }
+.lane.us { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.lh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.lh b { font-size: 14.5px; font-weight: 600; }
+.lh b span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.tm { font: 500 20px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.lane.done .tm { color: var(--ink); }
+.lane.us.done .tm { color: var(--accent); }
+.lbody { padding: 12px; height: 196px; overflow: hidden; position: relative; }
+.wait { font: 500 13px/1.4 var(--mono); color: var(--muted); }
+.wait::after { content: "▍"; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.rbars { display: grid; gap: 9px; }
+.rbar { display: grid; gap: 4px; font-size: 13.5px; color: var(--muted); }
+.rbar .rl { display: flex; justify-content: space-between; gap: 8px; }
+.rbar .rl span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbar .rl span:last-child { font: 500 13px/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.rbar .rt { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.rbar .rt i { display: block; height: 100%; width: var(--w); background: var(--base); border-radius: 4px; transition: width .35s ease-out; }
+.rbar.top { color: var(--ink); font-weight: 600; }
+.rbar.top .rt i { background: var(--accent); }
+.rbars.pre .rt i { width: 0; transition: none; }
+.stream { margin: 0; font: 13px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--ink); position: absolute; left: 12px; right: 12px; bottom: 12px; max-height: calc(100% - 46px); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; -webkit-mask-image: linear-gradient(transparent, #000 22px); mask-image: linear-gradient(transparent, #000 22px); }
+.stream.going::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+.ntok { font: 500 12px/1 var(--mono); color: var(--muted); position: absolute; top: 10px; right: 12px; background: var(--bg); padding: 2px 0 2px 6px; }
+.lfoot { padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13.5px; min-height: 58px; color: var(--muted); }
+.lfoot b { color: var(--ink); font-weight: 600; }
+.lfoot .y { color: var(--ok); font-weight: 600; }
+.lfoot .n { color: var(--bad); font-weight: 600; }
+.rctl { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.rsum { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14.5px; }
+.rsum > * { padding: 9px 12px; border-top: 1px solid var(--line); }
+.rsum > :nth-child(-n+3) { border-top: 0; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.rsum .k { color: var(--muted); }
+.rsum .u { color: var(--accent); font: 600 15px/1.3 var(--mono); }
+.rsum .c { font: 500 15px/1.3 var(--mono); }
+/* factory line */
+.fctl { display: grid; grid-template-columns: auto minmax(0, 1fr) 64px; gap: 14px; align-items: center; font-size: 15px; }
+.fctl output { font: 700 24px/1 var(--display); color: var(--accent); text-align: right; font-variant-numeric: tabular-nums; }
+.fctl input { width: 100%; accent-color: var(--accent); margin: 0; }
+.fstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fstat { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 2px; background: var(--bg); }
+.fstat b { font: 800 clamp(30px, 4.6vw, 42px)/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.fstat b small { font: 500 15px/1 var(--mono); color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.fstat > span { font-size: 14px; color: var(--muted); }
+.fstat.caught b { color: var(--bad); }
+.fstat.wrong b { color: var(--good); }
+.fplot { position: relative; touch-action: pan-y; cursor: ew-resize; }
+.fplot canvas { display: block; width: 100%; height: 170px; }
+.flegend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.flegend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.belt { position: relative; height: 178px; overflow: hidden; border-radius: 14px; background: var(--bg); border: 1px solid var(--line); }
+.belt::after { content: ""; position: absolute; left: 0; right: 0; bottom: 8px; height: 2px; background: repeating-linear-gradient(90deg, var(--line) 0 14px, transparent 14px 22px); }
+.gate { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed var(--accent); z-index: 2; }
+.gate span { position: absolute; top: 6px; left: 6px; font: 600 11px/1 var(--mono); color: var(--accent); white-space: nowrap; letter-spacing: .04em; }
+.part { position: absolute; top: 24px; left: 0; width: 104px; display: grid; gap: 4px; justify-items: center; will-change: transform; }
+.part img { width: 92px; height: 92px; object-fit: cover; border-radius: 8px; display: block; border: 2px solid transparent; background: var(--raise); }
+.part .ps { font: 500 11.5px/1.25 var(--mono); color: var(--muted); text-align: center; white-space: nowrap; }
+.part.seen.flag img { border-color: var(--bad); }
+.part.seen.flag .ps b { color: var(--bad); }
+.part.seen.pass .ps b { color: var(--ok); }
+.part:not(.seen) .ps { visibility: hidden; }
+/* agent */
+.astage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.ascreen { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #F5F6F8; }
+.ascreen img { display: block; width: 100%; height: auto; transition: opacity .35s; }
+.ascreen.swap img { opacity: 0; }
+.ring { position: absolute; border: 3px solid var(--accent); border-radius: 8px; opacity: 0; transform: scale(1.15); transition: opacity .25s, transform .25s; pointer-events: none; }
+.ring.on { opacity: 1; transform: none; }
+.ring.miss { border-color: var(--bad); }
+.ring.ref { border: 2px dashed #1A7F37; opacity: 0; transform: none; }
+.ring.ref.on { opacity: 1; }
+.cursor { position: absolute; width: 22px; height: 22px; margin: -3px 0 0 -4px; pointer-events: none; transition: left 1s cubic-bezier(.4, 0, .2, 1), top 1s cubic-bezier(.4, 0, .2, 1); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); z-index: 3; }
+.cursor.click { animation: clk .3s ease; }
+@keyframes clk { 50% { transform: scale(.8); } }
+.aside { display: grid; gap: 10px; }
+.astep { font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.atitle { font: 700 19px/1.25 var(--display); }
+.aq { display: grid; gap: 7px; }
+.aq p { font-size: 14.5px; color: var(--muted); }
+.asay { font-size: 14px; min-height: 42px; }
+.asay .y { color: var(--ok); font-weight: 600; }
+.asay .n { color: var(--bad); font-weight: 600; }
+.abar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.adots { display: flex; gap: 6px; flex-wrap: wrap; }
+.adots button { font: 500 13px/1 var(--body); padding: 8px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--raise); color: var(--muted); cursor: pointer; }
+.adots button[aria-selected="true"] { color: var(--ink); border-color: var(--accent); }
+.adots button.miss[aria-selected="true"] { border-color: var(--bad); }
+.game video { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); background: #F6F4EF; }
+@media (max-width: 820px) {
+  .live { padding: 16px 14px; gap: 14px; }
+  .rq { grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
+  .rq img { height: 96px; }
+  .rq .rqq { font-size: 16px; }
+  .rq .vctx { font-size: 12.5px; }
+  .lanes { gap: 8px; }
+  .lh { flex-direction: column; align-items: flex-start; padding: 8px 10px; gap: 4px; }
+  .lh b { font-size: 13.5px; }
+  .tm { font-size: 18px; }
+  .lbody { padding: 10px; height: 176px; }
+  .stream { font-size: 11.5px; left: 10px; right: 10px; bottom: 10px; }
+  .rbar { font-size: 12.5px; }
+  .lfoot { padding: 8px 10px; font-size: 12.5px; }
+  .rsum { font-size: 13px; }
+  .rsum > * { padding: 8px 9px; }
+  .rsum .u, .rsum .c { font-size: 13.5px; }
+  .fctl { grid-template-columns: minmax(0, 1fr) 60px; gap: 8px 12px; }
+  .fctl label { grid-column: 1 / -1; }
+  .fctl input { grid-column: 1; }
+  .astage { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rbar .rt i, .ascreen img, .ring, .cursor { transition: none; }
+  .wait::after, .stream.going::after { animation: none; }
+}
 </style>
 
 
@@ -284,6 +420,24 @@ footer a { color: var(--muted); }
   </div>
   <p class="small">Real output from v4.0-VL on one GB10; the time is the whole call. The three Wikimedia photos are shown at higher resolution than the 512 px copies the model was sent. Photos: VisA (Zou et al. 2022, CC BY 4.0, resized); Wikimedia Commons speed sign by P.Ctnt (public domain) and traffic light by Jacklee (CC BY-SA 3.0; the resized red-light photo is shared under CC BY-SA 3.0) and teddy bear via Pixabay (CC0). The charts and screens are generated by us.</p>
 
+  <div class="live race" id="race">
+    <div class="lhead"><h3>Same picture, same question: RSI-Jev and a chat model</h3><span class="replay">Replay of measured timings on one GB10</span></div>
+    <div class="pills" role="tablist" aria-label="Question" id="race-tabs"></div>
+    <div class="rq"><img id="race-img" src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." decoding="async"><div><p class="vctx" id="race-ctx"></p><p class="rqq" id="race-q"></p></div></div>
+    <div class="lanes">
+      <div class="lane us" id="lane-r"><div class="lh"><b>RSI-Jev v4.0-VL<span>2B, one pass</span></b><span class="tm" id="tm-r">0 ms</span></div><div class="lbody" id="body-r"></div><div class="lfoot" id="foot-r" aria-live="polite"></div></div>
+      <div class="lane" id="lane-c"><div class="lh"><b>Qwen3.5-2B chat<span>2B, writes its answer as JSON</span></b><span class="tm" id="tm-c">0 ms</span></div><div class="lbody" id="body-c"></div><div class="lfoot" id="foot-c" aria-live="polite"></div></div>
+    </div>
+    <div class="rctl"><span id="race-ref"></span><button class="lbtn primary" id="race-go" type="button">Race again</button></div>
+    <div class="rsum" role="table" aria-label="All 30 questions">
+      <span role="columnheader">All 30 questions</span><span role="columnheader">RSI-Jev</span><span role="columnheader">Chat model</span>
+      <span class="k" role="rowheader">Median time</span><span class="u" role="cell">69 ms</span><span class="c" role="cell">540 ms</span>
+      <span class="k" role="rowheader">Valid answers</span><span class="u" role="cell">30 / 30</span><span class="c" role="cell">20 / 30</span>
+      <span class="k" role="rowheader">Probability per answer</span><span class="u" role="cell">yes</span><span class="c" role="cell">no, text only</span>
+    </div>
+    <p class="small">RSI-Jev’s time is its median over 9 calls; the chat model’s text appears at the token times of one streamed call (greedy, up to 256 tokens). Which one is more accurate is unresolved: most of the chat model’s invalid replies gave an answer under the wrong JSON key; read leniently, it gets 23 of 30 right to our 26, a gap 30 questions cannot settle. Leaves photo by Wald1siedel (CC BY-SA 3.0; the resized copy is shared under CC BY-SA 3.0). The receipt is generated; its blank lower half is cropped here.</p>
+  </div>
+
   <div class="visa">
     <h3>Finding defects on factory parts, with no defect examples</h3>
     <div class="vbars"><div class="vr us"><span class="vn">RSI-Jev v4.0-VL, 2B</span><span class="vt"><i style="width:73.2%"></i></span><b>86.6</b></div><div class="vr"><span class="vn">Gemma 4 12B</span><span class="vt"><i style="width:65.8%"></i></span><b>82.9</b></div><div class="vr"><span class="vn">Jev-Omni (Gemma 4 12B + head)</span><span class="vt"><i style="width:62.2%"></i></span><b>81.1</b></div><div class="vaxis" aria-hidden="true"><span class="vn"></span><span class="vticks"><span style="left:0%">50</span><span style="left:20%">60</span><span style="left:40%">70</span><span style="left:60%">80</span><span style="left:80%">90</span><span style="left:100%">100</span></span><b></b></div></div>
@@ -291,9 +445,33 @@ footer a { color: var(--muted); }
     <p class="small">VisA: the same 2,162 photos of 12 kinds of parts for all three, one photo at a time, no defect examples. Score is AUROC: 50 is a coin flip, 100 is perfect. Ours 95% CI 85.1–88.1. The other two are scored from their authors’ published predictions.</p>
   </div>
 
+  <div class="live factory" id="factory">
+    <div class="lhead"><h3>Where would you set the line?</h3><span class="replay">All 2,162 VisA test photos, recorded scores</span></div>
+    <p class="small">RSI-Jev gives each part a probability that it is defective. The factory decides where to cut. Move the line and see what it catches.</p>
+    <div class="fctl"><label for="thr">Flag a part as defective above</label><input type="range" id="thr" min="1" max="99" step="1" value="50"><output id="thr-out" for="thr">50%</output></div>
+    <div class="fstats">
+      <div class="fstat caught"><b><span id="f-caught">405</span><small>/ 1,200</small></b><span>defective parts caught</span></div>
+      <div class="fstat wrong"><b><span id="f-wrong">34</span><small>/ 962</small></b><span>good parts wrongly flagged</span></div>
+    </div>
+    <div class="fplot" id="fplot"><canvas id="fcanvas" role="img" aria-label="Dot plot of all 2,162 parts by probability of being defective, defective parts in one row and good parts in the other, with the cutoff line."></canvas></div>
+    <div class="flegend"><span><i style="background:var(--bad)"></i>defective part (1,200)</span><span><i style="background:var(--good)"></i>good part (962)</span><span>bright dots are flagged at this line</span></div>
+    <div class="belt" id="belt" aria-label="Twelve of the test photos passing an inspection point, each with its real score."><div class="gate"><span>RSI-JEV LOOKS HERE</span></div></div>
+    <p class="small">Each dot is one photo’s served probability from the benchmark run behind the AUROC above, one call per photo. At 50% the line catches 405 defects and wrongly flags 34 good parts. The belt shows 12 of those photos with their real scores. Photos: VisA, Zou et al. 2022, CC BY 4.0, resized.</p>
+  </div>
+
   <div class="game">
-    <img src="assets/v4/breakout.gif" width="760" height="478" loading="lazy" alt="Breakout played live by RSI-Jev v4.0-VL: the game board on the left, and on the right each screenshot it was sent with its probability for each of five lanes.">
-    <p>It also plays Breakout from pixels: every frame it gets one screenshot and says which of five lanes the ball is in, and the paddle moves there.<br><span class="small">Game from hr98w/jev-visual (MIT), unchanged. Shown at 2× speed.</span></p>
+    <video id="bo-video" muted loop playsinline preload="metadata" poster="assets/v4/breakout-poster.webp" width="1240" height="780" aria-label="Breakout played live by RSI-Jev v4.0-VL: the game board on the left, and on the right the game’s decision feed with each screenshot it was sent and its probability for each of five lanes."><source src="assets/v4/breakout.webm" type="video/webm"><source src="assets/v4/breakout.mp4" type="video/mp4"></video>
+    <p>It also plays Breakout from pixels: every frame it gets one screenshot and says which of five lanes the ball is in, and the paddle moves there.<br><span class="small">Recorded live, real speed: 79 ms per round trip, 200 decisions. The panel on the right is the game’s own feed, with all five lane probabilities for each screenshot. Game from hr98w/jev-visual (MIT), unchanged.</span></p>
+  </div>
+
+  <div class="live agent" id="agent">
+    <div class="lhead"><h3>An agent, one screen at a time</h3><span class="replay">Each step is a separate real request</span></div>
+    <div class="astage">
+      <div class="ascreen" id="a-screen"><img id="a-img" src="assets/v4/agent-form-3.webp" width="640" height="455" alt="A checkout form with email, card number and expiry filled in, and Pay and Cancel buttons." decoding="async"><span class="ring ref" id="a-ref"></span><span class="ring" id="a-ring"></span><svg class="cursor" id="a-cur" viewBox="0 0 22 22" aria-hidden="true"><path d="M3 2 L3 18 L7.5 14 L10.5 20.5 L13 19.4 L10.2 13 L16 13 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+      <div class="aside"><p class="astep" id="a-step"></p><p class="atitle" id="a-title"></p><p class="vctx" id="a-ctx"></p><div class="aq" id="a-qs"></div><p class="asay" id="a-say" aria-live="polite"></p></div>
+    </div>
+    <div class="abar"><div class="adots" role="tablist" aria-label="Step" id="a-dots"></div><button class="lbtn" id="a-play" type="button" hidden>Pause</button></div>
+    <p class="small">Four screens we generated, each sent on its own with the goal or the user’s last message. The pointer acts on the model’s top answer. They are not one live session. The last one is a miss from the gallery.</p>
   </div>
 
   <div class="cta">
@@ -488,6 +666,240 @@ footer a { color: var(--muted); }
     });
   });
   function sel(n) { var r = document.createRange(); r.selectNodeContents(n); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+})();
+</script>
+<script>
+/* Live demos. Every number below is recorded output: chat_vs_rsi/{rsi,chat,questions}.json, bench/results/visa__rc-G0.jsonl (order 0), gallery.json. */
+(function () {
+  var D = {"RACE":[{"tab":"Speed sign","img":"assets/v4/ex-speed-80.webp","alt":"A round road sign showing a speed limit of 80.","ctx":"location: on the sidewalk right beside the car's lane, not on the road","q":"Which speed limit number is written on the object in the image?","ref":["80"],"rsi":{"ms":61.1,"pick":"80","correct":true,"opts":[["80",0.9967],["50",0.001],["none",0.0009],["120",0.0008],["30",0.0006]]},"chat":{"tokens":[[64.1,"{\""],[91.8,"speed"],[119.5,"_limit"],[145.9,"\":"],[173.6," \""],[200.1,"8"],[226.5,"0"],[253.5,"\"}"],[280.0,""],[306.6,"\n"],[333.0,""]],"ms":333.0,"valid":true,"pick":"80","correct":true,"ntok":11}},{"tab":"Leaking capsule","img":"assets/v4/ex-capsules.webp","alt":"A tray of green gel capsules; one of them is leaking.","ctx":"Production-line inspection photo of green gel capsules.","q":"Is everything in the photo good, or is at least one part defective?","ref":["Defective"],"rsi":{"ms":256.8,"pick":"Defective","correct":true,"opts":[["Defective",0.6733],["All good",0.3267]]},"chat":{"tokens":[[330.6,"{\""],[358.2,"inspection"],[385.7,"\":"],[412.5," \""],[439.7,"B"],[467.2,"\"}"],[494.3,""],[521.3,"\n"],[548.0,""]],"ms":548.0,"valid":true,"pick":"Defective","correct":true,"ntok":9}},{"tab":"Receipt","img":"assets/v4/race-receipt.webp","alt":"A restaurant receipt: grilled fish $26.60, sparkling water $3.80, side salad $7.60, total $38.00.","ctx":"Expense policy: meals up to $60 are approved automatically; alcohol is never reimbursable; anything else needs review.","q":"What should happen to this expense?","ref":["approve"],"rsi":{"ms":91.7,"pick":"approve","correct":true,"opts":[["approve",0.9755],["review",0.0159],["reject",0.0087]]},"chat":{"tokens":[[95.1,"The"],[124.2," total"],[154.2," expense"],[180.7," is"],[207.6," $"],[234.4,"3"],[260.9,"8"],[288.1,"."],[314.5,"0"],[340.9,"0"],[367.3,"."],[393.7,"\n\n"],[420.2,"According"],[446.6," to"],[473.0," the"],[499.4," policy"],[525.9,":"],[552.3,"\n"],[578.8,"-"],[605.2," Meals"],[631.6," up"],[658.0," to"],[684.4," $"],[710.8,"6"],[737.2,"0"],[763.6," are"],[790.0," approved"],[816.4," automatically"],[842.9,"."],[869.3,"\n"],[895.7,"-"],[922.1," Alcohol"],[948.5," is"],[974.9," never"],[1001.3," reimb"],[1027.9,"urs"],[1054.2,"able"],[1080.6,"."],[1107.0,"\n"],[1133.4,"-"],[1159.8," Anything"],[1186.2," else"],[1212.7," needs"],[1239.1," review"],[1265.5,"."],[1291.9,"\n\n"],[1318.3,"The"],[1344.7," items"],[1371.1," listed"],[1397.5," are"],[1423.9,":"],[1450.2,"\n"],[1476.7,"-"],[1503.1," Gr"],[1529.5,"illed"],[1556.0," fish"],[1582.4,":"],[1608.8," $"],[1635.2,"2"],[1661.7,"6"],[1688.1,"."],[1714.5,"6"],[1741.0,"0"],[1767.4," →"],[1793.8," meal"],[1820.3,","],[1846.7," under"],[1873.1," $"],[1899.5,"6"],[1925.9,"0"],[1952.4," →"],[1978.8," automatically"],[2005.2," approved"],[2031.7,"."],[2058.1,"\n"],[2084.5,"-"],[2110.9," Spark"],[2137.3,"ling"],[2163.8," water"],[2190.2,":"],[2216.8," $"],[2243.5,"3"],[2270.0,"."],[2297.2,"8"],[2323.6,"0"],[2350.1," →"],[2376.6," beverage"],[2403.4,","],[2430.1," not"],[2456.6," explicitly"],[2483.1," mentioned"],[2509.6," as"],[2536.0," reimb"],[2562.5,"urs"],[2588.8,"able"],[2615.2,","],[2641.7," but"],[2668.2," typically"],[2694.5," not"],[2721.0," considered"],[2747.4," an"],[2773.8," “"],[2800.2,"expense"],[2826.7,"”"],[2853.1," in"],[2879.6," this"],[2906.0," context"],[2932.4," unless"],[2958.9," specified"],[2985.3,"."],[3011.8," However"],[3038.3,","],[3064.7," since"],[3091.1," it"],[3117.5,"’s"],[3143.9," listed"],[3170.8," alongside"],[3197.2," food"],[3223.6," and"],[3250.1," salad"],[3276.5,","],[3302.9," and"],[3329.3," the"],[3355.7," total"],[3382.2," is"],[3408.6," $"],[3435.0,"3"],[3461.4,"8"],[3487.8,"."],[3514.3,"0"],[3540.7,"0"],[3567.2,","],[3593.6," it"],[3620.1,"’s"],[3646.5," likely"],[3672.9," part"],[3699.4," of"],[3725.9," the"],[3752.3," meal"],[3778.8,"/d"],[3805.2,"rink"],[3831.6," bill"],[3858.0,"."],[3884.5," But"],[3910.9," the"],[3937.4," policy"],[3963.8," says"],[3990.2," “"],[4016.6,"anything"],[4043.2," else"],[4069.6," needs"],[4096.0," review"],[4122.4,"”"],[4148.8," —"],[4175.3," so"],[4201.8," beverages"],[4228.2," might"],[4254.7," fall"],[4281.2," under"],[4307.6," “"],[4334.0,"anything"],[4360.5," else"],[4387.0,".”"],[4413.4,"\n"],[4439.9,"-"],[4466.3," Side"],[4492.8," salad"],[4519.3,":"],[4545.7," $"],[4572.1,"7"],[4598.5,"."],[4625.1,"6"],[4651.6,"0"],[4678.2," →"],[4704.6," meal"],[4731.0,","],[4757.5," under"],[4784.0," $"],[4810.4,"6"],[4836.9,"0"],[4863.4," →"],[4889.9," automatically"],[4916.3," approved"],[4942.8,"."],[4969.2,"\n\n"],[4995.7,"So"],[5022.2,","],[5048.7," Gr"],[5075.2,"illed"],[5101.6," fish"],[5128.1," and"],[5154.6," Side"],[5181.2," salad"],[5207.7," are"],[5234.1," meals"],[5260.6," under"],[5287.1," $"],[5313.5,"6"],[5339.9,"0"],[5366.4," →"],[5392.8," automatically"],[5419.2," approved"],[5445.6,"."],[5472.1,"\n"],[5498.6,"Spark"],[5525.0,"ling"],[5551.9," water"],[5582.6," is"],[5609.3," not"],[5635.9," a"],[5662.5," meal"],[5688.9," and"],[5715.4," not"],[5741.9," explicitly"],[5768.3," excluded"],[5794.8," —"],[5821.3," but"],[5847.7," since"],[5874.2," it"],[5900.6,"’s"],[5927.2," not"],[5955.0," a"],[5984.4," meal"],[6010.9,","],[6037.5," and"],[6064.0," the"],[6090.4," policy"],[6117.0," says"],[6143.4," “"],[6170.0,"anything"],[6196.6," else"],[6223.1," needs"],[6249.6," review"],[6276.0,",”"],[6302.5," it"],[6329.0," should"],[6355.4," be"],[6381.8," reviewed"],[6408.2,"."],[6434.7,"\n\n"],[6461.1,"However"],[6487.6,","],[6514.1," note"],[6540.9,":"],[6567.3," the"],[6593.8," policy"],[6620.2," says"],[6646.6," “"],[6673.1,"me"],[6699.5,"als"],[6726.0," up"],[6752.5," to"],[6778.9," $"],[6805.3,"6"],[6831.8,"0"],[6858.2," are"]],"ms":6858.2,"valid":false,"pick":null,"correct":false,"ntok":256}},{"tab":"Pile of leaves","img":"assets/v4/race-leaves.webp","alt":"A large pile of brown autumn leaves in a park.","ctx":"location: on the road, in the oncoming lane next to the car's lane","q":"What kind of thing is the object in the image?","ref":["harmless debris"],"rsi":{"ms":62.4,"pick":"other sign","correct":false,"opts":[["other sign",0.5118],["harmless debris",0.1732],["vehicle",0.1081],["speed limit sign",0.0706],["unclear",0.0428],["traffic light",0.0324],["stop sign",0.0289],["obstacle",0.0222],["animal",0.0055],["person",0.0045]]},"chat":{"tokens":[[67.5,"{"],[95.0,"\n"],[121.9," "],[148.4," \""],[175.0,"category"],[202.1,"\":"],[228.5," \""],[255.8,"h"],[282.3,"arm"],[308.8,"less"],[335.3,"_de"],[361.7,"bris"],[388.1,"\""],[414.6,"\n"],[441.0,"}"],[467.4,""],[493.9,"\n"],[520.4,""]],"ms":520.4,"valid":true,"pick":"harmless debris","correct":true,"ntok":18}}],"VISA":{"p":[63108,563084,514583,493418,592506,620811,477231,527073,354330,541055,132838,426868,586924,432071,340054,107543,93694,73775,411515,109724,489352,515487,563570,498269,552479,464599,468100,416309,490249,431970,417609,98728,450657,120673,389905,67480,398775,98595,535843,241561,282948,358115,448011,408711,319554,450528,278180,108217,357292,289804,185489,92404,237238,340755,103795,307549,109308,333807,96118,219318,140661,475218,76004,590317,481822,514197,476468,477776,634737,386851,511049,540945,405485,408001,484159,478705,428663,466205,503055,477991,476076,502476,417073,548849,455271,272068,432133,266768,447246,453154,407273,182299,624779,495961,411126,52353,536233,552455,118519,163680,46631,40598,50392,62986,48305,55785,47171,70910,70111,49542,45869,48704,47749,57296,53501,280814,55558,48032,53519,42707,44904,158635,50826,79443,44639,182030,58107,45368,183122,83013,62894,63375,53840,62431,49066,49931,256590,49173,44404,57148,74617,43725,82018,55586,57521,91682,44008,90892,60820,89013,44233,74209,123638,47162,77139,46610,51102,335737,50304,60273,56040,57140,42011,38006,70687,50490,60645,44015,58333,61760,64242,52719,174249,64633,47780,51283,62301,83847,51287,52311,52989,43666,165233,41993,73150,64650,89850,50878,151846,49012,65199,68531,62199,84344,50122,54303,72996,100654,48328,87830,307329,368956,394083,358370,265421,352158,461068,448145,419830,577845,384959,194054,149485,192727,263188,482462,328732,567444,347160,310401,414215,509110,535868,456779,514484,464817,340839,260475,223223,315023,556404,352487,471422,418319,180606,438080,143808,475571,400043,507943,360286,429416,353668,392103,273532,677953,472628,675659,533413,503451,630612,637129,465665,519596,623683,603873,480912,350487,491563,381895,524329,423781,486150,484215,556105,306281,289644,368064,530540,152430,652432,591567,493758,428843,564899,301226,416451,380951,346125,559035,371169,304032,404932,377053,549789,442640,243056,152644,174836,467885,138019,320956,281630,303227,204775,287931,333049,317979,362782,189678,130150,115600,119818,129255,217202,148017,147652,151943,124624,146428,168449,179583,170640,195597,180944,259193,128739,95816,147055,146400,173006,139096,197723,188627,173847,165341,233225,127949,197892,136771,140878,147438,138816,254808,157917,253150,126334,124060,175118,209391,190017,170785,142031,207911,130077,133927,232524,288454,85293,130775,143951,199742,183982,271103,250586,114911,205880,212985,102544,159189,272741,104312,88053,110343,145966,135562,236253,378560,316068,116041,145432,114090,423258,225974,203125,149750,259545,475586,244164,232506,392861,102230,193004,378292,161414,241781,363830,218188,150650,421749,297699,570812,462549,614528,621296,482109,515460,551902,623586,476265,612339,510274,580264,431341,78746,74194,86757,113601,111484,96803,126464,71590,105073,85321,107569,91667,85914,163350,89030,274689,112967,129183,305789,142847,186348,419169,126717,92067,385075,123528,244408,288465,285182,122971,236399,117938,509974,223627,98046,88633,88812,94074,82622,112315,130330,89856,79494,94730,107652,87384,87638,91015,108121,118438,718528,522516,378401,196381,182674,521923,79472,97629,87639,88167,99582,122231,96214,105152,108659,100228,105551,93278,84311,106534,81153,110601,88552,92877,97428,103612,93111,87338,93984,109180,84411,99876,75920,74296,95139,98956,112919,87929,86171,101514,112589,87371,107984,83123,123902,141660,91724,77665,90646,107910,86340,86118,85940,99285,93487,77497,774512,764363,740839,640561,872298,818357,858672,759677,695433,866966,810699,789443,878276,761436,848728,857701,820179,797815,862698,804919,723140,783536,620602,636750,644120,579406,444856,609314,226577,592108,662985,212198,314790,311211,844304,569334,637711,569621,590359,409219,728788,628744,443177,743059,701849,795090,668294,772552,600665,730965,826855,761013,717806,746746,751709,810951,698699,746865,635513,767569,716015,861868,561454,824170,806382,544435,574682,477632,431119,692129,428944,442833,334611,288514,561097,572021,710426,702672,648907,763946,574637,712159,582940,620658,595361,563148,648356,663068,605979,526282,638021,512655,564212,835646,695288,607694,707612,701085,591230,733707,488225,320512,611390,425019,351918,653144,337428,561365,222882,363629,212008,251855,466492,422350,484027,530853,310840,546890,306047,461318,245943,515406,285286,266016,607024,331396,334543,636009,748854,311383,628806,272552,448228,213877,252626,471770,618349,346348,460537,251756,455555,275005,382138,785842,692143,719607,513293,473332,869403,678397,723296,685857,645499,735812,663343,699716,529785,468349,737896,777691,239005,657468,733366,562767,762795,652731,723799,595357,622297,629056,398856,438030,420589,396495,398146,440648,499933,308821,202866,567586,304021,546930,576649,313010,421222,364997,303405,545528,313071,532232,687061,392929,483022,728797,524419,692983,602886,290310,613385,796216,370247,778709,807187,787515,315163,703247,728633,698306,728969,702488,739030,471072,603246,510226,287706,615777,490323,780069,638022,718642,634507,617436,663022,534721,734756,692935,719356,505025,737274,413025,489462,325188,592023,428804,428388,466920,589970,303327,228390,434822,271804,346777,295997,299702,306971,249436,325542,245943,285622,278537,313839,211524,154028,283514,155543,213465,224262,247280,254086,239227,220812,258727,151323,273685,250297,221773,199017,281008,266210,225985,340871,307505,269851,270846,267506,270408,194769,231722,247197,227326,275332,213034,225543,206250,182701,287851,298316,213026,207410,260646,245144,195793,311919,436386,194348,266678,262924,358910,264118,227113,674548,185397,321793,384789,537091,597097,152726,283121,559268,640308,582369,556805,179691,606511,543346,501759,364983,121098,325559,306037,483648,488320,459748,486349,458855,340811,164053,461541,440270,382622,467745,499654,373793,394615,402742,407441,488412,432002,541351,536479,615409,493864,621838,488077,666606,577560,683571,705549,225395,562749,298659,259679,399012,294124,217574,530577,218088,281333,318233,353686,268146,251090,181772,190345,341343,360424,518669,453483,138735,437145,127242,489635,302951,509562,98180,317864,101975,422968,554607,529760,266630,134530,251569,501915,345369,179116,108423,66549,200287,279234,56081,78974,159103,98466,112054,117409,137578,129032,83207,150381,84616,99860,83893,81711,164446,42082,124322,110309,118400,79007,71036,103554,157424,91614,320646,88923,85628,213950,53314,71587,45482,72086,54637,121635,124701,75323,219477,92945,230616,74881,65101,203465,150782,73016,205805,47255,157077,75808,73411,74499,163828,123885,93126,151783,92165,97014,62091,85304,303116,151419,132564,70908,71091,186475,88934,133455,438677,88241,78662,555484,74945,56837,219371,69448,294021,264953,196773,74368,66202,68072,119536,135254,104685,96961,52146,150847,86710,102551,64514,92176,116564,362984,210055,102156,79314,198419,106970,129511,225049,125448,396630,97907,122516,94620,69902,98362,99605,74362,104610,40064,553886,720114,586677,417477,659052,502737,714131,450087,583057,465877,364571,394160,234865,671015,550080,420514,184709,490255,614295,539272,514244,557379,296802,208330,557584,312103,261203,178865,99175,398401,502636,442808,664391,518445,306074,441503,383841,573419,540699,666341,479339,278550,318316,460807,439625,498304,695002,433538,483760,581263,497790,270032,375247,270214,475405,620417,602925,495292,299266,506541,573433,527489,601411,494329,489876,375478,468755,407260,457349,409564,566118,636538,428109,531076,579756,380392,331128,409854,415838,410327,539489,567109,643202,242406,515729,335149,274172,316438,372345,555802,489094,285214,566952,230403,261960,442226,193398,259785,201515,531914,374800,292957,104397,290747,67944,108051,520030,287227,520927,72602,94938,256419,271364,144119,577337,378889,328386,169011,169282,133821,143317,521722,386997,530496,404938,543029,312011,419902,143103,395503,542157,595892,223535,322453,654540,251663,383485,553129,229464,360652,567261,553639,388751,389514,332661,340711,100957,399552,566631,207034,135582,433492,169163,430727,492041,325365,191591,199835,300633,230582,233596,507454,88741,702879,457934,283670,220606,289999,264183,312456,419092,272336,307335,198689,393915,468145,142601,134894,277411,395714,165179,271374,386682,297657,471969,67506,305132,96769,197016,344735,73543,217620,256540,400096,375136,246474,277978,156148,121904,131510,195433,173531,177619,145738,158790,229097,227999,198152,196384,200348,190136,221800,121156,198160,158289,204829,243766,226045,219200,222796,230804,344879,273960,179012,206783,162776,139144,185732,390557,401704,495984,213683,217032,217908,599219,146750,202500,223967,330301,304058,288142,211439,161173,195261,251441,199422,228757,158665,179485,214173,205361,162064,172327,277099,324237,282997,221249,177509,186441,208140,159417,250665,173441,387714,561571,323168,366289,165723,212805,660406,389323,548621,514247,476550,387899,446895,184295,408400,475573,389711,396658,287215,541853,205961,296712,170108,195208,244486,269981,243819,263980,269419,391955,306524,264655,180242,178073,397102,182785,167982,178502,193624,169805,173861,179160,172531,174454,150151,174505,188098,235153,188409,164439,208283,156409,205020,146843,214627,187765,212648,187989,207682,172557,157039,183644,155613,272378,186743,494085,188308,155521,171630,174981,174540,242905,199210,216971,207606,209623,184452,203469,161164,180474,193142,192789,193311,178624,166878,180733,153859,150175,168780,147302,176153,194719,178824,174148,195498,176082,191122,162659,187077,173563,167523,226851,146242,164967,216838,245181,136132,154995,162193,165228,160351,151451,169242,158147,159732,158655,181655,167455,177732,144479,155383,182529,164135,172394,170641,221227,191419,175683,155031,171733,203438,159314,165634,216388,162972,179161,181560,408256,598291,523181,220791,484169,188393,521829,665966,272595,324914,310725,558186,321361,260519,236486,589836,718624,282840,468987,669323,609094,762195,438482,374458,700876,657631,625023,537657,721260,421818,312202,213875,650264,632775,663170,177228,433060,533019,199246,490078,227922,371104,358930,294684,287974,286224,392589,242735,303472,224731,230473,213700,281178,226658,345445,304091,232571,266311,419050,203285,608670,746750,572662,409992,419180,575807,489322,588597,643357,290235,552379,625574,333749,335494,605356,499529,210225,387617,514739,540011,230622,532021,544661,238739,451829,367472,508984,295732,297307,357300,525905,315431,426143,278207,238218,396271,405256,415951,272454,340503,335923,328899,254745,330100,200350,241971,232754,234181,380810,220020,263630,410978,223761,203204,210137,220346,157621,274538,190641,233272,267976,208957,265570,211247,395428,201204,190480,335027,302045,287854,221325,163510,429745,347308,230567,262008,254201,235360,228990,402492,220272,214417,192221,190135,239816,336410,204126,385294,211603,213905,233279,346888,256628,342629,402913,214211,305931,177568,258775,303363,298136,191711,198469,228491,285641,162259,181958,272380,278486,312066,207322,214682,227190,204567,208127,267540,294007,291635,197760,200003,218849,219091,167768,200549,140728,153977,147908,196061,186932,259787,173436,176958,223794,224692,266046,131453,195415,157347,198855,170766,356439,301461,242615,236804,188972,335053,313986,301516,373230,263693,219202,402467,244161,292822,231386,248420,217103,251169,290432,266048,458150,297597,435372,336041,269703,541462,453274,742746,426263,658392,261923,246388,363334,492855,229438,265442,324203,232244,383506,668746,236162,273822,279894,175155,233985,225392,232071,357937,200113,252373,236201,251964,224562,200668,299842,302804,223994,237223,308834,257051,439567,256291,418499,242747,426333,594406,722821,702129,225751,274240,581828,317749,199838,246073,390528,646352,234033,699531,201861,211377,275474,644481,305315,217950,235817,285534,418423,241620,250826,613098,240699,447584,265900,372418,255962,251829,258392,260970,359470,207116,178980,242150,279843,218373,235956,233206,205670,205628,210664,251482,237023,214090,208235,263881,375167,240901,209297,263017,223552,189688,191435,218772,252715,215505,279676,266310,218921,242468,249089,213835,249880,204707,216749,244637,208146,225675,268176,212170,228292,223780,262392,252338,235522,200968,271619,202343,225689,221407,263303,246332,223343,236552,255410,239626,236021,231416,246097,207834,222920,266280,244818,232715,218232,230565,238535,240940,189415,205887,261646,200557,308604,223596,232132,286024,260802,236875,223730,224974,231760,258656,221066,270324,211902,278750,249810,234834,223050,229742,243885,216717,223015,249829,244968,283105,249272,242122,279452,311293,239758,222555,232057,609328,717353,523631,752046,749749,353221,621989,373534,755981,612936,521765,728302,311773,657759,598142,519770,728182,619265,731794,680266,680678,582759,614212,348103,560968,572996,600432,560029,640026,351167,635202,365413,363255,386950,501092,572852,631049,439927,232356,389528,433099,389127,388826,564365,267674,380993,249868,347053,360925,544226,431751,261230,345577,567856,261622,493845,461820,533871,581215,464391,454428,463681,486369,256233,432343,606315,362695,410344,533295,657273,538054,394383,389667,487470,349478,464017,375389,502162,530928,570704,427383,493600,504938,280166,495965,453924,394433,428650,357619,339291,222253,470559,449301,423467,371987,376894,359484,414367,351987,350032,143938,216350,380175,222988,209948,180773,214487,204210,162979,257762,193017,163521,185939,181071,220528,222573,157344,178212,198677,205730,171242,203277,175692,192510,171397,187429,208897,213894,147760,202002,158551,172291,228355,192798,209440,199524,156023,290240,182464,199504,176558,222062,183682,158278,170323,173033,189477,160968,198292,348269,219401,175041,218488,197876,279332,215562,272886,213701,226401,217268,220454,171932,271988,182569,250443,195892,208325,205005,157949,198695,183339,191895,241613,186393,198205,216724,243686,207366,167334,305355,190734,247758,196886,203803,212838,206186,256406,212886,267533,284317,186587,206760,363486,465995,200065,176583,411692,495488,210832,226661,323242,606488,437019,728762,571171,615775,468341,307650,704697,606603,263394,617159,409909,586789,478062,524108,618587,660698,463169,553499,660616,558886,605615,591979,822974,484225,549166,649522,508924,643367,383857,550393,513496,624195,503888,724525,498423,580002,493250,389223,531703,832460,778879,594517,645502,802432,784779,840417,721241,651199,878120,401590,452339,499541,484645,365114,478814,406886,516765,481683,455097,510692,249658,407328,365155,445839,433455,399501,398018,350985,335661,370442,875269,335632,447175,306289,466245,442862,459900,531185,736726,410416,412497,341162,365249,352183,380054,474644,505183,352843,383715,360533,200009,233223,238733,240509,451172,572743,204946,246486,190700,161349,227069,210075,458142,152994,317069,418119,277489,278662,132055,152414,221169,306907,184630,254691,188512,190734,596918,386888,273485,271392,220762,281449,210205,272501,229015,224405,286005,192747,298680,195160,235418,239293,206664,205745,222976,127849,277133,183739,207845,264744,347078,338919,263093,244662,157848,458362,175770,279263,251829],"d":"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000"},"BELT":[{"src":"assets/v4/belt-candle-005d.webp","obj":"candle","d":1,"p":620811},{"src":"assets/v4/belt-capsules-488g.webp","obj":"capsules","d":0,"p":85293},{"src":"assets/v4/belt-pcb1-084d.webp","obj":"pcb1","d":1,"p":296712},{"src":"assets/v4/belt-cashew-400g.webp","obj":"cashew","d":0,"p":141660},{"src":"assets/v4/belt-fryum-005d.webp","obj":"fryum","d":1,"p":699716},{"src":"assets/v4/belt-macaroni1-0631g.webp","obj":"macaroni1","d":0,"p":438677},{"src":"assets/v4/belt-pcb4-049d.webp","obj":"pcb4","d":1,"p":544226},{"src":"assets/v4/belt-chewinggum-130g.webp","obj":"chewinggum","d":0,"p":212008},{"src":"assets/v4/belt-pipe_fryum-095d.webp","obj":"pipe_fryum","d":1,"p":451172},{"src":"assets/v4/belt-pcb2-0659g.webp","obj":"pcb2","d":0,"p":298136},{"src":"assets/v4/belt-macaroni2-027d.webp","obj":"macaroni2","d":1,"p":178865},{"src":"assets/v4/belt-candle-0423g.webp","obj":"candle","d":0,"p":49931}],"AGENT":[{"id":"ui-form-3","img":"assets/v4/agent-form-3.webp","title":"Checkout form, 3 of 3 fields filled","ctx":"Goal: finish paying for the order.","qs":[{"text":"Which element should the agent use next to reach the goal?","pick":"pay","ref":["pay"],"correct":true,"ms":119,"opts":[["pay",0.9968],["card number",0.0021],["expiry",0.0011],["cancel",0.0001],["email",0.0]]}]},{"id":"ui-declined","img":"assets/v4/agent-declined.webp","title":"Payment declined","ctx":"Goal: finish paying for the order.","qs":[{"text":"What happened to the payment?","pick":"declined","ref":["declined"],"correct":true,"ms":121,"opts":[["declined",0.997],["pending",0.0017],["paid",0.0013]]},{"text":"What should the agent do next?","pick":"another card","ref":["another card"],"correct":true,"ms":119,"opts":[["another card",0.7843],["retry",0.2109],["done",0.0048]]}]},{"id":"ui-delete","img":"assets/v4/agent-delete.webp","title":"Destructive dialog","ctx":"The user said: \"Actually, keep that file.\"","qs":[{"text":"Which button should the agent click?","pick":"cancel","ref":["cancel"],"correct":true,"ms":79,"opts":[["cancel",0.9938],["delete",0.0062]]},{"text":"The screen says the action can be undone.","pick":"No","ref":["No"],"correct":true,"ms":77,"opts":[["No",0.978],["Yes",0.022]]}]},{"id":"ui-form-1","img":"assets/v4/agent-form-1.webp","title":"Checkout form, 1 of 3 fields filled","ctx":"Goal: finish paying for the order.","qs":[{"text":"Which element should the agent use next to reach the goal?","pick":"pay","ref":["card number"],"correct":false,"ms":127,"opts":[["pay",0.9871],["card number",0.0123],["expiry",0.0005],["cancel",0.0001],["email",0.0]]}]}]};
+  var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function pct(p) { return p < 0.01 ? "<1%" : p > 0.99 ? (100 * p).toFixed(1) + "%" : Math.round(100 * p) + "%"; }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function watch(el, cb) {
+    var inView = !("IntersectionObserver" in window);
+    function upd() { cb(inView && !document.hidden); }
+    if (!inView) new IntersectionObserver(function (es) { inView = es[es.length - 1].isIntersecting; upd(); }, { threshold: 0.25 }).observe(el);
+    document.addEventListener("visibilitychange", upd);
+  }
+  function bars(opts, max) {
+    var shown = opts.slice(0, max), rest = opts.slice(max), h = "";
+    shown.forEach(function (o, i) {
+      h += '<div class="rbar' + (i === 0 ? " top" : "") + '"><span class="rl"><span>' + esc(cap(o[0])) + '</span><span>' + pct(o[1]) + '</span></span><span class="rt"><i style="--w:' + (100 * o[1]).toFixed(1) + '%"></i></span></div>';
+    });
+    if (rest.length) h += '<div class="rbar"><span class="rl"><span>' + rest.length + ' more answers</span><span>' + pct(rest.reduce(function (a, o) { return a + o[1]; }, 0)) + '</span></span></div>';
+    return h;
+  }
+  function grow(box) { if (calm) return; box.classList.add("pre"); void box.offsetWidth; box.classList.remove("pre"); }
+
+  /* 1. race */
+  (function () {
+    var R = D.RACE, root = document.getElementById("race"); if (!root) return;
+    R.forEach(function (r) { var s = ""; r.chat.tokens.forEach(function (k) { s += k[1]; k[1] = s; }); });
+    var $ = function (id) { return document.getElementById(id); };
+    var tabs = $("race-tabs"), cur = 0, t = Infinity, playing = false, live = false, last = null, raf = null, started = false, sR = null, sC = null;
+    R.forEach(function (r, i) {
+      var b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab"); b.textContent = r.tab;
+      b.addEventListener("click", function () { select(i, true); }); tabs.appendChild(b);
+    });
+    function select(i, run) {
+      cur = i; var r = R[i];
+      [].forEach.call(tabs.children, function (b, j) { b.setAttribute("aria-selected", j === i ? "true" : "false"); });
+      $("race-img").src = r.img; $("race-img").alt = r.alt; $("race-ctx").textContent = r.ctx; $("race-q").textContent = r.q;
+      $("race-ref").innerHTML = "Reference answer: <b>" + esc(cap(r.ref.join(" or "))) + "</b>";
+      if (run && !calm) start(); else { playing = false; t = Infinity; sR = sC = null; draw(); }
+    }
+    function draw() {
+      var r = R[cur], c = r.chat, dr = t >= r.rsi.ms, dc = t >= c.ms;
+      $("tm-r").textContent = Math.round(Math.min(t, r.rsi.ms)) + " ms";
+      $("tm-c").textContent = Math.round(Math.min(t, c.ms)) + " ms";
+      $("lane-r").classList.toggle("done", dr); $("lane-c").classList.toggle("done", dc);
+      if (sR !== dr) {
+        sR = dr;
+        $("body-r").innerHTML = dr ? '<div class="rbars">' + bars(r.rsi.opts, 3) + '</div>' : '<p class="wait">reading the image </p>';
+        if (dr && t !== Infinity) grow($("body-r").firstChild);
+        $("foot-r").innerHTML = dr ? '<b>' + esc(cap(r.rsi.pick)) + '</b>, ' + pct(r.rsi.opts[0][1]) + ' sure · ' + (r.rsi.correct ? '<span class="y">right</span>' : '<span class="n">wrong</span>') : "";
+      }
+      var n = 0; while (n < c.tokens.length && c.tokens[n][0] <= t) n++;
+      var key = n + (dc ? "d" : "");
+      if (sC !== key) {
+        sC = key;
+        $("body-c").innerHTML = n ? '<span class="ntok">' + n + ' tokens</span><pre class="stream' + (dc ? "" : " going") + '"></pre>' : '<p class="wait">reading the image </p>';
+        if (n) $("body-c").querySelector("pre").textContent = c.tokens[n - 1][1];
+        $("foot-c").innerHTML = !dc ? "" : c.valid ? '<b>' + esc(cap(c.pick)) + '</b>, no probability · ' + (c.correct ? '<span class="y">right</span>' : '<span class="n">wrong</span>')
+          : '<span class="n">No valid answer</span>: ' + (c.ntok >= 256 ? "hit the 256-token limit before writing the JSON." : "the reply held no allowed answer.");
+      }
+    }
+    function frame(now) {
+      raf = null; if (!playing || !live) { last = null; return; }
+      if (last !== null) t += Math.min(now - last, 100); last = now;
+      var end = Math.max(R[cur].rsi.ms, R[cur].chat.ms);
+      if (t >= end) { t = end; playing = false; }
+      draw(); if (playing) raf = requestAnimationFrame(frame);
+    }
+    function kick() { if (playing && live && raf === null) { last = null; raf = requestAnimationFrame(frame); } }
+    function start() { t = 0; sR = sC = null; playing = true; draw(); kick(); }
+    $("race-go").addEventListener("click", start);
+    select(0, false);
+    watch(root, function (v) { live = v; if (v && !started && !calm) { started = true; start(); } kick(); });
+  })();
+
+  /* 3. factory line */
+  (function () {
+    var root = document.getElementById("factory"); if (!root) return;
+    var P = D.VISA.p, L = D.VISA.d, N = P.length, thr = 50;
+    var input = document.getElementById("thr"), out = document.getElementById("thr-out"), cv = document.getElementById("fcanvas"), plot = document.getElementById("fplot");
+    var jit = new Float32Array(N), s = 12345;
+    for (var i = 0; i < N; i++) { s = (s * 1103515245 + 12345) % 2147483648; jit[i] = s / 2147483648; }
+    function fmt(n) { return n.toLocaleString("en-US"); }
+    function update() {
+      var cut = thr * 10000, c = 0, w = 0;
+      for (var i = 0; i < N; i++) if (P[i] > cut) { if (L.charCodeAt(i) === 49) c++; else w++; }
+      document.getElementById("f-caught").textContent = fmt(c); document.getElementById("f-wrong").textContent = fmt(w);
+      out.textContent = thr + "%"; input.value = thr;
+      input.setAttribute("aria-valuetext", thr + "%: catches " + c + " of 1,200 defects, flags " + w + " of 962 good parts");
+      draw(); flagBelt();
+    }
+    function draw() {
+      var cs = getComputedStyle(document.documentElement), col = function (n) { return cs.getPropertyValue(n).trim(); };
+      var W = cv.clientWidth, H = cv.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+      if (!W) return;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      var g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+      var pl = 6, pr = 6, x = function (p) { return pl + p / 1e6 * (W - pl - pr); }, tx = x(thr * 10000);
+      var rows = [[10, 66], [80, 136]], axis = 146;
+      g.fillStyle = col("--raise"); g.fillRect(tx, 2, W - pr - tx, axis - 4);
+      g.font = "500 11px " + col("--mono"); g.textBaseline = "top"; g.fillStyle = col("--muted");
+      g.textAlign = "right"; g.fillText("defective", W - pr - 4, rows[0][0] + 2); g.fillText("good", W - pr - 4, rows[1][0] + 2);
+      var bad = col("--bad"), good = col("--good"), r = W < 500 ? 1.3 : 1.7;
+      for (var pass = 0; pass < 2; pass++) for (var i = 0; i < N; i++) {
+        var d = L.charCodeAt(i) === 49, on = P[i] > thr * 10000; if (on !== (pass === 1)) continue;
+        var row = rows[d ? 0 : 1], y = row[0] + 6 + jit[i] * (row[1] - row[0] - 12);
+        g.globalAlpha = on ? 0.95 : 0.22; g.fillStyle = d ? bad : good;
+        g.beginPath(); g.arc(x(P[i]), y, r, 0, 6.2832); g.fill();
+      }
+      g.globalAlpha = 1; g.strokeStyle = col("--line"); g.lineWidth = 1; g.beginPath(); g.moveTo(pl, axis + 0.5); g.lineTo(W - pr, axis + 0.5); g.stroke();
+      g.fillStyle = col("--muted"); g.textBaseline = "top";
+      [0, 25, 50, 75, 100].forEach(function (v, k) { g.textAlign = k === 0 ? "left" : k === 4 ? "right" : "center"; g.fillText(v + "%", x(v * 10000), axis + 6); });
+      g.strokeStyle = col("--accent"); g.lineWidth = 2; g.beginPath(); g.moveTo(tx, 2); g.lineTo(tx, axis); g.stroke();
+    }
+    input.addEventListener("input", function () { thr = +input.value; update(); });
+    function fromX(e) { var b = cv.getBoundingClientRect(); var v = Math.round((e.clientX - b.left - 6) / (b.width - 12) * 100); thr = Math.max(1, Math.min(99, v)); update(); }
+    var drag = false;
+    plot.addEventListener("pointerdown", function (e) { drag = true; try { plot.setPointerCapture(e.pointerId); } catch (_) {} fromX(e); });
+    plot.addEventListener("pointermove", function (e) { if (drag) fromX(e); });
+    ["pointerup", "pointercancel"].forEach(function (k) { plot.addEventListener(k, function () { drag = false; }); });
+    if ("ResizeObserver" in window) new ResizeObserver(function () { draw(); }).observe(cv); else window.addEventListener("resize", draw);
+    if (window.matchMedia) matchMedia("(prefers-color-scheme: light)").addEventListener("change", draw);
+    new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+    /* conveyor */
+    var belt = document.getElementById("belt"), B = D.BELT, pitch = 128, off = 40, live = false, last = null, raf = null;
+    var els = B.map(function (b) {
+      var el = document.createElement("div"); el.className = "part";
+      el.innerHTML = '<img src="' + b.src + '" alt="VisA test photo of ' + esc(b.obj.replace("_", " ")) + ', ' + (b.d ? "a defective part" : "a good part") + '" loading="lazy" decoding="async"><span class="ps"></span>';
+      belt.appendChild(el); return el;
+    });
+    function flagBelt() {
+      els.forEach(function (el, i) {
+        var b = B[i], f = b.p > thr * 10000;
+        el.classList.toggle("flag", f); el.classList.toggle("pass", !f);
+        el.querySelector(".ps").innerHTML = '<b>' + (f ? "Flagged" : "Passed") + '</b> ' + pct(b.p / 1e6) + '<br>' + (b.d ? "real defect" : "good part");
+      });
+    }
+    function place() {
+      var W = belt.clientWidth, gate = W / 2, total = B.length * pitch;
+      els.forEach(function (el, i) {
+        var xx = ((i * pitch - off) % total + total) % total - pitch;
+        el.style.transform = "translateX(" + xx.toFixed(1) + "px)";
+        el.classList.toggle("seen", calm || xx + 52 < gate);
+      });
+    }
+    function frame(now) {
+      raf = null; if (!live) { last = null; return; }
+      if (last !== null) off += Math.min(now - last, 100) * 0.04; last = now;
+      place(); raf = requestAnimationFrame(frame);
+    }
+    if (calm) { off = 0; }
+    update(); place();
+    if (!calm) watch(belt, function (v) { live = v; if (v && raf === null) { last = null; raf = requestAnimationFrame(frame); } });
+    window.addEventListener("resize", place);
+  })();
+
+  /* 2. Breakout video: play only while visible, never autoplay under reduced motion */
+  (function () {
+    var v = document.getElementById("bo-video"); if (!v) return;
+    if (calm) { v.controls = true; return; }
+    watch(v, function (on) { if (on) { var p = v.play(); if (p && p.catch) p.catch(function () { v.controls = true; }); } else v.pause(); });
+  })();
+
+  /* 4. agent steps */
+  (function () {
+    var A = D.AGENT, root = document.getElementById("agent"); if (!root) return;
+    var $ = function (id) { return document.getElementById(id); };
+    var BOX = { "ui-form-3": { pick: [.044, .640, .291, .088], act: "Clicks Pay." },
+                "ui-declined": { pick: [.044, .441, .323, .108], act: "Clicks Use another card." },
+                "ui-delete": { pick: [.4625, .690, .164, .110], act: "Clicks Cancel. The file stays." },
+                "ui-form-1": { pick: [.044, .640, .291, .088], ref: [.044, .356, .625, .070], act: "Would click Pay with the card number still empty. The right next step is the card number (dashed)." } };
+    var ALT = { "ui-form-3": "A checkout form with email, card number and expiry filled in, and Pay and Cancel buttons.",
+                "ui-declined": "A checkout page saying the card was declined, with buttons to use another card or try again.",
+                "ui-delete": "A dialog asking to delete Q3-report.xlsx, with Cancel and Delete buttons.",
+                "ui-form-1": "A checkout form with only the email filled in; card number and expiry are empty." };
+    var cur = 0, t = 0, auto = !calm, live = false, last = null, raf = null, st = {}, STEP = 6200;
+    var dots = $("a-dots"), play = $("a-play"), cursor = $("a-cur");
+    A.forEach(function (a, i) {
+      var b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab");
+      b.textContent = (i + 1) + (a.qs[0].correct ? "" : " · miss"); if (!a.qs[0].correct) b.className = "miss";
+      b.addEventListener("click", function () { stop(); go(i); }); dots.appendChild(b);
+    });
+    function box(el, r) { el.style.left = 100 * r[0] + "%"; el.style.top = 100 * r[1] + "%"; el.style.width = 100 * r[2] + "%"; el.style.height = 100 * r[3] + "%"; }
+    function point(x, y) { cursor.style.left = 100 * x + "%"; cursor.style.top = 100 * y + "%"; }
+    function go(i) {
+      cur = (i + A.length) % A.length; var a = A[cur], k = BOX[a.id];
+      [].forEach.call(dots.children, function (b, j) { b.setAttribute("aria-selected", j === cur ? "true" : "false"); });
+      $("a-step").textContent = "Step " + (cur + 1) + " of " + A.length + (a.qs[0].correct ? "" : " · a miss");
+      $("a-title").textContent = a.title; $("a-ctx").textContent = a.ctx;
+      var img = $("a-img"); img.alt = ALT[a.id];
+      if (img.getAttribute("src") !== a.img) { $("a-screen").classList.add("swap"); setTimeout(function () { img.src = a.img; $("a-screen").classList.remove("swap"); }, calm ? 0 : 200); }
+      box($("a-ring"), k.pick); $("a-ring").classList.toggle("miss", !a.qs[0].correct);
+      if (k.ref) box($("a-ref"), k.ref);
+      t = (calm || !auto) ? Infinity : 0; st = {}; render();
+    }
+    function render() {
+      var a = A[cur], k = BOX[a.id], ask = 500;
+      var shown = t >= ask + a.qs[0].ms, moved = t >= 1700, clicked = t >= 2800;
+      if (st.shown !== shown) {
+        st.shown = shown;
+        $("a-qs").innerHTML = a.qs.map(function (q) { return '<p>' + esc(q.text) + '</p>' + (shown ? '<div class="rbars">' + bars(q.opts, 3) + '</div>' : '<p class="wait">asking RSI-Jev </p>'); }).join("");
+        if (shown && t !== Infinity) [].forEach.call($("a-qs").querySelectorAll(".rbars"), grow);
+      }
+      if (st.moved !== moved) { st.moved = moved; if (moved) point(k.pick[0] + k.pick[2] * 0.5, k.pick[1] + k.pick[3] * 0.6); else if (cur === 0 || calm) point(0.86, 0.9); }
+      if (st.clicked !== clicked) {
+        st.clicked = clicked;
+        $("a-ring").classList.toggle("on", clicked); $("a-ref").classList.toggle("on", clicked && !!k.ref);
+        if (clicked && t !== Infinity) { cursor.classList.remove("click"); void cursor.offsetWidth; cursor.classList.add("click"); }
+        var ok = a.qs[0].correct;
+        $("a-say").innerHTML = clicked ? '<span class="' + (ok ? "y" : "n") + '">' + (ok ? "Right." : "Miss.") + '</span> ' + esc(k.act) + ' <span class="small">' + a.qs[0].ms + ' ms</span>' : "";
+      }
+    }
+    function frame(now) {
+      raf = null; if (!(auto && live)) { last = null; return; }
+      if (last !== null) t += Math.min(now - last, 100); last = now;
+      if (t >= STEP) go(cur + 1); else render();
+      raf = requestAnimationFrame(frame);
+    }
+    function kick() { if (auto && live && raf === null) { last = null; raf = requestAnimationFrame(frame); } }
+    function stop() { auto = false; play.textContent = "Play"; }
+    if (!calm) {
+      play.hidden = false;
+      play.addEventListener("click", function () { if (auto) stop(); else { auto = true; play.textContent = "Pause"; if (t >= STEP - 1 || t === Infinity) go(cur + 1); kick(); } });
+    }
+    point(0.86, 0.9);
+    /* at rest: step 1 finished; the animation starts from the top once the block is on screen */
+    t = Infinity; go(0); t = Infinity; st = {}; render();
+    var started = false;
+    watch(root, function (v) { live = v; if (v && !started && auto) { started = true; go(0); } kick(); });
+  })();
 })();
 </script>
 
