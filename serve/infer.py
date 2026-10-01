@@ -499,6 +499,81 @@ class DocCache:
             return cache
 
 
+class VisionCache:
+    """Vision-tower outputs that outlive a request: the same images asked about with
+    other text skip the image processor and the vision tower. Opt-in,
+    `RSIJEV_VISION_CACHE=1`.
+
+    Keyed on the decoded pixels of every image of the request, in order (mode,
+    size, bytes, as `image_keys` hashes them), and on the token budget each was
+    prepared at. The image processor and the vision tower are deterministic
+    functions of exactly that, so a hit returns the tensor the miss computed: the
+    answer is the same, bit for bit. Separate from the document cache, which keys
+    on the whole state's token ids as well.
+
+    An entry holds the features (on the model's device) and the grid and token
+    counts the plan needs; it is never mutated. Bounded in entries and bytes
+    (RSIJEV_VISION_CACHE_ENTRIES, default 64; RSIJEV_VISION_CACHE_MB, default 1024).
+    """
+
+    def __init__(self, max_entries: int | None = None, max_bytes: int | None = None):
+        env = os.environ.get
+        self.max_entries = int(max_entries if max_entries is not None
+                               else env("RSIJEV_VISION_CACHE_ENTRIES", 64))
+        self.max_bytes = int(max_bytes if max_bytes is not None
+                             else float(env("RSIJEV_VISION_CACHE_MB", 1024)) * 2**20)
+        self._entries: OrderedDict = OrderedDict()     # key -> (feats, grid, ntok, nbytes)
+        self._bytes = 0
+        self._lock = threading.Lock()
+        self.stats = {"hit": 0, "miss": 0, "evicted": 0}
+
+    @staticmethod
+    def key(images: Sequence, tokens_per_image: int, tag: str = "") -> str:
+        h = hashlib.sha256(f"{tag}|{tokens_per_image}|{len(images)}|".encode())
+        for im in images:
+            h.update(f"{im.mode}|{im.size}|".encode())
+            h.update(im.tobytes())
+        return h.hexdigest()
+
+    def get(self, key: str):
+        with self._lock:
+            got = self._entries.get(key)
+            if got is None:
+                self.stats["miss"] += 1
+                return None
+            self._entries.move_to_end(key)
+            self.stats["hit"] += 1
+            return got[:3]
+
+    def put(self, key: str, feats: torch.Tensor, grid: torch.Tensor, ntok: list) -> None:
+        nbytes = feats.numel() * feats.element_size()
+        with self._lock:
+            if key in self._entries or nbytes > self.max_bytes or self.max_entries < 1:
+                return
+            self._entries[key] = (feats, grid, list(ntok), nbytes)
+            self._bytes += nbytes
+            while len(self._entries) > self.max_entries or self._bytes > self.max_bytes:
+                _, (_, _, _, b) = self._entries.popitem(last=False)
+                self._bytes -= b
+                self.stats["evicted"] += 1
+
+
+def default_vision_cache(model=None) -> VisionCache | None:
+    """The model's vision-output cache when RSIJEV_VISION_CACHE=1, else None. Kept on
+    the model object, so a cache never serves features of other weights."""
+    if not _flag("RSIJEV_VISION_CACHE"):
+        return None
+    holder = model if model is not None else default_vision_cache
+    vc = getattr(holder, "_rsijev_vision_cache", None)
+    if vc is None:
+        vc = VisionCache()
+        try:
+            holder._rsijev_vision_cache = vc
+        except AttributeError:             # an object that cannot hold one: no cache
+            return None
+    return vc
+
+
 _DOC_CACHE: DocCache | None = None
 
 
@@ -704,7 +779,8 @@ def score_image_questions_cached(model, tokenizer, prep, state: str, images: Seq
     if max_options is None:
         max_options = max(DEFAULT_MAX_OPTIONS, max(len(q.options) for q in questions))
     plan = plan_image_request(tokenizer, prep, state, images, questions, enc,
-                              min_saved_tokens=min_saved_tokens, doc_cache=doc_cache)
+                              min_saved_tokens=min_saved_tokens, doc_cache=doc_cache,
+                              vision_cache=default_vision_cache(model))
     return score_image_planned(model, tokenizer, plan, max_options=max_options, device=device,
                                batch_size=batch_size, temperature=temperature, sort=sort,
                                trim_options=trim_options)
@@ -728,7 +804,8 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
                        questions: Sequence[Question], enc: EncodeConfig, *,
                        min_saved_tokens: int | None = None,
                        doc_cache: "DocCache | bool | None" = None,
-                       read_once: bool = True) -> dict:
+                       read_once: bool = True,
+                       vision_cache: "VisionCache | None" = None) -> dict:
     """The model-free half of an image request, run in the request's thread as
     `plan_request` is for text, so the model's thread only runs the model: the
     image processor once, every question encoded, and the choice of path.
@@ -738,13 +815,26 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
     by the same rules as text. For the last two the plan also carries the M-RoPE
     positions of every whole sequence, computed here on the CPU and sliced into
     the prefix's and each suffix's, and, for "doc", each image's key.
-    Raises ValueError when truncation would cut an image."""
+    With `vision_cache` (VisionCache), images seen before skip the image processor
+    here and the vision tower on the model's thread: the plan carries their
+    features. Raises ValueError when truncation would cut an image."""
     from rsijev.vision import IMAGE_PAD, encode_vision_question, expand_state, mrope_position_ids
-    pv, grid, ntok = prep(images)
+    feats = vkey = None
+    if vision_cache is not None:
+        vkey = vision_cache.key(images, prep.tokens_per_image(len(images)),
+                                f"{prep.model_id}|{prep.revision}")
+        hit = vision_cache.get(vkey)
+        if hit is not None:
+            feats, grid, ntok = hit
+            pv = None
+    if feats is None:
+        pv, grid, ntok = prep(images)
     encoded = [encode_vision_question(tokenizer, prep, state, images, q, enc,
                                       prepared=(pv, grid, ntok)) for q in questions]
     plan = {"path": "image", "image_path": "plain", "encoded": encoded, "pixel_values": pv,
-            "grid": grid, "options": [len(q.options) for q in questions]}
+            "grid": grid, "options": [len(q.options) for q in questions],
+            "ntok": list(ntok), "image_feats": feats, "vision_cache": vision_cache,
+            "vision_key": vkey}
     if not read_once:
         return plan
     if doc_cache is None:
@@ -815,6 +905,19 @@ class _ImageState:
         return model.encode_image_prefix(chunk, pos, emb, cache=cache)
 
 
+def _image_feats(model, plan: dict, device) -> torch.Tensor:
+    """The vision tower's output for a plan's images: from the vision cache when the
+    plan found them there, else computed (and kept, when the plan has a cache)."""
+    feats = plan.get("image_feats")
+    if feats is not None:
+        return feats
+    feats = model.image_embeds(plan["pixel_values"].to(device), plan["grid"].to(device))
+    vc = plan.get("vision_cache")
+    if vc is not None:
+        vc.put(plan["vision_key"], feats, plan["grid"], plan["ntok"])
+    return feats
+
+
 @torch.no_grad()
 def score_image_planned(model, tokenizer, plan: dict, *, max_options: int, device,
                         batch_size: int = 16, temperature: float = 1.0,
@@ -828,8 +931,7 @@ def score_image_planned(model, tokenizer, plan: dict, *, max_options: int, devic
     if plan.get("image_path", "plain") != "plain":
         opt = speed_options(sort=sort, trim_options=trim_options)
         img = _ImageState(model, tokenizer, plan["keys"], plan["prefix_positions"],
-                          lambda: model.image_embeds(plan["pixel_values"].to(device),
-                                                     grid.to(device)))
+                          lambda: _image_feats(model, plan, device))
         prefix, npfx = plan["prefix"], plan["npfx"]
         if plan["image_path"] == "doc":
             cache = plan["doc_cache"].get(model, prefix, device, image=img)
@@ -844,7 +946,7 @@ def score_image_planned(model, tokenizer, plan: dict, *, max_options: int, devic
                          row_embeds=tail)
         return ([Prediction(tuple(p)) for p in probs],
                 npfx + sum(len(e["input_ids"]) for e in plan["suffix"]))
-    feats = model.image_embeds(plan["pixel_values"].to(device), grid.to(device))
+    feats = _image_feats(model, plan, device)
     out: list[Prediction] = []
     prompt_tokens = 0
     for i in range(0, len(encoded), batch_size):

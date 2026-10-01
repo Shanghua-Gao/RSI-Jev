@@ -251,6 +251,17 @@ new tail. An agent transcript growing by 50–200 tokens per step drops from 78�
 `tests/test_doc_cache.py`). A cold single question costs one extra pass: 49 ms instead of
 31 ms. Limits are `RSIJEV_DOC_CACHE_ENTRIES` (32) and `RSIJEV_DOC_CACHE_MB` (2048).
 
+**Vision cache** (`RSIJEV_VISION_CACHE=1`, on with `--profile agent`), for image models. The
+vision tower's output is kept per request's images, keyed on their decoded pixels and token
+budget, so the same image asked about again, with any questions, skips the image processor and
+the vision tower. Answers are bit-identical. On v4.0-VL (GB10), 4 questions on a 1,600 px
+photo seen before: 276 -> 143 ms; 640 px: 106 -> 72 ms. Limits are
+`RSIJEV_VISION_CACHE_ENTRIES` (64) and `RSIJEV_VISION_CACHE_MB` (1024).
+
+The vision tower's rotary embedding runs as one fused Triton kernel that reproduces the eager
+arithmetic bit for bit (`serve/kernels.py`): 8–33 ms less per image request on a GB10.
+`RSIJEV_VISION_ROPE=0` turns it off.
+
 **Compile** (`RSIJEV_COMPILE=1`). torch.compile of each decoder layer and the scorer.
 `rsi-jev serve` runs two warm-up requests before it listens: 60 s on a GB10 with compile
 on, about 1 s without. A request of a shape it has not seen yet still compiles once, for
