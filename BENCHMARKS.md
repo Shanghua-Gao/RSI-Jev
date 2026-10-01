@@ -6,31 +6,37 @@ file is the method, and it does not change when a version does.
 
 ## What is scored
 
-**The suite: twelve benchmarks, one weighted mean.** v1.0 was judged on one benchmark;
+**The suite: one weighted mean over many benchmarks.** v1.0 was judged on one benchmark;
 that turned out to be too narrow to tell a real gain from a benchmark-specific one, so
-from v2.0 the headline is a weighted mean over twelve.
+from v2.0 the headline is a weighted mean over twelve. From v3.0 it is over fifteen: v2.1's
+three held-out benchmarks joined the suite. Both weightings are in code (`SUITES` in
+`rsijev/targets_suite.py`); a number is only comparable with a release record when it is
+on that record's suite.
 
-| benchmark | weight | what it is |
-|---|---|---|
-| typed-decisions | 0.20 | `LocalLLaMA/typed-decisions`, test split: 400 documents, 2,000 typed decisions |
-| Nimble public | 0.15 | public classification decisions, ten upstream sources |
-| MMLU-Pro 1k | 0.10 | a guard, not a target: general ability, so decision gains are not bought by forgetting |
-| Jev-Style panel | 0.10 | decisions in Jev's own house style |
-| Kev transfer | 0.08 | decisions from a different generator than the training teacher |
-| Kev hard | 0.08 | items selected for being hard |
-| JevBench | 0.06 | the public JevBench split |
-| Kev documents | 0.05 | long-document decisions |
-| Kev devtools | 0.05 | developer-tooling decisions |
-| Nimble holdout | 0.05 | Nimble items held out of its own public split |
-| procedural | 0.04 | multi-step procedural decisions |
-| Open-Jev OOD | 0.04 | deliberately out-of-distribution documents |
+| benchmark | v3 weight (v3.0 on) | v2 weight (v2.0, v2.1) | what it is |
+|---|---|---|---|
+| typed-decisions | 0.20 | 0.20 | `LocalLLaMA/typed-decisions`, test split: 400 documents, 2,000 typed decisions |
+| Nimble public | 0.121 | 0.15 | public classification decisions, ten upstream sources |
+| MMLU-Pro 1k | 0.081 | 0.10 | a guard, not a target: general ability, so decision gains are not bought by forgetting |
+| Jev-Style panel | 0.081 | 0.10 | decisions in Jev's own house style |
+| Kev transfer | 0.065 | 0.08 | decisions from a different generator than the training teacher |
+| Kev hard | 0.065 | 0.08 | items selected for being hard |
+| JevBench | 0.049 | 0.06 | the public JevBench split |
+| tasksource | 0.05 | – | a broad regrouping of about 600 public task families |
+| SemIf external | 0.05 | – | evidence interpretation and rule application |
+| scienthoon OOD | 0.05 | – | support-ticket triage |
+| Kev documents | 0.041 | 0.05 | long-document decisions |
+| Kev devtools | 0.041 | 0.05 | developer-tooling decisions |
+| Nimble holdout | 0.041 | 0.05 | Nimble items held out of its own public split |
+| procedural | 0.033 | 0.04 | multi-step procedural decisions |
+| Open-Jev OOD | 0.032 | 0.04 | deliberately out-of-distribution documents |
 
 Every split is frozen and decontaminated against the others before it is used.
 
 | metric | what it is |
 |---|---|
 | **pooled top-1** | the fraction of decisions whose highest-probability option matches the teacher's modal label. Pooled across the three question types, because a model can look good on one and fail another |
-| **suite mean** | the weighted mean of per-benchmark top-1 over the table above. The headline from v2.0 on |
+| **suite mean** | the weighted mean of per-benchmark top-1 over the table above, on the release's suite. The headline from v2.0 on |
 | **ECE** | expected calibration error: bin decisions by the confidence the model reported, compare each bin's confidence with its accuracy, average the gaps by bin size. Lower is better. A headline from v2.0 on, because a probability you cannot act on is not an answer |
 | **confident-item top-1** | pooled top-1 restricted to items the benchmark's own teacher was sure about (gold max-probability ≥ 0.67, and ≥ 0.9). On typed-decisions 61% of the split is below 0.67 and carries 75% of the errors, so the pooled figure is largely a measure of how you handle the teacher's own uncertainty |
 | **options reversed** | every question scored twice, once in the dataset's option order and once reversed. A model answering by position scores differently on the two; the gap is the robustness check |
@@ -77,14 +83,19 @@ same bytes we did rather than a copy of ours.
 
 ```bash
 python scripts/suite.py --list                     # every benchmark, its pin and its licence
-python scripts/suite.py --ckpt DIR                 # score all twelve, weighted mean
+python scripts/suite.py --ckpt DIR                 # the fifteen (--suite v3), as v3.0 and v4.0-VL report
+python scripts/suite.py --ckpt DIR --suite v2      # the twelve, as v2.0 and v2.1 report
 python scripts/suite.py --ckpt DIR --only kev_hard_v1
 ```
 
 The loaders read a few upstream checkouts from the environment — `KEV_ROOT`,
 `NIMBLE_ROOT`, `JEVBENCH_ROOT` and the rest. None has a default: a default would be one
 author's filesystem, which is how v1.0 shipped a lab path inside a checkpoint. `--list`
-names the variable each benchmark needs, and a loader that is missing one says so.
+names the variable each benchmark needs, and a loader that is missing one stops the run
+and says so; no benchmark is skipped silently. With `--only`, the mean is renormalised over
+the weight scored, and the script names the benchmarks it left out. Files fetched by URL
+(HANS, in the Jev-Style panel) are cached under `~/.cache/rsi-jev-benches`, or
+`$RSIJEV_BENCH_CACHE`, and checked against a pinned sha256.
 
 Two are read in canonical and reversed option order; `nimble_public` and `jev_style_panel`
 are averaged over their subsets rather than pooled, because that is what their authors
