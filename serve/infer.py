@@ -331,34 +331,8 @@ def _replicate(cache, rows: int, device):
             # question.
             if isinstance(val, (list, dict)):
                 setattr(dst, attr, val.copy())
-    idx = torch.zeros(rows, dtype=torch.long, device=device)
-    if not all(type(layer).__name__ in _REPLICATE_TYPES for layer in replica.layers):
-        replica.reorder_cache(idx)
-        return replica
-    for layer in replica.layers:
-        # Attention keys and values are only read before the forward's torch.cat
-        # makes the next ones, so a broadcast view of the prefix serves every row
-        # without a copy (bit-identical: the same values). The DeltaNet states are
-        # updated in place and read contiguous by the kernels, so they are copied.
-        keys = getattr(layer, "keys", None)
-        if isinstance(keys, torch.Tensor) and keys.dim() > 0:
-            layer.keys = keys.expand(rows, *keys.shape[1:])
-            layer.values = layer.values.expand(rows, *layer.values.shape[1:])
-        for attr in ("conv_states", "recurrent_states"):
-            val = getattr(layer, attr, None)
-            if isinstance(val, dict):
-                for k, t in val.items():
-                    if isinstance(t, torch.Tensor):
-                        val[k] = t.index_select(0, idx)
-            elif isinstance(val, list):
-                setattr(layer, attr, [t.index_select(0, idx) if isinstance(t, torch.Tensor)
-                                      else t for t in val])
+    replica.reorder_cache(torch.zeros(rows, dtype=torch.long, device=device))
     return replica
-
-
-# Cache layers `_replicate` knows every state of (transformers 5.17, Qwen3.5); any
-# other layer type goes through reorder_cache.
-_REPLICATE_TYPES = {"DynamicLayer", "LinearAttentionLayer"}
 
 
 def model_fingerprint(model) -> str:
