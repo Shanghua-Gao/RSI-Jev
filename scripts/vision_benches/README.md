@@ -6,7 +6,7 @@ the card's table with the same prompts and the same statistics. Where another sy
 per-question predictions are public, the comparison is paired on the same items.
 
 ```bash
-pip install "rsi-jev[vision]" pandas pyarrow scipy        # pandas/pyarrow/scipy: the upstream loaders and stats
+pip install -e ".[vision]" pandas pyarrow scipy          # from a clone of this repo; pandas/pyarrow/scipy: the upstream loaders and stats
 ```
 
 Every script takes `--model` (default `v4.0-vl-2b`, an in-process `Decider`; also a Hub

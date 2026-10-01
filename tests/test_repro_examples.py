@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -332,9 +333,15 @@ def test_laya_compare_pairs_items(tmp_path):
     assert allp["diff"][3:5] == (10, 0)             # McNemar discordant counts
 
 
-def test_bench_scripts_name_no_internal_paths():
+# An absolute filesystem path (a machine's own directory layout) or a Windows drive path.
+# URL paths such as /v1/systemone do not match: they start at none of these roots.
+ABS_PATH = re.compile(r"(?<![\w.~:/-])/(?:home|Users|root|mnt|media|scratch|data|opt|srv|var|tmp|net|n|gpfs|lustre|work|private)/[\w.-]"
+                      r"|\b[A-Za-z]:\\[\w.-]")
+
+
+def test_bench_scripts_name_no_absolute_paths():
+    """Everything a reader runs must work from a clone: paths are relative to the repo."""
     for p in [*VB.glob("*.py"), *VB.glob("*.md"), *EX.rglob("*.py"), *EX.rglob("*.md"), *EX.rglob("*.mjs"),
               *EX.rglob("*.json"), *EX.rglob("*.sh")]:
-        text = p.read_text()
-        for bad in ("/home/", "/n/hol", "rc-G0", "rc-C-vis", "v4_demo", "vision_demo", "guard.py"):
-            assert bad not in text, f"{p.relative_to(ROOT)} mentions {bad}"
+        m = ABS_PATH.search(p.read_text())
+        assert m is None, f"{p.relative_to(ROOT)} has an absolute path: {m.group(0)!r}"

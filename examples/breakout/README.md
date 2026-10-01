@@ -19,7 +19,7 @@ git clone https://github.com/hr98w/jev-visual
 git -C jev-visual checkout 4382bba455647400951429134ceb012ca155e3fe
 
 # 2. the model
-pip install "rsi-jev[vision]"
+pip install -e ".[vision]"            # from a clone of this repo
 rsi-jev serve v4.0-vl-2b --port 8000
 
 # 3. the adapter, in another terminal: serves their pages and /v1/judge on :8788

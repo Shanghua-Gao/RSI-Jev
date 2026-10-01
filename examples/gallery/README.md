@@ -1,12 +1,12 @@
 # The demo gallery, re-runnable
 
-The gallery in the v4.0-VL card (section 4.3) is 143 pictures with 227 questions: road
+The gallery in the v4.0-VL card (section 4.3) is 143 items (89 images) with 227 questions: road
 scenes, "is it really there?", counting, charts, screens and factory parts. Every
 question has a reference answer, and every miss is kept. This folder has all of it,
 images included, and a runner that scores it through the public API.
 
 ```bash
-pip install "rsi-jev[vision]"
+pip install -e ".[vision]"            # from a clone of this repo
 python examples/gallery/run.py                                  # in-process Decider, v4.0-vl-2b from the Hub
 python examples/gallery/run.py --compare --out answers.json     # also diff against the release run
 ```

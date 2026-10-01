@@ -32,15 +32,16 @@ factory photos, with no defect examples, it scores 86.6 AUROC, against 82.9 for 
 <p align="center">
   <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
+  <br><sub>Capsules photo from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
 </p>
 <p align="center">
-  <img src="site/assets/v4/breakout.gif" width="640" alt="RSI-Jev v4.0-VL playing Breakout: each frame it picks which of five lanes holds the ball">
-  <br><sub>Breakout from pixels: each frame, it says which of five lanes the ball is in. Game from hr98w/jev-visual (MIT); photos from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+  <a href="https://shanghua-gao.github.io/RSI-Jev/#images"><img src="site/assets/v4/breakout-poster.webp" width="640" alt="RSI-Jev v4.0-VL playing Breakout: each frame it picks which of five lanes holds the ball"></a>
+  <br><sub>Breakout from pixels: each frame, it says which of five lanes the ball is in (video on the project page). Game from hr98w/jev-visual (MIT).</sub>
 </p>
 
 On 30 image questions from the gallery pools, v4.0-VL served over HTTP answered in 69 ms
-(median) with a probability for every option. Its base model, Qwen3.5-2B, run as a chat model
-that writes a JSON answer, took 540 ms and gives no probability. Both were run on a GB10, one
+(median) with a probability for every option. Qwen3.5-2B, the chat model released beside the
+base it is built on, writing a JSON answer, took 540 ms and gives no probability. Both were run on a GB10, one
 request at a time.
 
 <p align="center">
@@ -48,7 +49,7 @@ request at a time.
   <br><sub>A replay of measured timings, not a live recording. The checkout screen and chart are ours; dog photo by Joselodos (CC0); capsules from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
 </p>
 
-To try it in Colab: [`notebooks/rsi_jev_v4_vl_quickstart.ipynb`](notebooks/rsi_jev_v4_vl_quickstart.ipynb).
+To try it in Colab: [`notebooks/rsi_jev_v4_vl_quickstart.ipynb`](https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v4_vl_quickstart.ipynb).
 
 To re-run what is shown here: the gallery ([`examples/gallery/`](examples/gallery/)), the chat-model
 comparison ([`examples/chat_vs_rsi/`](examples/chat_vs_rsi/)), Breakout ([`examples/breakout/`](examples/breakout/))
@@ -63,7 +64,7 @@ and the image benchmarks ([`scripts/vision_benches/`](scripts/vision_benches/)).
 **v4.0-VL**, the current release, **reads images.** Send one to four pictures with a request —
 a photo, a screenshot, a scanned page — and ask the same typed questions about them. On five
 image benchmarks held out from training it answers 80.3% correctly, and 45.8% with the images
-blanked out. On text it keeps v3.0's level (suite 0.756). It is v3.0's lineage with three rounds
+blanked out. On text it keeps v3.0's level (suite 0.756). It is v3.0's lineage with two rounds
 of image training and a new RL stage that charges a confident mistake four times what it charges
 a timid correct answer. [`versions/v4.0-vl.md`](versions/v4.0-vl.md) is its record.
 
@@ -125,12 +126,12 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | a listwise reranking reward (NDCG@5 over 16 candidates) on top, against a KL anchor | hippo R@1 0.192 → 0.308, suite −0.003 | **the first RL stage kept**: a reward over the *order* of candidates carries what per-item labels cannot |
 | **v3.0** | suite **0.756**, ECE **0.066** | **the first release where RL works**: +60% reranking R@1 over its supervised parent, the rest held level |
 | image training on the train splits of twelve public datasets, with text replay | held-out image top-1 0.809 against 0.796 for a text-only control | the model reads images through the base model's frozen vision tower |
-| generated reasoning questions with soft targets where the model is at chance | held-out ECE after calibration 0.121 → 0.075 | the image rounds had made it overconfident; this repairs most of it |
+| generated reasoning questions with soft targets where the model is at chance | held-out ECE after calibration, BBH excluded, 0.096 → 0.075 | the image rounds had made it overconfident; this repairs most of it |
 | an RL stage charging a confident mistake 4x a timid correct answer | held-out ECE before calibration 0.200 → 0.082 | against a matched supervised stage: better accuracy and calibration, no detectable ranking difference (one seed) |
 | **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
 
-The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm and why
-each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
+The animation covers the cycle through v1.0 · [`EXPLORE.md`](EXPLORE.md) has every arm through v3.0,
+and the v4.0-VL lineage, with why each failed · [`versions/v1.0.md`](versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## RSI-Jev models
@@ -240,7 +241,7 @@ git clone https://github.com/Shanghua-Gao/RSI-Jev && cd RSI-Jev && pip install -
 | **Serve** | `python scripts/serve.py --ckpt DIR` | `POST /v1/systemone`, Jev's own request and answer shapes → [`serve/README.md`](serve/README.md). `--ckpt` also takes a Hugging Face id |
 | **Load** | `load_release(path, device="cuda")` | from `scripts/load_release.py`; a published checkpoint carries its own code |
 | **Score the suite** | `python scripts/suite.py --ckpt DIR` | the table above; `--list` names each benchmark's pinned source |
-| **Retrain** | `python scripts/release_train.py` | one H100, ~50 min per seed at 2B → [`rsijev/README.md`](rsijev/README.md) |
+| **Retrain** | `python scripts/release_train.py` | v3.0's text recipe: one H100, ~50 min per seed at 2B; the v4.0-VL image stages need an 80 GB GPU → [`rsijev/README.md`](rsijev/README.md) |
 | **Measure** | `bench.py`, `calibration.py`, `routing.py` | these tables, on your hardware → [`BENCHMARKS.md`](BENCHMARKS.md) |
 
 Runs on an **HP ZGX Nano** (NVIDIA GB10, where it is developed), any CUDA GPU, Apple Silicon, or plain

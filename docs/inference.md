@@ -55,8 +55,8 @@ document cache had the same fault on every hit. Both are fixed now, and
 ## Quick start
 
 ```bash
-pip install "rsi-jev[fast] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b --port 8000
+pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve shgao/rsi-jev-v4.0-vl-qwen3.5-2b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -65,10 +65,10 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 # {"model":"jev-latest","answers":{"refund":{"type":"noul","noul":0.9948}},"usage":{"input_tokens":42,"output_tokens":1}}
 ```
 
-The first run downloads the checkpoint (5.3 GB) and its base model into the standard
+The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v3.0-qwen3.5-2b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v4.0-vl-qwen3.5-2b`;
 - an alias: `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
@@ -93,7 +93,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v3.0-qwen3.5-2b")
+d = Decider("shgao/rsi-jev-v4.0-vl-qwen3.5-2b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -103,15 +103,17 @@ with the server's schema and runs the server's request path, so `decide` returns
 the `answers` object of `POST /v1/systemone` (`tests/test_easy_infer.py`).
 
 From a clone, without installing, run
-`pip install -r requirements.txt && python scripts/serve.py --ckpt shgao/rsi-jev-v3.0-qwen3.5-2b`.
+`pip install -r requirements.txt pillow torchvision && python scripts/serve.py --ckpt shgao/rsi-jev-v4.0-vl-qwen3.5-2b`.
 
 ### Images
 
-A release trained with images (v4.0-VL on) also answers questions about 1–4 images. Install
-the extra (`pip install "rsi-jev[vision]"`: Pillow and torchvision), then send the images
+A release trained with images (v4.0-VL on) also answers questions about 1–4 images. It needs
+the `vision` extra (Pillow and torchvision), which the quick start installs. Send the images
 as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
+from rsijev import Decider
+d = Decider("shgao/rsi-jev-v4.0-vl-qwen3.5-2b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL

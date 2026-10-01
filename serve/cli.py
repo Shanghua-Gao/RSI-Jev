@@ -1,8 +1,8 @@
 """`rsi-jev`: the command installed with the package.
 
-    rsi-jev serve shgao/rsi-jev-v3.0-qwen3.5-2b [--port 8000] [--profile agent|server]
-    rsi-jev bench [v3.0-2b]
-    rsi-jev download v3.0-2b         # fetch into the Hugging Face cache, print the path
+    rsi-jev serve shgao/rsi-jev-v4.0-vl-qwen3.5-2b [--port 8000] [--profile agent|server]
+    rsi-jev bench [v4.0-vl-2b]
+    rsi-jev download v4.0-vl-2b      # fetch into the Hugging Face cache, print the path
     rsi-jev demo v4.0-vl-2b          # the playground page, images included
     rsi-jev env                      # torch, device, kernels and the [vision] extra, no model loaded
 

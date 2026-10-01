@@ -44,7 +44,7 @@ with fla, probabilities rounded to three places. `tests/test_documented_example.
 it against the checkpoint. Note that `score` is an index into the rubric, so 1.081 is
 "Urgent", not a fraction of the scale.
 
-The model is a checkpoint directory, a Hugging Face repo id, or an alias (`v3.0-2b`,
+The model is a checkpoint directory, a Hugging Face repo id, or an alias (`v4.0-vl-2b`, `v3.0-2b`,
 `v2.1-2b`, `v2.0-2b`, `v1.0-2b`, `v1.0-0.8b`). A repo id is downloaded once into the
 standard Hugging Face cache. The same request from Python, with no server:
 
@@ -214,7 +214,7 @@ inference procedures despite receiving equivalent payloads."*
   model never saw would be guessing; it arrives together with a model trained on it.
 - **A state longer than the model's context is cut from the start.** The encoder keeps the
   question, the options and the answer cue whole and drops the *beginning* of the state
-  until the request fits (2,048 tokens for v1.0–v3.0; `rsijev/encode.py`). Nothing reports
+  until the request fits (2,048 tokens for v1.0–v4.0-VL; `rsijev/encode.py`). Nothing reports
   that it happened. So a request that puts its query first — `"Query: …"` followed by long
   candidates — loses the query, and the answer is about text the model never saw the
   question for. Keep states under the limit, or put what matters last.

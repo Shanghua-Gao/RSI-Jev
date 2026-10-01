@@ -1,6 +1,6 @@
 """The same checks over HTTP, against `rsi-jev serve`.
 
-    pip install "rsi-jev[vision]"
+    pip install -e ".[vision]"                      # from a clone of this repo
     rsi-jev serve v4.0-vl-2b --port 8000           # in another terminal
     python examples/image_http.py [http://127.0.0.1:8000]
 

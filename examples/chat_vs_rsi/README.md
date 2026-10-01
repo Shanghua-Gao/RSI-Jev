@@ -12,7 +12,7 @@ What this shows is **latency and output validity**. The accuracy comparison is
 unresolved; see below.
 
 ```bash
-pip install "rsi-jev[vision]"
+pip install -e ".[vision]"            # from a clone of this repo
 bash examples/chat_vs_rsi/run.sh            # needs a CUDA GPU; writes rsi.json, chat.json, results.md, the GIF
 ```
 

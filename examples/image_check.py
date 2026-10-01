@@ -1,6 +1,6 @@
 """Ask a vision release about images, in-process.
 
-    pip install "rsi-jev[vision]"
+    pip install -e ".[vision]"                      # from a clone of this repo
     python examples/image_check.py                 # v4.0-vl-2b from the Hugging Face Hub
     python examples/image_check.py path/to/release
 

@@ -532,4 +532,4 @@ early exit, image games, further RL and data rounds) are not written up here yet
 | `calB-rl` | RL | not a release candidate | 0.7551 | 0.6875 | 0.3660 | bandit RL on the same questions with true answers: BBH web_of_lies .52 → .91; without BBH, lower accuracy than its parent and ECE .087 after calibration |
 | `calC-ctl` | control | control | 0.7537 | 0.6394 | 0.3630 | replay-only control for `calA-ce` and `calB-rl` |
 | `asym-calA` | RL | **kept = v4.0-VL** | 0.7564 | 0.6528 | 0.3850 | asymmetric RL stage on `calA-ce` (a confident mistake costs 4× a timid correct answer), 30% image rows: raw final ECE .200 → .082 |
-| `ce-calA` | control | control | 0.7578 | 0.6439 | 0.3750 | the matched supervised stage for `asym-calA`: same data, steps and seed; raw final ECE .121 |
+| `ce-calA` | control | control | 0.7579 | 0.6442 | 0.3750 | the matched supervised stage for `asym-calA`: same data, steps and seed; raw final ECE .121. Scores from the release gate eval job, as in the card |

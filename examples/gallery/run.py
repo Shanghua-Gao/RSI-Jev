@@ -1,6 +1,6 @@
 """Score the demo gallery: every picture and question in questions.json, through the public API.
 
-    pip install "rsi-jev[vision]"
+    pip install -e ".[vision]"                      # from a clone of this repo
     python examples/gallery/run.py                          # v4.0-vl-2b from the Hub, in-process (Decider)
     python examples/gallery/run.py --model path/to/checkpoint
     python examples/gallery/run.py --server http://127.0.0.1:8000    # against `rsi-jev serve`
