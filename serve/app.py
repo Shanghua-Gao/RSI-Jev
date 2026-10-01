@@ -132,17 +132,30 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-def _split(result, plan=None):
-    """A scorer's or worker's result -> (probs, prompt_tokens, truncated or None).
+EXTRAS = ("truncated", "depth")
 
-    A scorer returns (probs, tokens), or (probs, tokens, truncated) when the model is
-    served with the long-context encoder (serve.infer.truncation_report); a worker's
-    plan carries the same report under "truncated"."""
+
+def _split(result, plan=None):
+    """A scorer's or worker's result -> (probs, prompt_tokens, extras).
+
+    A scorer returns (probs, tokens), or (probs, tokens, extras) where extras may hold
+    "truncated" (the long-context encoder's report, serve.infer.truncation_report) and
+    "depth" (the exit each question used, for models with aux exits). A worker's plan
+    carries the same keys. extras is {} for every other model."""
     probs, tokens = result[0], result[1]
-    truncated = result[2] if len(result) > 2 else None
-    if truncated is None and isinstance(plan, dict):
-        truncated = plan.get("truncated")
-    return probs, tokens, truncated
+    extras = dict(result[2]) if len(result) > 2 and result[2] else {}
+    if isinstance(plan, dict):
+        for k in EXTRAS:
+            if extras.get(k) is None and plan.get(k) is not None:
+                extras[k] = plan[k]
+    return probs, tokens, {k: v for k, v in extras.items() if v is not None}
+
+
+def _with_depth(usage: dict, questions, extras: dict) -> dict:
+    """usage["depth"] = {question key: decoder layers run}, when the model reports it."""
+    if extras.get("depth") is not None:
+        usage["depth"] = {q.key: int(d) for q, d in zip(questions, extras["depth"])}
+    return usage
 
 
 def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
@@ -152,7 +165,8 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
     `serve.decider.Decider` calls this, and the route runs the same `prepare` and
     `finish` around the same scorer, so the Python API and the HTTP API cannot give
     different answers to the same request. `report`, if given, receives
-    "truncated" (what the long-context encoder cut, or None)."""
+    "truncated" (what the long-context encoder cut, or None). usage carries "depth"
+    for a model with aux exits."""
     t0 = time.perf_counter()
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
@@ -161,15 +175,16 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
 
     t1 = time.perf_counter()
     if lock is None:
-        probs, prompt_tokens, truncated = _split(scorer(*args))
+        probs, prompt_tokens, extras = _split(scorer(*args))
     else:
         with lock:
-            probs, prompt_tokens, truncated = _split(scorer(*args))
+            probs, prompt_tokens, extras = _split(scorer(*args))
     infer_ms = (time.perf_counter() - t1) * 1000
     if report is not None:
-        report["truncated"] = truncated
+        report["truncated"] = extras.get("truncated")
 
     answers, usage = finish(questions, probs, prompt_tokens)
+    _with_depth(usage, questions, extras)
     return answers, usage, prepared_ms, infer_ms
 
 
@@ -235,10 +250,12 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
             plan = await run_in_threadpool(worker.plan, state, questions, pics)
         else:
             plan = worker.plan(state, questions, pics)
-        probs, prompt_tokens, truncated = _split(
+        probs, prompt_tokens, extras = _split(
             await asyncio.wrap_future(worker.enqueue(plan)), plan)
         infer_ms = (time.perf_counter() - t1) * 1000
         answers, usage = finish(questions, probs, prompt_tokens)
+        _with_depth(usage, questions, extras)
+        truncated = extras.get("truncated")
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}
         # Only a model served with the long-context encoder reports what it cut;

@@ -1,11 +1,13 @@
 """Releases without an early exit, a recorded cap or a truncation policy (v1.0 through
-v4.0-VL) are served exactly as before the 4B exit work.
+v4.0-VL) are served exactly as before the 4B exit work, and fixed-exit releases without
+aux exits exactly as before adaptive exit.
 
 The same tiny random Qwen3.5 (text + vision, no exit) is run through the serving
 paths by this tree and by the tree it was cut from (`git archive BASE_REV`), each
 in its own process: plain, read once, document cache, image states plain and read
 once, and the encoder on a state over the cap. Every probability and every encoded
-id must be bit-for-bit the same. Skips without git history.
+id must be bit-for-bit the same. The same for an exit-4 model against 6362d36 (the exit
+port, before adaptive exit). Skips without git history.
 
     python -m pytest tests/test_old_releases_unchanged.py -q
 """
@@ -27,10 +29,11 @@ pytest.importorskip("torchvision")
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE_REV = "0af7fe0"            # v4-vision-serve: the serving code of v4.0-VL
+EXIT_REV = "6362d36"            # big4b-serve: the exit port, before adaptive exit
 
 SCRIPT = r'''
 import json, sys
-root, out = sys.argv[1], sys.argv[2]
+root, out, exit_layer = sys.argv[1], sys.argv[2], int(sys.argv[3])
 sys.path[:0] = [root]
 from serve.runtime import keep_fused_kernels_off
 keep_fused_kernels_off("cpu")
@@ -64,7 +67,8 @@ torch.manual_seed(1)
 visual = Qwen3_5VisionModel(vc).eval()
 torch.manual_seed(5)
 arch = ArchConfig(max_options=8, freeze_base=True, readout="option_xattn", xattn_combine="mlp",
-                  xattn_mlp_hidden=16, readout_layer=-1)
+                  xattn_mlp_hidden=16, readout_layer=-1,
+                  **({"exit_layer": exit_layer} if exit_layer else {}))
 vm = VisionDecisionModel(tower, 64, arch, visual=visual, image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD)).eval()
 enc = EncodeConfig(layout="state_first", option_pool="mean", option_order="canonical")
 venc = EncodeConfig(layout="state_first", option_pool="mean", option_order="canonical", max_length=2048 + 64)
@@ -98,11 +102,11 @@ json.dump(res, open(out, "w"))
 '''
 
 
-def _run(root: Path) -> dict:
+def _run(root: Path, exit_layer: int = 0) -> dict:
     out = Path(tempfile.mkdtemp()) / "out.json"
     script = Path(tempfile.mkdtemp()) / "run.py"
     script.write_text(SCRIPT)
-    p = subprocess.run([sys.executable, str(script), str(root), str(out)], capture_output=True,
+    p = subprocess.run([sys.executable, str(script), str(root), str(out), str(exit_layer)], capture_output=True,
                        text=True, env={**os.environ, "CUDA_VISIBLE_DEVICES": ""}, cwd=str(root))
     if p.returncode != 0 and ("OSError" in p.stderr or "offline" in p.stderr.lower()):
         pytest.skip(f"Qwen3.5 tokenizer / image processor unavailable: {p.stderr[-300:]}")
@@ -110,15 +114,17 @@ def _run(root: Path) -> dict:
     return json.loads(out.read_text())
 
 
-def test_non_exit_serving_is_bitwise_unchanged():
+@pytest.mark.parametrize("rev,exit_layer", [(BASE_REV, 0), (EXIT_REV, 4)],
+                         ids=["no_exit_vs_v4.0-VL", "fixed_exit_vs_exit_port"])
+def test_serving_is_bitwise_unchanged(rev, exit_layer):
     try:
-        blob = subprocess.run(["git", "-C", str(ROOT), "archive", BASE_REV, "rsijev", "serve"],
+        blob = subprocess.run(["git", "-C", str(ROOT), "archive", rev, "rsijev", "serve"],
                               check=True, capture_output=True).stdout
     except Exception:                                                   # noqa: BLE001
-        pytest.skip(f"git history with {BASE_REV} unavailable")
+        pytest.skip(f"git history with {rev} unavailable")
     base = Path(tempfile.mkdtemp())
     tarfile.open(fileobj=BytesIO(blob)).extractall(base, filter="data")
-    old, new = _run(base), _run(ROOT)
+    old, new = _run(base, exit_layer), _run(ROOT, exit_layer)
     assert set(old) == set(new)
     for k in old:
         assert new[k] == old[k], k

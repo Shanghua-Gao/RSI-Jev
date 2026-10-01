@@ -57,7 +57,7 @@ class Served:
 
 def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None,
                      revision: str | None = None, max_length: int | None = None,
-                     truncate: str | None = None) -> Served:
+                     truncate: str | None = None, fixed_exit: bool | None = None) -> Served:
     """Resolve `ref`, load it the way the server does, and apply the opt-in speed
     paths the environment asks for (RSIJEV_COMPILE; the document cache needs
     nothing here).
@@ -65,7 +65,7 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     `max_length` and `truncate` override the input cap and the over-cap policy the
     checkpoint's meta.json gives (serve.release.load_release; RSIJEV_MAX_LENGTH and
     RSIJEV_TRUNCATE do the same). Left unset, every release is served as it was
-    trained."""
+    trained. `fixed_exit` (RSIJEV_FIXED_EXIT) turns a release's adaptive exit off."""
     import torch
     from serve.accel import apply_env
     from serve.runtime import keep_fused_kernels_off
@@ -75,7 +75,8 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     dtype_name = dtype or default_dtype_name(device)
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype,
-                                         max_length=max_length, truncate=truncate)
+                                         max_length=max_length, truncate=truncate,
+                                         fixed_exit=fixed_exit)
     applied = apply_env(model)
     name = checkpoint_name(ref, path)
     s = Served(model, tok, enc, meta, device, dtype_name, path, name,
@@ -116,8 +117,9 @@ def make_scorer(s: Served, batch_size: int = 16):
 
     def scorer(state: str, questions, images=None):
         """score_questions_cached / score_image_questions_cached, split into plan and
-        run so the plan's `truncated` report reaches the response. A third element is
-        returned only for a model served with the long-context encoder."""
+        run so the plan's reports reach the response. A third element ({"truncated",
+        "depth"}) is returned only for a model served with the long-context encoder or
+        one with aux exits."""
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
         if images:
             if s.prep is None:
@@ -138,7 +140,8 @@ def make_scorer(s: Served, batch_size: int = 16):
             preds, tokens = score_planned(s.model, s.tok, plan, max_options=mo,
                                           device=s.device, batch_size=batch_size)
         out = [list(p.probs) for p in preds], tokens
-        return out if plan.get("truncated") is None else (*out, plan["truncated"])
+        extras = {k: plan[k] for k in ("truncated", "depth") if plan.get(k) is not None}
+        return (*out, extras) if extras else out
 
     return scorer
 
@@ -214,6 +217,11 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                          "v4.0-VL); 'middle' keeps its first line, head and tail around a "
                          "marker, and responses then carry a `truncated` field. Default: "
                          "meta.json spec.truncate, else left. Also RSIJEV_TRUNCATE.")
+    ap.add_argument("--fixed-exit", action="store_true",
+                    default=os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower()
+                    not in ("", "0", "false", "no", "off"),
+                    help="serve a release with adaptive exit at its fixed (main) exit for "
+                         "every request. Also RSIJEV_FIXED_EXIT=1.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -233,7 +241,8 @@ def serve(a: argparse.Namespace) -> int:
 
     s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision,
                          max_length=getattr(a, "max_length", None),
-                         truncate=getattr(a, "truncate", None))
+                         truncate=getattr(a, "truncate", None),
+                         fixed_exit=getattr(a, "fixed_exit", None) or None)
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
     from serve.batcher import model_worker
@@ -271,6 +280,12 @@ def serve(a: argparse.Namespace) -> int:
               flush=True)
     elif il.get("reason"):
         print(f"images: off ({il['reason']})", flush=True)
+    sv = s.meta.get("serving") or {}
+    if sv.get("adaptive"):
+        print(f"adaptive exit: exits {sv['adaptive']['exits']}, tau {sv['adaptive']['tau']} "
+              f"(single-question requests; usage.depth reports the layers run)", flush=True)
+    elif sv.get("adaptive_off"):
+        print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
     print(f"input cap {s.enc.max_length} tokens, over-cap states cut "
           + ("in the middle (responses report `truncated`)" if s.enc.truncate == "middle"
              else "from the start"), flush=True)

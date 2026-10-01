@@ -168,6 +168,9 @@ class ModelRunner:
                              device=self.device, batch_size=self.max_rows,
                              max_tokens=self.max_tokens, sort=opt["sort"],
                              trim_options=opt["trim_options"])
+        from serve.infer import fixed_depth
+        for p in plans:                      # pooled rows always take the fixed exit
+            fixed_depth(self.model, p)
         out = [([], 0) for _ in plans]
         for j, r, pr in zip(owner, rows, probs):
             out[j][0].append(list(Prediction(tuple(pr)).probs))

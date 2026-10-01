@@ -639,11 +639,99 @@ def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: Enco
             "truncated": truncation_report(encoded, enc)}
 
 
+def reports_depth(model) -> bool:
+    """Whether responses carry the exit depth: models with aux exits only (every other
+    release's response keeps its shape)."""
+    return bool(getattr(getattr(model, "cfg", None), "aux_exits", ()))
+
+
+def fixed_depth(model, plan: dict) -> None:
+    """Record the exit every question of `plan` used on a fixed-exit path."""
+    if reports_depth(model):
+        plan["depth"] = [int(model.cfg.exit_layer)] * len(plan["encoded"])
+
+
+def adaptive_applies(model, plan: dict) -> bool:
+    """Adaptive exit serves single-question text requests read in full or through the
+    document cache. Multi-question and pooled (micro-batched) requests, and image
+    requests (the aux heads were trained on text), keep the fixed exit.
+    TODO: multi-question requests once AX-2 decides (rsijev.adaptive.staged_scores_bucketed)."""
+    return (getattr(model, "adaptive_policy", None) is not None and len(plan["encoded"]) == 1
+            and plan.get("path") in ("plain", "doc"))
+
+
+def _adaptive_finalizer(model, policy, mode_id):
+    """The calibration each answered row gets, by the exit that answered it: the
+    release's own cal-4b (cal_mode) at the main exit, exactly as DecisionModel._readout
+    applies it, and that exit's DEV-fitted cal-4b at an aux exit. A release without a
+    calibration answers raw at every exit."""
+    from rsijev import adaptive as A
+    main = int(model.cfg.exit_layer)
+
+    def fin(L, z, dh, rows):
+        if model.cal_mode == "none":
+            return z
+        with torch.autocast(z.device.type, enabled=False):
+            if int(L) == main:
+                log_t = model.cal_log_temperature(z.float(), dh.float(), mode_id[rows])
+                return z.float() / torch.exp(log_t).unsqueeze(-1)
+            log_t = A.calibrate_logt(z.float(), dh.float(), mode_id[rows], policy.cal[int(L)])
+            return z.float() / torch.exp(log_t)[:, None]
+    return fin
+
+
+@torch.no_grad()
+def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
+                   temperature: float = 1.0):
+    """Run a single-question plan with adaptive exit (rsijev.adaptive.staged_scores):
+    the text model runs exit to exit (e.g. 12, 16, 20) and the question stops at the
+    first exit whose calibrated top-1 probability reaches the release's tau. Sets
+    plan["depth"]. Returns (predictions, prompt_tokens), as score_planned.
+
+    Through the document cache, each stage continues from a replica of the cached
+    prefix made for that stage's layers only (rsijev.adaptive.StageReplica); the
+    cached prefix itself is never written."""
+    from rsijev import adaptive as A
+    policy = model.adaptive_policy
+    encoded, npfx, kw = plan["encoded"], 0, {}
+    rows = encoded
+    cache = None
+    if plan["path"] == "doc":
+        npfx = len(plan["prefix"]) - plan["doc_cache"].holdback
+        cache = plan["doc_cache"].get(model, plan["prefix"][:npfx], device)
+        rows = _suffixes(encoded, npfx)
+    batch = collate(tokenizer, rows, max_options=max_options, device=device,
+                    option_tokens=_needs_option_tokens(model))
+    if cache is not None:
+        n, w = len(rows), batch["input_ids"].shape[1]
+        batch["attention_mask"] = torch.cat(
+            [torch.ones((n, npfx), dtype=batch["attention_mask"].dtype, device=device),
+             batch["attention_mask"]], dim=1)
+        kw = {"stage_cache": A.StageReplica(cache, device),
+              "position_ids": (torch.arange(w, device=device) + npfx).unsqueeze(0).expand(n, w)}
+    z, depth = A.staged_scores(model._exit_text, {L: model.exit_scorer(L) for L in policy.exits},
+                               policy, batch, option_pool=model.cfg.option_pool,
+                               logit_cap=model.cfg.logit_cap,
+                               finalize=_adaptive_finalizer(model, policy, batch["mode_id"]), **kw)
+    logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature
+    probs = F.softmax(logits, dim=-1).float().cpu()
+    plan["depth"] = [int(d) for d in depth.tolist()]
+    preds = [Prediction(tuple(probs[r, :len(e["option_index"])].tolist())) for r, e in enumerate(rows)]
+    return preds, npfx + sum(len(e["input_ids"]) for e in rows)
+
+
 @torch.no_grad()
 def score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
                   batch_size: int = 16, temperature: float = 1.0,
                   sort: bool | None = None, trim_options: bool | None = None):
-    """Run a plan_request plan. Returns (predictions, prompt_tokens)."""
+    """Run a plan_request plan. Returns (predictions, prompt_tokens).
+
+    A model with an adaptive-exit policy answers a single-question plan through
+    score_adaptive; everything else runs the fixed exit."""
+    if adaptive_applies(model, plan):
+        return score_adaptive(model, tokenizer, plan, max_options=max_options, device=device,
+                              temperature=temperature)
+    fixed_depth(model, plan)
     opt = speed_options(sort=sort, trim_options=trim_options)
     kw = dict(max_options=max_options, device=device, batch_size=batch_size,
               temperature=temperature, sort=opt["sort"], trim_options=opt["trim_options"])
@@ -840,6 +928,7 @@ def score_image_planned(model, tokenizer, plan: dict, *, max_options: int, devic
     suffix through `run_rows` ("cached", "doc"). Returns (predictions, prompt_tokens)."""
     from rsijev.vision import mrope_position_ids
     model.eval()
+    fixed_depth(model, plan)
     encoded, grid = plan["encoded"], plan["grid"]
     if plan.get("image_path", "plain") != "plain":
         opt = speed_options(sort=sort, trim_options=trim_options)

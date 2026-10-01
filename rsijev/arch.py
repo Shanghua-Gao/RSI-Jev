@@ -178,6 +178,16 @@ class ArchConfig:
     # tap-final parent sees inputs at the scale it was trained on. False = the
     # raw tap, exactly readout_layer=exit_layer on the full tower.
     exit_norm: bool = True
+    # jevtr_v1_adaexit: ADAPTIVE early exit. Extra readout heads at shallower exits
+    # (hidden-state indices < exit_layer, same convention as exit_layer), each its
+    # own OptionScorer reading the text model's final norm applied to that state
+    # (exit_norm semantics). The main scorer still reads exit_layer, and forward()
+    # returns ONLY its logits, so with the aux heads ignored the model is exactly the
+    # fixed-exit model. forward_exits() returns every exit's logits (deep-supervision
+    # training, per-exit eval); rsijev/adaptive.py runs the staged per-row exit.
+    # Checkpoint layout: the aux heads go to aux_scorers.safetensors, keyed "<L>.<name>".
+    # Needs exit_layer, exit_norm, head_design "none". () = off.
+    aux_exits: tuple = ()
 
 
 class _RowGradScale(torch.autograd.Function):
@@ -531,6 +541,27 @@ class DecisionModel(nn.Module):
             object.__setattr__(self, "_exit_text", tm)
             object.__setattr__(self, "_exit_layers",
                                nn.ModuleList(list(tm.layers)[: int(cfg.exit_layer)]))
+        if cfg.aux_exits:
+            if not cfg.exit_layer or not cfg.exit_norm:
+                raise ValueError("aux_exits needs exit_layer with exit_norm=True")
+            if cfg.head_design != "none":
+                raise ValueError("aux_exits supports head_design 'none' only")
+            ex = sorted({int(x) for x in cfg.aux_exits})
+            if any(not 1 <= x < int(cfg.exit_layer) for x in ex):
+                raise ValueError(f"aux_exits {ex} must lie in 1..{int(cfg.exit_layer) - 1}")
+            # built AFTER the main scorer, so the main head's initialisation (and
+            # every RNG draw before it) is the fixed-exit arm's
+            self.aux_scorers = nn.ModuleDict({str(x): OptionScorer(hidden, cfg) for x in ex})
+        else:
+            self.aux_scorers = None
+
+    def exit_indices(self) -> list[int]:
+        """Every exit this model can read, shallow to deep (the last is exit_layer)."""
+        aux = sorted(int(k) for k in self.aux_scorers) if self.aux_scorers is not None else []
+        return aux + [int(self.cfg.exit_layer)]
+
+    def exit_scorer(self, L: int) -> nn.Module:
+        return self.scorer if int(L) == int(self.cfg.exit_layer) else self.aux_scorers[str(int(L))]
 
     @contextlib.contextmanager
     def exit_tower(self):
@@ -734,7 +765,8 @@ class DecisionModel(nn.Module):
 
     def _readout(self, h, final, b, decision_index, option_index,
                  option_span_start, option_span_end, option_token_ids,
-                 option_mask, want_base, mode_id=None, option_perm=None):
+                 option_mask, want_base, mode_id=None, option_perm=None, scorer=None):
+        scorer = self.scorer if scorer is None else scorer
         decision_h = h[b, decision_index]                        # (B, H)
         option_h = None
         if option_span_start is not None and self.cfg.option_pool == "mean":
@@ -754,7 +786,7 @@ class DecisionModel(nn.Module):
         # behaved). Cast at the boundary rather than requiring every caller to
         # remember: a mismatch here is a runtime error, not a silent wrong answer,
         # but it costs an allocation every time.
-        dtype = next(self.scorer.parameters()).dtype
+        dtype = next(scorer.parameters()).dtype
         decision_h = decision_h.to(dtype)
         if option_h is not None:
             option_h = option_h.to(dtype)
@@ -766,9 +798,9 @@ class DecisionModel(nn.Module):
         # input norm, smoothing or decay removed; frozen arms, which never use
         # autocast, never spiked. The scorer is 7 M parameters: fp32 is free.
         with torch.autocast(decision_h.device.type, enabled=False):
-            logits = self.scorer(decision_h=decision_h, option_h=option_h,
-                                 option_mask=option_mask, mode_id=mode_id,
-                                 option_perm=option_perm)
+            logits = scorer(decision_h=decision_h, option_h=option_h,
+                            option_mask=option_mask, mode_id=mode_id,
+                            option_perm=option_perm)
         if self.cfg.logit_cap:
             c = float(self.cfg.logit_cap)
             logits = c * torch.tanh(logits / c)
@@ -803,6 +835,40 @@ class DecisionModel(nn.Module):
 
     def forward(self, **kw) -> torch.Tensor:
         return self._compute(**kw)[0]
+
+    def forward_exits(self, *, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+                      decision_index: torch.Tensor,
+                      option_index: torch.Tensor | None = None,
+                      option_span_start: torch.Tensor | None = None,
+                      option_span_end: torch.Tensor | None = None,
+                      option_token_ids: torch.Tensor | None = None,
+                      option_mask: torch.Tensor | None = None,
+                      mode_id: torch.Tensor | None = None,
+                      option_perm: torch.Tensor | None = None,
+                      row_grad_scale: torch.Tensor | None = None, **_) -> dict:
+        """{exit index: logits} for every exit, from ONE pass of the exit tower.
+
+        The main exit's entry is computed exactly as forward() computes it (same
+        state, same readout, same scorer); each aux exit reads norm(hidden_states[L])
+        through its own scorer. Presented option order, -inf where masked. The
+        model's calibration (cal_mode) applies to every entry, as in forward()."""
+        if self.aux_scorers is None:
+            raise ValueError("forward_exits needs arch aux_exits")
+        hs, final = self._run_tower(input_ids, attention_mask, all_states=True)
+        b = torch.arange(final.shape[0], device=final.device)
+        norm = self._exit_text.norm
+
+        def read(h, sc):
+            if row_grad_scale is not None:
+                h = _RowGradScale.apply(h, row_grad_scale)
+            return self._readout(h, final, b, decision_index, option_index,
+                                 option_span_start, option_span_end, option_token_ids,
+                                 option_mask, False, mode_id=mode_id, option_perm=option_perm,
+                                 scorer=sc)[0]
+        out = {int(self.cfg.exit_layer): read(final, None)}
+        for k, sc in self.aux_scorers.items():
+            out[int(k)] = read(norm(hs[int(k)]), sc)
+        return dict(sorted(out.items()))
 
     def forward_with_base(self, **kw):
         """(logits, base logits) from ONE tower pass. Use this when anchoring."""

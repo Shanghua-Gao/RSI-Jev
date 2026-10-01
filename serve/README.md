@@ -227,6 +227,13 @@ inference procedures despite receiving equivalent payloads."*
   "question_tokens_omitted", "max_length"}` next to `usage`. `--max-length` and
   `--truncate left|middle` (or `RSIJEV_MAX_LENGTH`, `RSIJEV_TRUNCATE`) override both for
   any release. A release without these fields is served as before.
+- **Adaptive exit (4B releases with aux exits).** A release that carries extra heads at
+  shallower exits (`spec.arch_extra.aux_exits`, `aux_scorers.safetensors`) and a policy
+  tuned on held-out data (`meta.json` `adaptive.tau`, one calibrator per exit in
+  `adaptive_calibration.safetensors`) answers a single-question request at the first exit
+  whose calibrated top answer reaches tau, and reports the layers it ran in
+  `usage.depth`. Requests with several questions, micro-batched requests and image
+  requests run the full exit. `--fixed-exit` (or `RSIJEV_FIXED_EXIT=1`) turns it off.
 
 ## Speed
 

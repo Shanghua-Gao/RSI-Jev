@@ -110,8 +110,8 @@ def serving_encoder(spec: dict, max_length: int | None = None,
     serving time, not what the model was gated with.
 
     TODO (not in this release): order averaging (score each question in 2 or 5
-    option orders and average; 2x/5x cost) and adaptive exit (12/16/20, pending its
-    own verdict) are kept results that are not served yet."""
+    option orders and average; 2x/5x cost) is a kept result that is not served yet.
+    Adaptive exit is served for single-question requests (see `adaptive_policy`)."""
     if max_length is None:
         env = os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
         max_length = int(env) if env else None
@@ -127,9 +127,53 @@ def serving_encoder(spec: dict, max_length: int | None = None,
     return cap, policy
 
 
+ADAPTIVE_CAL_FILE = "adaptive_calibration.safetensors"
+
+
+def adaptive_block(meta: dict) -> dict | None:
+    """The adaptive-exit policy block of a release's meta.json, or None."""
+    return meta.get("adaptive") or (meta.get("release") or {}).get("adaptive")
+
+
+def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | None = None):
+    """(rsijev.adaptive.Policy or None, why it is off or None).
+
+    A release serves adaptive exit when it has aux exits (spec.arch_extra.aux_exits,
+    heads in aux_scorers.safetensors) AND a policy: meta.json `adaptive` with the tau
+    tuned on DEV, and one cal-4b per aux exit in adaptive_calibration.safetensors
+    (keys "<exit>.<mean|W|mu|sd|w|b>"; scripts/pack_adaptive_policy.py writes both from
+    the tuning run's policy.pt). Nothing about the policy is a code constant.
+    `fixed_exit` (or RSIJEV_FIXED_EXIT=1) serves the fixed exit instead."""
+    if not getattr(model.cfg, "aux_exits", ()):
+        return None, None
+    if fixed_exit is None:
+        fixed_exit = os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower() not in ("", "0", "false", "no", "off")
+    if fixed_exit:
+        return None, "fixed exit forced (--fixed-exit / RSIJEV_FIXED_EXIT)"
+    block = adaptive_block(meta)
+    if not block or block.get("tau") is None:
+        return None, "the release has aux exits but no tuned tau (meta.json adaptive.tau)"
+    from safetensors.torch import load_file
+    from rsijev import adaptive as A
+    exits = model.exit_indices()
+    if block.get("exits") is not None and [int(x) for x in block["exits"]] != exits:
+        raise RuntimeError(f"adaptive.exits {block['exits']} do not match the model's exits {exits}")
+    path = ckpt / block.get("calibration", ADAPTIVE_CAL_FILE)
+    if not path.exists():
+        raise RuntimeError(f"adaptive exit needs {path.name} (one cal-4b per aux exit)")
+    flat = load_file(str(path))
+    cal = {}
+    for L in exits[:-1]:
+        c = {k.split(".", 1)[1]: v for k, v in flat.items() if k.split(".", 1)[0] == str(L)}
+        if set(c) != {"mean", "W", "mu", "sd", "w", "b"}:
+            raise RuntimeError(f"{path.name}: exit {L} has {sorted(c)}, not a cal-4b")
+        cal[L] = A.cal_to(c, device)
+    return A.Policy(exits, cal, float(block["tau"])), None
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                  vision: bool | None = None, max_length: int | None = None,
-                 truncate: str | None = None):
+                 truncate: str | None = None, fixed_exit: bool | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
@@ -149,6 +193,11 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
 
     `max_length` / `truncate`: see `serving_encoder`. `meta["serving"]` records what
     was used.
+
+    Adaptive exit (aux exits plus a tuned policy, see `adaptive_policy`): the aux heads
+    load from aux_scorers.safetensors and `model.adaptive_policy` holds the policy; a
+    single-question request then stops at the first exit confident enough
+    (serve/infer.score_adaptive). Every other model gets `adaptive_policy = None`.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -201,6 +250,12 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     else:
         model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
+    if arch.aux_exits:
+        aux = ckpt / "aux_scorers.safetensors"
+        if not aux.exists():
+            raise RuntimeError(f"spec.arch_extra.aux_exits {list(arch.aux_exits)} needs {aux.name}")
+        model.aux_scorers.load_state_dict(load_file(str(aux)))
+        model.aux_scorers.to(device=device, dtype=torch.float32)
     # v2.0 onward a checkpoint may ship a fitted calibration (calibration.safetensors
     # + calibration.json, rsijev/calibrate.py). It is part of the released model, not
     # an extra: the forward pass divides each question's logits by one positive
@@ -216,8 +271,13 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
                        option_order="canonical", max_length=cap, truncate=policy)
+    ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit)
+    model.adaptive_policy = ada
     meta["serving"] = {"max_length": cap, "truncate": policy,
-                       "exit_layer": arch.exit_layer}
+                       "exit_layer": arch.exit_layer,
+                       "adaptive": None if ada is None else {"exits": ada.exits, "tau": ada.tau}}
+    if why:
+        meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta
 
 

@@ -405,7 +405,7 @@ def test_old_releases_load_as_before(stub_weights, tmp_path, parts, name):
     model, tok2, enc, m = load_release(d, "cpu")
     assert model.cfg.exit_layer is None
     assert enc.max_length == 2048 and enc.truncate == "left"
-    assert m["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": None}
+    assert m["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": None, "adaptive": None}
     if "release" in meta:
         assert isinstance(model, VisionDecisionModel)
         assert stub_weights["visual"] == [(meta["base_model"], PINNED_REVISIONS[meta["base_model"]])]
@@ -434,7 +434,7 @@ def test_an_exit_release_loads_from_meta_alone(stub_weights, tmp_path, parts):
     model, tok2, enc2, meta = load_release(d, "cpu")
     assert isinstance(model, VisionDecisionModel)
     assert model.cfg.exit_layer == 4 and model.cfg.exit_norm is True
-    assert meta["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": 4}
+    assert meta["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": 4, "adaptive": None}
     assert meta["vision"]["revision"] == PINNED_REVISIONS[BASE4]
     assert stub_weights["visual"] == [(BASE4, PINNED_REVISIONS[BASE4])]
     got = score_questions(model, tok2, TEXT_STATE, QS, enc2, max_options=8, device="cpu")[0]
