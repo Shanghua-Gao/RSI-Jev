@@ -7,64 +7,148 @@
 <title>RSI-Jev</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: one idea per screen, centred, max 980px. Dark-first. */
+/* Layout: one idea per screen, centred. Dark-first, tokens from the v4.0-VL release video. */
 :root {
-  --bg: #0B0D12;
-  --panel: #131820;
-  --raise: #1B212C;
-  --ink: #EEF1F5;
-  --muted: #919BAB;
-  --line: #252C38;
-  --accent: #7C95FF;
-  --track: #1F2632;
-  --base: #4C5566;
-  --ok: #4AC26B;
-  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --bg: #000;
+  --panel: #111113;
+  --raise: #1c1c1e;
+  --ink: #f5f5f7;
+  --ink-2: #c7c7cc;
+  --muted: #86868b;
+  --faint: #6e6e73;
+  --line: rgba(255, 255, 255, .1);
+  --accent: #0a84ff;
+  --accent-2: #5ac8fa;
+  --track: #1d1d20;
+  --base: #48484d;
+  --ok: #30d158;
+  --good: #64d2ff; --bad: #ff6b5e; --bad-soft: rgba(255, 107, 94, .16); --ok-soft: rgba(48, 209, 88, .16);
+  --chip: rgba(255, 255, 255, .06); --chip-line: rgba(255, 255, 255, .13);
+  --glow: #0b1426;
+  --head-bg: rgba(0, 0, 0, .72);
+  --shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .03);
+  --display: "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #F5F7FA; --panel: #FFFFFF; --raise: #EEF1F5; --ink: #11151C; --muted: #5A6473; --line: #DEE3EA;
-    --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; --ok: #1A7F37; color-scheme: light;
+    --bg: #f5f5f7; --panel: #fff; --raise: #e8e8ed; --ink: #1d1d1f; --ink-2: #3a3a3c; --muted: #6e6e73; --faint: #86868b; --line: rgba(0, 0, 0, .09);
+    --accent: #0071e3; --accent-2: #2997ff; --track: #e8e8ed; --base: #b8b8bf; --ok: #248a3d;
+    --good: #0a7ea4; --bad: #d70015; --bad-soft: rgba(215, 0, 21, .08); --ok-soft: rgba(36, 138, 61, .1);
+    --chip: #fff; --chip-line: rgba(0, 0, 0, .1); --glow: transparent; --head-bg: rgba(245, 245, 247, .78);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 12px 40px rgba(0, 0, 0, .06);
+    color-scheme: light;
   }
 }
 :root[data-theme="light"] {
-  --bg: #F5F7FA; --panel: #FFFFFF; --raise: #EEF1F5; --ink: #11151C; --muted: #5A6473; --line: #DEE3EA;
-  --accent: #2C54D6; --track: #E8ECF1; --base: #AAB3BF; --ok: #1A7F37; color-scheme: light;
+  --bg: #f5f5f7; --panel: #fff; --raise: #e8e8ed; --ink: #1d1d1f; --ink-2: #3a3a3c; --muted: #6e6e73; --faint: #86868b; --line: rgba(0, 0, 0, .09);
+  --accent: #0071e3; --accent-2: #2997ff; --track: #e8e8ed; --base: #b8b8bf; --ok: #248a3d;
+  --good: #0a7ea4; --bad: #d70015; --bad-soft: rgba(215, 0, 21, .08); --ok-soft: rgba(36, 138, 61, .1);
+  --chip: #fff; --chip-line: rgba(0, 0, 0, .1); --glow: transparent; --head-bg: rgba(245, 245, 247, .78);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 12px 40px rgba(0, 0, 0, .06);
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.6 var(--body); margin: 0; padding-inline: 20px; }
-.wrap { max-width: 980px; margin: 0 auto; }
+html { scroll-padding-top: 72px; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--body); letter-spacing: -0.006em; padding-inline: 20px; overflow-x: clip; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.wrap { max-width: 1040px; margin: 0 auto; }
 a { color: var(--accent); text-underline-offset: 3px; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.025em; font-weight: 800; }
-h2 { font-size: clamp(30px, 4.4vw, 46px); line-height: 1.08; }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; font-weight: 700; }
+h2 { font-size: clamp(34px, 5.4vw, 60px); line-height: 1.04; letter-spacing: -0.035em; max-width: 24ch; }
 p { margin: 0; }
 .center { text-align: center; justify-items: center; }
-.sub { color: var(--muted); max-width: 56ch; }
+.sub { color: var(--muted); max-width: 52ch; font-size: clamp(18px, 1.9vw, 21px); line-height: 1.45; letter-spacing: -0.01em; text-wrap: balance; }
+.sub b { color: var(--ink); font-weight: 600; }
 code { font-family: var(--mono); font-size: 0.86em; }
 
-header.top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 22px; flex-wrap: wrap; }
-.brand { font: 800 22px/1 var(--display); color: var(--ink); text-decoration: none; }
-nav.links { display: flex; gap: 22px; flex-wrap: wrap; font-size: 15px; }
-nav.links a { color: var(--muted); text-decoration: none; }
+header.top { position: sticky; top: 0; z-index: 50; margin-inline: -20px; padding-inline: 20px; background: var(--head-bg); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; justify-content: space-between; align-items: center; gap: 10px 20px; min-height: 56px; flex-wrap: wrap; }
+.brand { font: 700 19px/1 var(--display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
+nav.links { display: flex; gap: 6px 22px; flex-wrap: wrap; align-items: center; font-size: 14px; }
+nav.links a { color: var(--muted); text-decoration: none; transition: color .2s; }
 nav.links a:hover { color: var(--ink); }
+.theme { font: 500 13px/1 var(--body); padding: 7px 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.theme:hover { color: var(--ink); }
 
-section { padding-block: 80px; display: grid; gap: 26px; }
-section + section { border-top: 1px solid var(--line); }
+section { padding-block: 112px; display: grid; gap: 28px; }
+section > * { min-width: 0; }
 
-/* 1 hero */
-.hero { padding-block: 72px 56px; }
-.hero h1 { font-size: clamp(46px, 8vw, 92px); line-height: 0.98; }
-.hero h1 span { color: var(--accent); }
-.hero .sub { font-size: 21px; }
+/* 1 hero: a System One model */
+.hero { position: relative; padding-block: 64px 72px; gap: 0; isolation: isolate; }
+.hero::before { content: ""; position: absolute; inset: 0 -20px; z-index: -1; background: radial-gradient(closest-side at 50% 42%, var(--glow), transparent); pointer-events: none; }
+.eyebrow { font: 600 clamp(15px, 1.5vw, 18px)/1 var(--display); letter-spacing: -0.01em; color: var(--accent); }
+.hero h1 { font-size: clamp(50px, 9.6vw, 112px); line-height: 0.98; letter-spacing: -0.045em; font-weight: 800; margin-top: 16px; }
+.idea { margin-top: 24px; max-width: 44ch; font: 500 clamp(19px, 2.2vw, 26px)/1.38 var(--body); letter-spacing: -0.012em; color: var(--muted); text-wrap: balance; }
+.idea b { color: var(--ink); font-weight: 600; }
+.hero .cta { margin-top: 34px; }
 .cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-.btn { display: inline-flex; align-items: center; padding: 13px 22px; border-radius: 11px; font: 600 16px/1 var(--body); text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--raise); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 13px 24px; border-radius: 999px; font: 600 16px/1 var(--body); letter-spacing: -0.01em; text-decoration: none; border: 1px solid var(--chip-line); color: var(--ink); background: var(--chip); transition: background .2s, border-color .2s; }
+.btn:hover { border-color: color-mix(in srgb, var(--ink) 30%, transparent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
+
+.onepass { width: 100%; margin-top: 52px; display: grid; grid-template-columns: minmax(0, 1fr) 112px minmax(0, 1fr); align-items: center; text-align: left; }
+.pcard { background: var(--panel); border: 1px solid var(--line); border-radius: 26px; box-shadow: var(--shadow); min-width: 0; }
+.op-in { display: flex; gap: 20px; align-items: center; padding: 16px; }
+.op-in img { flex: none; width: 148px; height: 148px; object-fit: cover; border-radius: 16px; display: block; background: var(--raise); }
+.op-in div { display: grid; gap: 10px; min-width: 0; }
+.lab { font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.op-q { font: 600 clamp(17px, 1.75vw, 21px)/1.3 var(--display); letter-spacing: -0.015em; text-wrap: balance; }
+.op-arrow { display: grid; justify-items: center; gap: 6px; color: var(--accent); font: 600 16px/1.1 var(--display); letter-spacing: -0.01em; }
+.op-arrow svg { display: block; width: 84px; height: 24px; }
+.op-out { padding: 22px 26px 24px; }
+.op-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.op-head .ms { font: 600 20px/1 var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.pbars { display: grid; gap: 11px; }
+.pb .r { display: flex; justify-content: space-between; gap: 10px; font: 500 15px/1 var(--body); color: var(--muted); margin-bottom: 7px; font-variant-numeric: tabular-nums; }
+.pb.top .r { color: var(--ink); font: 700 23px/1 var(--display); letter-spacing: -0.02em; }
+.pb.top .r span:last-child { color: var(--accent); }
+.pb .t { height: 6px; border-radius: 4px; background: var(--track); overflow: hidden; }
+.pb.top .t { height: 8px; }
+.pb .t i { display: block; height: 100%; border-radius: 4px; background: var(--base); }
+.pb.top .t i { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.sys2 { margin-top: 26px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 16px; color: var(--muted); font: 500 16px/1.35 var(--body); }
+.sys2 b { color: var(--ink); font: 600 16px/1.35 var(--body); letter-spacing: -0.01em; }
+.sys2 code { font: 500 14.5px/1 var(--mono); color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.chips { margin-top: 44px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; list-style: none; padding: 0; }
+.chip { font: 600 16px/1 var(--display); letter-spacing: -0.01em; color: var(--ink); padding: 13px 20px; border-radius: 999px; background: var(--chip); border: 1px solid var(--chip-line); }
+.chip:first-child { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.api { margin-top: 18px; font: 500 14px/1 var(--mono); color: var(--faint); }
+.opnote { margin-top: 14px; font-size: 13px; color: var(--faint); }
+.opnote a { color: inherit; }
+.byline { margin-top: 40px; font-size: 15px; line-height: 1.5; color: var(--muted); max-width: 54ch; text-wrap: balance; }
+.byline a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+@keyframes inUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes grow { from { width: 0; } }
+.hero > * { animation: inUp .8s cubic-bezier(.2, .8, .2, 1) both; }
+.hero > :nth-child(2) { animation-delay: .06s; } .hero > :nth-child(3) { animation-delay: .2s; } .hero > :nth-child(4) { animation-delay: .3s; }
+.hero > .onepass { animation: none; }
+.onepass > * { animation: inUp .7s cubic-bezier(.2, .8, .2, 1) both; }
+.onepass > :nth-child(1) { animation-delay: .45s; } .onepass > :nth-child(2) { animation-delay: .7s; } .onepass > :nth-child(3) { animation-delay: .85s; }
+.onepass .pb .t i { animation: grow .9s cubic-bezier(.2, .8, .2, 1) 1.05s both; }
+.hero > .sys2 { animation-delay: 1.3s; } .hero > .chips, .hero > .api, .hero > .opnote { animation-delay: 1.55s; } .hero > .byline { animation-delay: 1.7s; }
+@media (max-width: 820px) {
+  .hero { padding-block: 56px 40px; }
+  .onepass { grid-template-columns: minmax(0, 1fr); margin-top: 44px; }
+  .op-arrow { grid-auto-flow: column; justify-content: center; align-items: center; gap: 4px; padding-block: 10px; }
+  .op-arrow svg { transform: rotate(90deg); width: 52px; height: 20px; }
+  .hero .cta { gap: 8px; }
+  .hero .btn { padding: 12px 16px; font-size: 15px; }
+  .op-in { gap: 14px; padding: 12px; }
+  .op-in img { width: 104px; height: 104px; border-radius: 13px; }
+  .op-q { font-size: 17px; }
+  .op-out { padding: 18px 18px 20px; }
+  .sys2 { flex-direction: column; gap: 8px; font-size: 15px; }
+  .sys2 code { font-size: 13.5px; }
+  .chips { margin-top: 32px; gap: 8px; }
+  .chip { font-size: 14.5px; padding: 11px 16px; }
+  .byline { margin-top: 32px; }
+}
 
 /* 2 numbers */
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; width: 100%; }
@@ -113,7 +197,7 @@ section + section { border-top: 1px solid var(--line); }
 .flow3 > div { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 8px; align-content: start; }
 .flow3 b { font: 700 19px/1.2 var(--display); }
 .flow3 span { color: var(--muted); font-size: 16px; }
-.loopimg { width: 100%; max-width: 100%; border-radius: 16px; border: 1px solid var(--line); background: #0B0E13; }
+.loopimg { width: 100%; max-width: 100%; border-radius: 26px; border: 1px solid var(--line); background: #0B0E13; box-shadow: var(--shadow); }
 .speedbox { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: grid; gap: 14px; text-align: left; }
 .sp-row { display: grid; grid-template-columns: minmax(0, 280px) 1fr 84px; gap: 14px; align-items: center; }
 .sp-row .who { font-size: 16px; }
@@ -241,9 +325,6 @@ footer a { color: var(--muted); }
   section { padding-block: 60px; }
 }
 /* live demos (v4.0-VL): race, factory line, Breakout video, agent steps */
-:root { --good: #5BC0D6; --bad: #FF8A6B; --bad-soft: rgba(255, 138, 107, .16); --ok-soft: rgba(74, 194, 107, .16); }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --good: #1D7F96; --bad: #C2412D; --bad-soft: rgba(194, 65, 45, .10); --ok-soft: rgba(26, 127, 55, .10); } }
-:root[data-theme="light"] { --good: #1D7F96; --bad: #C2412D; --bad-soft: rgba(194, 65, 45, .10); --ok-soft: rgba(26, 127, 55, .10); }
 .live { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px; display: grid; gap: 16px; text-align: left; min-width: 0; }
 .live > * { min-width: 0; }
 .lhead { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; }
@@ -394,8 +475,8 @@ footer a { color: var(--muted); }
 .wq { font: 500 12px/1.25 var(--body); color: rgba(255, 255, 255, .8); }
 .wa { display: flex; align-items: baseline; gap: 6px; font: 700 15.5px/1.15 var(--display); letter-spacing: -0.01em; }
 .wa b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.wa em { flex: none; font: 500 12.5px/1 var(--mono); font-style: normal; color: #B9C6FF; font-variant-numeric: tabular-nums; }
-.wx { flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: auto; border-radius: 50%; background: #FF8A6B; color: #1A0E0A; font: 700 11px/1 var(--body); font-style: normal; }
+.wa em { flex: none; font: 500 12.5px/1 var(--mono); font-style: normal; color: #9ccfff; font-variant-numeric: tabular-nums; }
+.wx { flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: auto; border-radius: 50%; background: #ff6b5e; color: #1A0E0A; font: 700 11px/1 var(--body); font-style: normal; }
 .wt.miss .wb { box-shadow: inset 0 0 0 2px rgba(255, 138, 107, .85); }
 .wt.miss.open .wb { box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 2px rgba(255, 138, 107, .85); }
 .wall.pre .wa { opacity: 0; transform: translateY(7px) scale(.92); transform-origin: left bottom; }
@@ -434,13 +515,76 @@ footer a { color: var(--muted); }
   .wb img { transition: none; }
   .wb:hover img, .wt.open .wb img { transform: none; }
 }
+/* v5 look: rounded cards, hairlines, soft shadows, big tight type */
+.stat, .box, .demo, .flow3 > div, .speedbox, .chartwrap, .thanks, .visa, .viewer, .live, .codebox { border-radius: 26px; box-shadow: var(--shadow); }
+.codebox { border-radius: 18px; }
+.stat { padding: 34px 22px; }
+.stat b { font-weight: 700; letter-spacing: -0.045em; }
+.flow3 > div { padding: 26px 24px; }
+.flow3 b { font: 700 21px/1.2 var(--display); letter-spacing: -0.02em; }
+.box { padding: 26px; }
+.box .tag, .also .tag, .wtip .tag { font-weight: 600; letter-spacing: .08em; }
+.ans .bar i, .vr.us .vt i, .sp-row.us .b { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.ans .bar { height: 6px; }
+.cmd .k { font-family: var(--display); background: var(--panel); }
+.copy { border-radius: 999px; padding: 7px 12px; }
+.tabs { padding: 10px; gap: 4px; }
+.tabs button { border-radius: 999px; padding: 10px 16px; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.pills button, .lbtn { padding: 10px 15px; }
+.lbtn.primary { color: #fff; }
+.live { padding: 26px; gap: 18px; }
+.lhead h3, .visa h3 { font: 700 clamp(22px, 2.4vw, 28px)/1.15 var(--display); letter-spacing: -0.025em; }
+.lane { border-radius: 18px; }
+.rsum, .fstat, .belt { border-radius: 16px; }
+.fstat b { font-weight: 700; letter-spacing: -0.04em; }
+.vq { font-weight: 600; letter-spacing: -0.02em; }
+.vnum { font-weight: 700; letter-spacing: -0.045em; }
+.vlab { letter-spacing: -0.02em; }
+.vr b { font-weight: 700; letter-spacing: -0.04em; }
+.wb { border-radius: 14px; }
+.wa { font-family: var(--body); letter-spacing: -0.015em; }
+.wtip { border-radius: 20px; box-shadow: 0 24px 60px rgba(0, 0, 0, .4); }
+.game { gap: 40px; }
+.game video { border-radius: 22px; box-shadow: var(--shadow); }
+.game h3 { margin: 0 0 12px; font: 700 clamp(28px, 3.6vw, 42px)/1.06 var(--display); letter-spacing: -0.035em; text-wrap: balance; }
+.game p { color: var(--muted); }
+.game p.small { font-size: 14px; color: var(--faint); }
+.game p.lead { color: var(--ink-2); font-size: 19px; line-height: 1.5; margin-bottom: 14px; }
+.small { font-size: 13.5px; color: var(--muted); }
+.trust h2 { font-size: clamp(36px, 6vw, 68px); max-width: 18ch; }
+.trust b { font-weight: 700; }
+.thanks { padding: 30px 32px; font-size: 17px; color: var(--muted); }
+.thanks b { color: var(--ink); }
+footer { padding-block: 36px 64px; font-size: 13px; }
+.stack { display: grid; gap: 64px; width: 100%; justify-items: center; }
+/* gentle reveal; only switched on by JS when motion is allowed, so no-JS and reduced motion see everything */
+.rv-on .rv { opacity: 0; transform: translateY(28px); transition: opacity .9s cubic-bezier(.2, .8, .2, 1), transform .9s cubic-bezier(.2, .8, .2, 1); }
+.rv-on .rv.in { opacity: 1; transform: none; }
+@media (max-width: 820px) {
+  section { padding-block: 72px; gap: 22px; }
+  header.top { position: static; }
+  header.top .wrap { padding-block: 12px; }
+  header.top .wrap { flex-wrap: nowrap; flex-direction: column; align-items: stretch; gap: 6px; }
+  nav.links { flex-wrap: nowrap; overflow-x: auto; gap: 18px; padding-bottom: 2px; scrollbar-width: none; white-space: nowrap; }
+  nav.links::-webkit-scrollbar { display: none; }
+  .theme { flex: none; }
+  .live { padding: 18px 14px; }
+  .game { gap: 20px; }
+  .stack { gap: 44px; }
+  .thanks { padding: 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero > *, .onepass > *, .onepass .pb .t i { animation: none; }
+  .rv-on .rv { opacity: 1; transform: none; transition: none; }
+}
 </style>
 
 
 </head>
 <body>
-<div class="wrap">
 <header class="top">
+<div class="wrap">
   <a class="brand" href="#top">RSI-Jev</a>
   <nav class="links" aria-label="Page">
     <a href="#images">Images</a>
@@ -450,22 +594,44 @@ footer a { color: var(--muted); }
     <a href="#speed">Speed</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/docs/inference.md">Docs</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
+    <button class="theme" id="theme" type="button" aria-label="Switch light or dark theme" hidden>◐</button>
   </nav>
+</div>
 </header>
+<div class="wrap">
 
 <section class="hero center" id="top">
-  <a class="kicker" href="#images"><b>New in v4.0-VL</b> It reads images →</a>
-  <h1>An open Jev,<br><span>built by AI agents.</span></h1>
-  <p class="sub">RSI-Jev is a Jev-compatible decision model that a team of AI agents trains and improves on its own. It now reads photos, screenshots and charts as well as text. Every experiment is public. You run it on your own GPU.</p>
+  <p class="eyebrow">RSI-Jev v4.0-VL</p>
+  <h1>A System One model.</h1>
+  <p class="idea">Fast, intuitive decisions: <b>one pass</b>, <b>no text generated</b>, a <b>calibrated probability</b> for every answer.</p>
   <div class="cta">
     <a class="btn primary" href="#start">Get started</a>
     <a class="btn" href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
+    <a class="btn" href="https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b">Hugging Face</a>
   </div>
+  <div class="onepass" role="group" aria-label="One pass: an image and a question go in, a probability for every answer comes out in 61 ms">
+    <div class="pcard op-in"><img src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." width="148" height="148" decoding="async"><div><span class="lab">image + question</span><p class="op-q">Which speed limit number is written on the object in the image?</p></div></div>
+    <div class="op-arrow" aria-hidden="true"><svg viewBox="0 0 84 24"><path d="M3 12 H76 M66 4 L78 12 L66 20" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>one pass</span></div>
+    <div class="pcard op-out">
+      <div class="op-head"><span class="lab">probabilities</span><span class="ms">61 ms</span></div>
+      <div class="pbars">
+        <div class="pb top"><div class="r"><span>80</span><span>99.7%</span></div><div class="t"><i style="width:99.67%"></i></div></div>
+        <div class="pb"><div class="r"><span>50</span><span>&lt;1%</span></div><div class="t"><i style="width:0.6%"></i></div></div>
+        <div class="pb"><div class="r"><span>none</span><span>&lt;1%</span></div><div class="t"><i style="width:0.6%"></i></div></div>
+        <div class="pb"><div class="r"><span>2 more answers</span><span>&lt;1%</span></div><div class="t"><i style="width:0.6%"></i></div></div>
+      </div>
+    </div>
+  </div>
+  <p class="sys2"><b>System 2: writes, then you parse.</b><code>{"speed_limit": "80"}</code><span>chat model · 11 tokens · 333 ms · no probability</span></p>
+  <p class="opnote">Recorded on one GB10. <a href="#race">Replayed in the race below</a>.</p>
+  <ul class="chips" aria-label="At a glance"><li class="chip">text + images</li><li class="chip">~70 ms on a desktop GPU</li><li class="chip">Jev-compatible API, open weights</li></ul>
+  <p class="api">POST /v1/systemone</p>
+  <p class="byline">Built and improved by AI research agents (<a href="https://github.com/mims-harvard/AutoScientists">AutoScientists</a>). Experiments published, failures included.</p>
 </section>
 
 <section class="center" id="images">
-  <h2>Show it a picture. It picks the answer, with a confidence.</h2>
-  <p class="sub">Send one to four images with a request: a photo, a screenshot, a chart. Ask the same typed questions as with text. One pass gives a probability for every answer.</p>
+  <h2>Show it a picture.</h2>
+  <p class="sub">It picks the answer, with a confidence. Send one to four images with a request: a photo, a screenshot, a chart. Ask the same typed questions as with text.</p>
 <!-- wall:start -->
   <div class="wall" id="wall">
     <p class="wcount" aria-live="off"><b id="wall-n">36</b> decisions · median <b>76 ms</b> each</p>
@@ -513,17 +679,26 @@ footer a { color: var(--muted); }
     <script type="application/json" id="wall-data">[{"q": "Is everything in the photo good, or is at least one part defective?", "ctx": null, "ref": ["Defective"], "opts": [["Defective", 0.678], ["All good", 0.322]], "ok": true, "ms": 254, "cat": "Factory", "credit": "Amazon Science, VisA dataset", "lic": "CC BY 4.0"}, {"q": "Which speed limit number is written on the object in the image?", "ctx": null, "ref": ["80"], "opts": [["80", 0.9973], ["50", 0.0009], ["None", 0.0007], ["120", 0.0007], ["30", 0.0004]], "ok": true, "ms": 57, "cat": "Road", "credit": "P.Ctnt", "lic": "Public domain"}, {"q": "Is there a teddy bear in the image?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.9984], ["No", 0.0016]], "ok": true, "ms": 60, "cat": "Is it there?", "credit": "Pixabay", "lic": "CC0"}, {"q": "Which plan is cheaper in the last month shown?", "ctx": null, "ref": ["Plan B"], "opts": [["Plan B", 0.9394], ["Plan A", 0.0606]], "ok": true, "ms": 117, "cat": "Chart", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Which button should the agent click?", "ctx": null, "ref": ["Cancel"], "opts": [["Cancel", 0.9938], ["Delete", 0.0062]], "ok": true, "ms": 79, "cat": "Screen", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Are there any blue objects to the left of the red cylinder?", "ctx": null, "ref": ["No"], "opts": [["No", 0.8464], ["Yes", 0.1536]], "ok": true, "ms": 50, "cat": "CLEVR", "credit": "Johnson et al., CLEVR (2017)", "lic": "CC BY 4.0"}, {"q": "What should the car do about the object in the image, which is on the road, in the car's lane, ahead of the car?", "ctx": null, "ref": ["Wait for green"], "opts": [["Wait for green", 0.9669], ["Stop, then go", 0.0229], ["Stop", 0.0082], ["Go", 0.0008], ["Continue", 0.0006], ["Slow down", 0.0004], ["Change speed", 0.0001]], "ok": true, "ms": 65, "cat": "Road", "credit": "Jacklee", "lic": "CC BY-SA 3.0"}, {"q": "Is everything in the photo good, or is at least one part defective?", "ctx": null, "ref": ["Defective"], "opts": [["Defective", 0.756], ["All good", 0.244]], "ok": true, "ms": 245, "cat": "Factory", "credit": "Amazon Science, VisA dataset", "lic": "CC BY 4.0"}, {"q": "Which numbered column contains the white ball? Choose its current column, from 1 on the left to 5 on the right. Ignore the orange paddle.", "ctx": null, "ref": ["Lane 4"], "opts": [["Lane 4", 0.9915], ["Lane 3", 0.0065], ["Lane 2", 0.0014], ["Lane 5", 0.0005], ["Lane 1", 0.0001]], "ok": true, "ms": 74, "cat": "Game", "credit": "Breakout from hr98w/jev-visual (MIT); scene from the game's own lane check", "lic": "MIT"}, {"q": "Is there a dog in the image?", "ctx": null, "ref": ["No"], "opts": [["No", 0.9955], ["Yes", 0.0045]], "ok": true, "ms": 53, "cat": "Is it there?", "credit": "Grendelkhan", "lic": "CC BY-SA 4.0"}, {"q": "What should happen to this expense?", "ctx": null, "ref": ["Review"], "opts": [["Review", 0.8872], ["Reject", 0.1071], ["Approve", 0.0058]], "ok": true, "ms": 87, "cat": "Receipt", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "How many green triangles are there?", "ctx": null, "ref": ["3"], "opts": [["2", 0.7028], ["3", 0.2716], ["4", 0.0141], ["1", 0.0079], ["5", 0.0024], ["6", 0.0008], ["7", 0.0004], ["8", 0.0001]], "ok": false, "ms": 117, "cat": "Counting", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "What happened to the payment?", "ctx": null, "ref": ["Declined"], "opts": [["Declined", 0.997], ["Pending", 0.0017], ["Paid", 0.0013]], "ok": true, "ms": 121, "cat": "Screen", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "What kind of thing is the object in the image?", "ctx": null, "ref": ["Animal"], "opts": [["Animal", 0.9515], ["Vehicle", 0.0179], ["Unclear", 0.0131], ["Harmless debris", 0.0044], ["Traffic light", 0.0037], ["Obstacle", 0.0029], ["Person", 0.0024], ["Other sign", 0.002], ["Speed limit sign", 0.0011], ["Stop sign", 0.0011]], "ok": true, "ms": 59, "cat": "Road", "credit": "Joselodos", "lic": "CC0"}, {"q": "Are any brown objects visible?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.9747], ["No", 0.0253]], "ok": true, "ms": 51, "cat": "CLEVR", "credit": "Johnson et al., CLEVR (2017)", "lic": "CC BY 4.0"}, {"q": "Is everything in the photo good, or is at least one part defective?", "ctx": null, "ref": ["All good"], "opts": [["Defective", 0.8694], ["All good", 0.1306]], "ok": false, "ms": 245, "cat": "Factory", "credit": "Amazon Science, VisA dataset", "lic": "CC BY 4.0"}, {"q": "Which quarter had the highest revenue?", "ctx": null, "ref": ["Q3"], "opts": [["Q3", 0.9997], ["Q4", 0.0002], ["Q2", 0.0001], ["Q1", 0.0]], "ok": true, "ms": 134, "cat": "Chart", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Is there a ball in the image?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.9948], ["No", 0.0052]], "ok": true, "ms": 52, "cat": "Is it there?", "credit": "Evgeniy Isaev", "lic": "CC BY 2.0"}, {"q": "What should the car do about the object in the image, which is on the road, in the car's lane, ahead of the car?", "ctx": null, "ref": ["Stop, then go"], "opts": [["Stop, then go", 0.9094], ["Stop", 0.0447], ["Wait for green", 0.0365], ["Slow down", 0.0026], ["Continue", 0.0025], ["Go", 0.0023], ["Change speed", 0.0021]], "ok": true, "ms": 76, "cat": "Road", "credit": "Dori", "lic": "Public domain"}, {"q": "How urgently does an on-call engineer need to act on this?", "ctx": null, "ref": ["High"], "opts": [["High", 0.8651], ["Medium", 0.1023], ["Low", 0.0326]], "ok": true, "ms": 76, "cat": "Screen", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "What does the fox eat?", "ctx": null, "ref": ["Rabbit"], "opts": [["Rabbit", 0.9997], ["Eagle", 0.0002], ["Grass", 0.0001]], "ok": true, "ms": 77, "cat": "Diagram", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Is the number of gray cubes greater than the number of large purple rubber cylinders?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.8139], ["No", 0.1861]], "ok": true, "ms": 48, "cat": "CLEVR", "credit": "Johnson et al., CLEVR (2017)", "lic": "CC BY 4.0"}, {"q": "Is there a wind turbine in the image?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.9955], ["No", 0.0045]], "ok": true, "ms": 53, "cat": "Is it there?", "credit": "Kiwiev", "lic": "CC0"}, {"q": "Is everything in the photo good, or is at least one part defective?", "ctx": null, "ref": ["All good"], "opts": [["All good", 0.9147], ["Defective", 0.0853]], "ok": true, "ms": 250, "cat": "Factory", "credit": "Amazon Science, VisA dataset", "lic": "CC BY 4.0"}, {"q": "What kind of thing is the object in the image?", "ctx": null, "ref": ["Harmless debris"], "opts": [["Other sign", 0.7298], ["Harmless debris", 0.1555], ["Unclear", 0.036], ["Speed limit sign", 0.0246], ["Vehicle", 0.0203], ["Stop sign", 0.0106], ["Obstacle", 0.01], ["Traffic light", 0.0076], ["Person", 0.0029], ["Animal", 0.0027]], "ok": false, "ms": 58, "cat": "Road", "credit": "Wald1siedel", "lic": "CC BY-SA 3.0"}, {"q": "Which channel brings the most traffic?", "ctx": null, "ref": ["Direct"], "opts": [["Direct", 0.9997], ["Social", 0.0001], ["Search", 0.0001], ["Ads", 0.0], ["Email", 0.0]], "ok": true, "ms": 132, "cat": "Chart", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Which element should the agent use next to reach the goal?", "ctx": null, "ref": ["Pay"], "opts": [["Pay", 0.9968], ["Card number", 0.0021], ["Expiry", 0.0011], ["Cancel", 0.0001], ["Email", 0.0]], "ok": true, "ms": 119, "cat": "Screen", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Is there a triangle in the image?", "ctx": null, "ref": ["No"], "opts": [["No", 0.9995], ["Yes", 0.0005]], "ok": true, "ms": 116, "cat": "Counting", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "What should the car do about the object in the image, which is on the road, in the car's lane, ahead of the car?", "ctx": null, "ref": ["Go", "Continue"], "opts": [["Go", 0.9619], ["Continue", 0.0221], ["Stop, then go", 0.0081], ["Wait for green", 0.005], ["Slow down", 0.0019], ["Stop", 0.0007], ["Change speed", 0.0005]], "ok": true, "ms": 65, "cat": "Road", "credit": "Jacklee", "lic": "CC BY-SA 3.0"}, {"q": "Is there an umbrella in the image?", "ctx": null, "ref": ["No"], "opts": [["No", 0.9369], ["Yes", 0.0631]], "ok": true, "ms": 52, "cat": "Is it there?", "credit": "Peter Miranda", "lic": "CC0"}, {"q": "The vertical axis starts at zero.", "ctx": null, "ref": ["No"], "opts": [["No", 0.9805], ["Yes", 0.0195]], "ok": true, "ms": 130, "cat": "Chart", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Is the big blue object the same shape as the large yellow object?", "ctx": null, "ref": ["Yes"], "opts": [["Yes", 0.9736], ["No", 0.0264]], "ok": true, "ms": 54, "cat": "CLEVR", "credit": "Johnson et al., CLEVR (2017)", "lic": "CC BY 4.0"}, {"q": "Is everything in the photo good, or is at least one part defective?", "ctx": null, "ref": ["All good"], "opts": [["All good", 0.8561], ["Defective", 0.1439]], "ok": true, "ms": 239, "cat": "Factory", "credit": "Amazon Science, VisA dataset", "lic": "CC BY 4.0"}, {"q": "What kind of thing is the object in the image?", "ctx": null, "ref": ["Harmless debris"], "opts": [["Harmless debris", 0.957], ["Unclear", 0.0264], ["Vehicle", 0.0055], ["Obstacle", 0.0045], ["Other sign", 0.0025], ["Person", 0.0019], ["Animal", 0.001], ["Traffic light", 0.0008], ["Stop sign", 0.0003], ["Speed limit sign", 0.0002]], "ok": true, "ms": 61, "cat": "Road", "credit": "Visviva", "lic": "CC0"}, {"q": "How urgently does an on-call engineer need to act on this?", "ctx": null, "ref": ["Low"], "opts": [["Low", 0.9273], ["Medium", 0.0562], ["High", 0.0165]], "ok": true, "ms": 76, "cat": "Screen", "credit": "RSI-Jev authors", "lic": "CC0 (generated)"}, {"q": "Is there a person in the image?", "ctx": null, "ref": ["No"], "opts": [["No", 0.9999], ["Yes", 0.0001]], "ok": true, "ms": 52, "cat": "Is it there?", "credit": "Ingolfson", "lic": "Public domain"}]</script>
   </div>
 <!-- wall:end -->
+</section>
+
+<section class="center" id="play">
+  <div class="stack">
   <div class="game">
     <video id="bo-video" muted loop playsinline preload="metadata" poster="assets/v4/breakout-poster.webp" width="822" height="892" aria-label="Breakout played live by RSI-Jev v4.0-VL: the game board, and under it the five lane probabilities from the game’s own decision feed for each screenshot."><source src="assets/v4/breakout.webm" type="video/webm"><source src="assets/v4/breakout.mp4" type="video/mp4"></video>
-    <p>It plays Breakout from pixels: every frame it gets one screenshot and says which of five lanes the ball is in, and the paddle moves there.<br><span class="small">Recorded live, real speed: 79 ms per round trip, 200 decisions. Lane probabilities from the game’s own feed, cropped from the same recording. Game from hr98w/jev-visual (MIT), unchanged.</span></p>
+    <div><h3>It plays Breakout from pixels.</h3><p class="lead">Every frame it gets one screenshot and says which of five lanes the ball is in, and the paddle moves there.</p><p class="small">Recorded live, real speed: 79 ms per round trip, 200 decisions. Lane probabilities from the game’s own feed, cropped from the same recording. Game from hr98w/jev-visual (MIT), unchanged.</p></div>
   </div>
   <div class="game">
     <video id="pg-video" muted loop playsinline preload="metadata" poster="assets/v4/playground-poster.webp" width="1280" height="900" aria-label="The rsi-jev demo page: a beach photo is dropped in, three questions are asked, and the answers appear with their probabilities."><source src="assets/v4/playground-live.webm" type="video/webm"><source src="assets/v4/playground-live.mp4" type="video/mp4"></video>
-    <p>Drop in your own photo and ask. <code>rsi-jev demo</code> opens this page on your machine.<br><span class="small">Recorded live: child in the photo, yes 99.8%; the place, beach 99.8%; closest to the camera, the ball 89%. 90 ms on the server, one GB10. Photo: child.jpg by Evgeniy Isaev, CC BY 2.0.</span></p>
+    <div><h3>Drop in your own photo and ask.</h3><p class="lead"><code>rsi-jev demo</code> opens this page on your machine.</p><p class="small">Recorded live: child in the photo, yes 99.8%; the place, beach 99.8%; closest to the camera, the ball 89%. 90 ms on the server, one GB10. Photo: child.jpg by Evgeniy Isaev, CC BY 2.0.</p></div>
   </div>
+  </div>
+</section>
 
+<section class="center" id="race-s">
+  <h2>Same picture, same question.</h2>
+  <p class="sub">RSI-Jev and a chat model.</p>
   <div class="live race" id="race">
-    <div class="lhead"><h3>Same picture, same question: RSI-Jev and a chat model</h3><span class="replay">Replay of measured timings on one GB10</span></div>
+    <div class="lhead"><span class="replay">Replay of measured timings on one GB10</span></div>
     <div class="pills" role="tablist" aria-label="Question" id="race-tabs"></div>
     <div class="rq"><img id="race-img" src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." decoding="async"><div><p class="vctx" id="race-ctx"></p><p class="rqq" id="race-q"></p></div></div>
     <div class="lanes">
@@ -539,9 +714,10 @@ footer a { color: var(--muted); }
     </div>
     <p class="small">RSI-Jev’s time is its median over 9 calls; the chat model’s text appears at the token times of one streamed call (greedy, up to 256 tokens). Which one is more accurate is unresolved: most of the chat model’s invalid replies gave an answer under the wrong JSON key; read leniently, it gets 23 of 30 right to our 26, a gap 30 questions cannot settle. Leaves photo by Wald1siedel (CC BY-SA 3.0; the resized copy is shared under CC BY-SA 3.0). The receipt is generated; its blank lower half is cropped here.</p>
   </div>
+</section>
 
-  
-
+<section class="center" id="viewer-s">
+  <h2>A probability for every answer.</h2>
   <div class="viewer" id="viewer">
     <div class="vstage">
       <div class="vpics"><figure class="vimg on" id="vi-0"><img src="assets/v4/ex-capsules.webp" alt="A tray of green gel capsules; one of them is leaking." decoding="async"><figcaption>VisA, Zou et al. 2022, CC BY 4.0, resized</figcaption></figure><figure class="vimg" id="vi-1" hidden><img src="assets/v4/ex-pcb.webp" alt="A small printed circuit board with a burnt spot." decoding="async" loading="lazy"><figcaption>VisA, Zou et al. 2022, CC BY 4.0, resized</figcaption></figure><figure class="vimg" id="vi-2" hidden><img src="assets/v4/ex-red-light.webp" alt="A traffic light showing red." decoding="async" loading="lazy"><figcaption>Photo: Jacklee, Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>, resized</figcaption></figure><figure class="vimg" id="vi-3" hidden><img src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." decoding="async" loading="lazy"><figcaption>Photo: P.Ctnt, Wikimedia Commons, public domain</figcaption></figure><figure class="vimg" id="vi-4" hidden><img src="assets/v4/ex-teddy.webp" alt="A teddy bear sitting on a wooden bench." decoding="async" loading="lazy"><figcaption>Photo via Pixabay, CC0</figcaption></figure><figure class="vimg" id="vi-5" hidden><img src="assets/v4/ex-chart.webp" alt="A line chart of monthly cost: plan B starts high and falls, plan A starts low and rises; they cross at month 4." decoding="async" loading="lazy"><figcaption>Chart generated by us</figcaption></figure><figure class="vimg" id="vi-6" hidden><img src="assets/v4/ex-keep-file.webp" alt="A dialog asking to delete Q3-report.xlsx, with Cancel and Delete buttons." decoding="async" loading="lazy"><figcaption>Screen generated by us</figcaption></figure><figure class="vimg" id="vi-7" hidden><img src="assets/v4/ex-declined.webp" alt="A checkout page saying the card was declined, with buttons to use another card or try again." decoding="async" loading="lazy"><figcaption>Screen generated by us</figcaption></figure></div>
@@ -554,8 +730,11 @@ footer a { color: var(--muted); }
   </div>
   <p class="small">Real output from v4.0-VL on one GB10; the time is the whole call. The three Wikimedia photos are shown at higher resolution than the 512 px copies the model was sent. Photos: VisA (Zou et al. 2022, CC BY 4.0, resized); Wikimedia Commons speed sign by P.Ctnt (public domain) and traffic light by Jacklee (CC BY-SA 3.0; the resized red-light photo is shared under CC BY-SA 3.0) and teddy bear via Pixabay (CC0). The charts and screens are generated by us.</p>
 
+</section>
+
+<section class="center" id="defects">
+  <h2>Finding defects on factory parts, with no defect examples.</h2>
   <div class="visa">
-    <h3>Finding defects on factory parts, with no defect examples</h3>
     <div class="vbars"><div class="vr us"><span class="vn">RSI-Jev v4.0-VL, 2B</span><span class="vt"><i style="width:73.2%"></i></span><b>86.6</b></div><div class="vr"><span class="vn">Gemma 4 12B</span><span class="vt"><i style="width:65.8%"></i></span><b>82.9</b></div><div class="vr"><span class="vn">Jev-Omni (Gemma 4 12B + head)</span><span class="vt"><i style="width:62.2%"></i></span><b>81.1</b></div><div class="vaxis" aria-hidden="true"><span class="vn"></span><span class="vticks"><span style="left:0%">50</span><span style="left:20%">60</span><span style="left:40%">70</span><span style="left:60%">80</span><span style="left:80%">90</span><span style="left:100%">100</span></span><b></b></div></div>
     <p class="small vnote">AUROC. Bars start at 50, the score of a coin flip.</p>
     <p class="small">VisA: the same 2,162 photos of 12 kinds of parts for all three, one photo at a time, no defect examples. Score is AUROC: 50 is a coin flip, 100 is perfect. Ours 95% CI 85.1–88.1. The other two are scored from their authors’ published predictions.</p>
@@ -1070,6 +1249,31 @@ footer a { color: var(--muted); }
     })();
   }, { threshold: 0.3 });
   io.observe(wall.querySelector(".wgrid"));
+})();
+</script>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById("theme");
+  try { var t = localStorage.getItem("gal-theme"); if (t === "light" || t === "dark") root.dataset.theme = t; } catch (e) {}
+  if (btn) {
+    btn.hidden = false;
+    btn.addEventListener("click", function () {
+      var cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      root.dataset.theme = cur === "dark" ? "light" : "dark";
+      try { localStorage.setItem("gal-theme", root.dataset.theme); } catch (e) {}
+    });
+  }
+  /* gentle reveal of each block as it scrolls in; skipped under reduced motion or without IntersectionObserver */
+  if (!("IntersectionObserver" in window) || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+  var els = [].slice.call(document.querySelectorAll("section:not(.hero) > *"));
+  var vh = window.innerHeight;
+  els = els.filter(function (el) { return el.getBoundingClientRect().top > vh; });
+  els.forEach(function (el) { el.classList.add("rv"); });
+  root.classList.add("rv-on");
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.01 });
+  els.forEach(function (el) { io.observe(el); });
 })();
 </script>
 </body>

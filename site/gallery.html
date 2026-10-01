@@ -1,12 +1,10 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RSI-Jev v4.0-VL Gallery</title><style>
-:root{--bg:#f7f7f5;--surface:#ffffff;--surface-2:#f0efec;--ink:#111110;--ink-2:#52514e;--ink-3:#7a7974;--line:#e3e2de;
---accent:#2a78d6;--accent-soft:#dbe8f8;--ok:#1a7f37;--ok-soft:#dcf2e3;--no:#c4332f;--no-soft:#fbe3e2;--warn:#9a6700;--warn-soft:#fbf0d0;
---ref:#1baf7a;--s1:#2a78d6;--s2:#eb6834;--radius:14px;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--surface:#1c1c1b;--surface-2:#262624;--ink:#fafaf9;--ink-2:#c3c2b7;--ink-3:#9a998f;--line:#33322f;
---accent:#3987e5;--accent-soft:#1d3552;--ok:#4ac26b;--ok-soft:#173622;--no:#ff7b72;--no-soft:#3d1f1d;--warn:#e3b341;--warn-soft:#3a2f12;--ref:#199e70;--s1:#3987e5;--s2:#d95926;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#121211;--surface:#1c1c1b;--surface-2:#262624;--ink:#fafaf9;--ink-2:#c3c2b7;--ink-3:#9a998f;--line:#33322f;
---accent:#3987e5;--accent-soft:#1d3552;--ok:#4ac26b;--ok-soft:#173622;--no:#ff7b72;--no-soft:#3d1f1d;--warn:#e3b341;--warn-soft:#3a2f12;--ref:#199e70;--s1:#3987e5;--s2:#d95926;color-scheme:dark}
+<title>RSI-Jev v4.0-VL Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"><style>
+:root{--bg:#000;--surface:#111113;--surface-2:#1c1c1e;--ink:#f5f5f7;--ink-2:#c7c7cc;--ink-3:#86868b;--line:rgba(255,255,255,.1);--accent:#0a84ff;--accent-2:#5ac8fa;--accent-soft:#0b2747;--ok:#30d158;--ok-soft:#0f2e19;--no:#ff6b5e;--no-soft:#3a1714;--warn:#ffd60a;--warn-soft:#332b07;--ref:#30d158;--s1:#0a84ff;--s2:#ff9f0a;--head-bg:rgba(0,0,0,.72);--shadow:0 30px 80px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.03);--radius:22px;--display:"Inter Tight","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--body:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:dark}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#f5f5f7;--surface:#fff;--surface-2:#f5f5f7;--ink:#1d1d1f;--ink-2:#424245;--ink-3:#6e6e73;--line:rgba(0,0,0,.09);--accent:#0071e3;--accent-2:#2997ff;--accent-soft:#e1efff;--ok:#248a3d;--ok-soft:#e3f5e8;--no:#d70015;--no-soft:#fde8ea;--warn:#a05a00;--warn-soft:#fdf0d8;--ref:#1a8f63;--s1:#0071e3;--s2:#e8590c;--head-bg:rgba(245,245,247,.78);--shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px rgba(0,0,0,.06);color-scheme:light}}
+:root[data-theme="light"]{--bg:#f5f5f7;--surface:#fff;--surface-2:#f5f5f7;--ink:#1d1d1f;--ink-2:#424245;--ink-3:#6e6e73;--line:rgba(0,0,0,.09);--accent:#0071e3;--accent-2:#2997ff;--accent-soft:#e1efff;--ok:#248a3d;--ok-soft:#e3f5e8;--no:#d70015;--no-soft:#fde8ea;--warn:#a05a00;--warn-soft:#fdf0d8;--ref:#1a8f63;--s1:#0071e3;--s2:#e8590c;--head-bg:rgba(245,245,247,.78);--shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px rgba(0,0,0,.06);color-scheme:light}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:28px 16px 64px}
@@ -66,9 +64,49 @@ svg .ln{fill:none;stroke-width:2}svg .ln.s1{stroke:var(--s1)}svg .dot.s1{fill:va
 @media (max-width:720px){.wide{grid-template-columns:minmax(0,1fr)}.imgs img{height:190px}header h1{padding-right:84px}.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}.chip{flex:none}}
 .tw{overflow-x:auto;max-width:100%}
 .gfoot{margin:28px 0 8px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3);line-height:1.6}.gfoot a{color:inherit}
+
+/* site look: Inter Tight headlines, rounded cards, hairlines, soft shadows */
+body{font:15px/1.5 var(--body);letter-spacing:-.006em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.wrap{max-width:1180px;padding:40px 20px 72px}
+header{text-align:center;display:grid;justify-items:center;padding:28px 0 8px}
+header .back{margin:0 0 22px;font-size:14px}header .back a{color:var(--accent);text-decoration:none}
+header .eyebrow{margin:0 0 14px;font:600 17px/1 var(--display);letter-spacing:-.01em;color:var(--accent)}
+header h1{font:800 clamp(38px,7vw,80px)/1 var(--display);letter-spacing:-.045em;margin:0 0 20px;max-width:16ch;text-wrap:balance}
+header p.lede{font-size:clamp(17px,1.8vw,20px);line-height:1.45;letter-spacing:-.01em;color:var(--ink-3);max-width:58ch;margin:0 0 18px;text-wrap:balance}
+.theme{position:absolute;top:16px;right:20px;font:500 13px/1 var(--body);padding:7px 12px;color:var(--ink-3);background:transparent}
+.theme:hover{color:var(--ink)}
+.stats{gap:12px;margin:28px 0 30px}
+.stat{border-radius:var(--radius);padding:22px 20px;box-shadow:var(--shadow)}
+.stat .n{font:700 clamp(30px,3.6vw,40px)/1.05 var(--display);letter-spacing:-.04em}
+.stat .l{font-size:13.5px;color:var(--ink-3);margin-top:6px}
+.chips{background:var(--head-bg);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);padding:12px 0;margin:8px 0 26px}
+.chip{font:500 14px/1 var(--body);padding:9px 15px;background:var(--surface)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+section.cat{margin:20px 0 72px}
+section.cat h2{font:700 clamp(28px,4vw,44px)/1.06 var(--display);letter-spacing:-.035em;margin:0 0 10px}
+section.cat .blurb{color:var(--ink-3);font-size:16px}
+section.cat .acc{font-size:13.5px;margin:0 0 20px}
+.grid{gap:16px}
+.card,.wide{border-radius:var(--radius);box-shadow:var(--shadow)}
+.imgs img{background:var(--surface-2)}
+.body{padding:16px 18px 16px;gap:8px}
+.card h3{font:600 16px/1.3 var(--display);letter-spacing:-.015em}
+.q{font-weight:550}
+.track{height:7px;border-radius:4px;align-self:center}
+.fill{border-radius:4px}
+.bar.pick .fill{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.bar .val{font-family:var(--mono);font-size:12px}
+.mk{border-radius:999px;padding:3px 9px}
+.tag{padding:3px 9px}
+.lat{font-family:var(--mono);font-size:12px}
+.note{border-radius:12px;padding:8px 10px}
+.wide{padding:20px}.wide img{border-radius:14px}
+table.t{font-size:13.5px}table.t th{color:var(--ink-3);font-weight:600}
+.foot-note,.gfoot{font-size:13px}
+@media (max-width:720px){.wrap{padding:28px 16px 56px}header{padding-top:36px}.body{padding:14px 15px}section.cat{margin-bottom:56px}}
 </style></head><body><div class="wrap" style="position:relative">
-<button class="theme" id="theme" aria-label="Switch light or dark theme">◐ Theme</button>
-<header><p style="margin:0 0 10px;font-size:14px"><a href="./" style="color:var(--accent)">← RSI-Jev</a></p><h1>What a 2B model decides from a picture</h1>
+<button class="theme" id="theme" type="button" aria-label="Switch light or dark theme">◐ Theme</button>
+<header><p class="back"><a href="./">← RSI-Jev</a></p><p class="eyebrow">RSI-Jev v4.0-VL · Gallery</p><h1>What a 2B model decides from a picture</h1>
 <p class="lede">RSI-Jev v4.0-VL takes an image and a question with fixed answers, and returns a probability for each answer in one pass, with no text generation. Every result below was run on v4.0-VL on one GB10 desktop GPU. Right and wrong answers are both shown.</p></header>
 <div class="stats">
 <div class="stat"><div class="n">86.6</div><div class="l">VisA defect detection, AUROC, never shown a defect</div></div>
@@ -459,7 +497,7 @@ function f(id){chips.forEach(c=>c.setAttribute('aria-pressed',c.dataset.f===id))
 chips.forEach(c=>c.onclick=()=>f(c.dataset.f));
 try{const s=localStorage.getItem('gal-f');if(s&&chips.some(c=>c.dataset.f===s))f(s)}catch(e){}
 const root=document.documentElement;
-function sys(){return matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
+function sys(){return matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'}
 try{const t=localStorage.getItem('gal-theme');if(t)root.dataset.theme=t}catch(e){}
 document.getElementById('theme').onclick=()=>{const cur=root.dataset.theme||sys();root.dataset.theme=cur==='dark'?'light':'dark';try{localStorage.setItem('gal-theme',root.dataset.theme)}catch(e){}};
 </script></body></html>
