@@ -1,0 +1,37 @@
+{
+ "what": "the confidence head (cal-4b, oof_head_scorefloor) refit on the released weights read with own-token option pooling",
+ "ckpt": "vis-v4k/s17",
+ "option_pool_own_tokens": true,
+ "method": "oof_head_scorefloor",
+ "fit_seed": 0,
+ "dev_pool": {
+  "text_corpus": "rt4-tap16-ret-b",
+  "groups": {
+   "nimble_up": 1500,
+   "synth": 1500,
+   "ts": 1500,
+   "mc": 1038,
+   "kev_devtools": 644,
+   "kev_docs": 1065,
+   "kev_hard": 865,
+   "nimble_train": 246,
+   "td": 1500,
+   "other": 1500
+  },
+  "dropped_trained_state": 566,
+  "n_dev_questions": 11358,
+  "leak_guard": [
+   "vis-v4k corpus",
+   "rt4-tap16-ret-b"
+  ]
+ },
+ "fitted": {
+  "T_global": 1.8589,
+  "T_choice": 1.8221,
+  "T_noul": 1.7333,
+  "T_score": 2.1598,
+  "cv_best": 0.03,
+  "T_head_min": 1.259,
+  "T_head_max": 3.1017
+ }
+}
