@@ -535,3 +535,32 @@ work they belong to.
 | `calC-ctl` | control | control | 0.7537 | 0.6394 | 0.3630 | replay-only control for `calA-ce` and `calB-rl` |
 | `asym-calA` | RL | **kept = v4.0-VL** | 0.7564 | 0.6528 | 0.3850 | asymmetric RL stage on `calA-ce` (a confident mistake costs 4× a timid correct answer), 30% image rows: raw final ECE .200 → .082 |
 | `ce-calA` | control | control | 0.7578 | 0.6439 | 0.3750 | the matched supervised stage for `asym-calA`: same data, steps and seed; raw final ECE .121. The release gate job read final .6442, as in the card |
+
+## jevtr_v1, continued — from v4.0-VL to v5.0-VL (2026-09-29/10-02)
+
+Same loop and evaluator, on a new base: Qwen3.5-4B, read at an early layer. Counted as before, one
+per run record and a rerun once: **[N] arms** ran between v4.0-VL and v5.0-VL. The ones below are
+on the released line, in the order they started. The rest will be written up with the work they
+belong to.
+
+- **A System One model doesn't need the deep layers.** Reading the 4B base at layer 20 of 32
+  scores like reading it at 32 on the decision suite and the held-out set; only knowledge-heavy
+  MMLU-Pro keeps rising past 20.
+- **Images on the cut model work as they did on the 2B**, and cost it the "unknown" answer until
+  the data asked for it: KoBBQ unknown-when-ambiguous fell from 0.828 to 0.679, and 2,000 text
+  rows whose right answer is "unknown" brought it to 0.891.
+- **A readout bug, found by an outside benchmark.** On long numbered option lists the 4B line
+  picked the option after the right one, because each option's pooled vector began with tokens
+  that had just read the previous option. Pooling only an option's own tokens fixed it without
+  retraining (CLINC150 0.383 → 0.753).
+
+| arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
+|---|---|---|---|---|---|---|
+| `b4-exit16` | depth | rejected | 0.7439 | 0.6576 | 0.403 | Qwen3.5-4B-Base read at layer 16 of 32, from the base, 3,000 steps; matched 2B control 0.7150 / 0.6381 / 0.330 |
+| `b4-exit20` | depth | **kept** (stage 1) | 0.7599 | 0.6881 | 0.422 | the same at layer 20: the best quality per H100 millisecond |
+| `b4-exit24` | depth | rejected | 0.7603 | 0.6881 | 0.441 | the same at layer 24: only MMLU-Pro moves |
+| `vis-v4-ctl` | control | control | – | – | – | replay-only control for `vis-v4`: KoBBQ unknown-when-ambiguous 0.828 |
+| `vis-v4` | vision | rejected | 0.7655 | 0.6881 | – | images on `b4-exit20` (24k image + 24k text questions): image probes up across the board, KoBBQ unknown 0.828 → 0.679 |
+| `vis-v4k` | vision | **kept** (stage 2) | 0.7670 | 0.6961 | 0.438 | `vis-v4` plus 2,000 "unknown"-answer text rows and more abstention images: every pre-registered line passed; KoBBQ 0.899 / 0.891 |
+| `exit12`, `exit13`, `exit28`, `exit32` | depth | context | 0.6809 · 0.7116 · 0.7584 · 0.7609 | 0.5905 · 0.6343 · 0.6774 · 0.6859 | 0.291 · 0.338 · 0.415 · 0.457 | the depth curve completed: 20 scores like 32 on suite and held-out |
+| `vis-v4k` + own-token readout | readout | **kept = v5.0-VL** | 0.7621 | 0.6915 | 0.429 | same weights, each option pooled over its own tokens, calibrator refitted: CLINC150 0.383 → 0.753, short lists unchanged |

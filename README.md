@@ -61,6 +61,10 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | generated reasoning questions with soft targets where the model is at chance | held-out ECE after calibration, BBH excluded, 0.096 → 0.075 | the image rounds had made it overconfident; this repairs most of it |
 | an RL stage charging a confident mistake 4x a timid correct answer | held-out ECE before calibration 0.200 → 0.082 | against a matched supervised stage: better accuracy and calibration, no detectable ranking difference (one seed) |
 | **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
+| the same recipe on Qwen3.5-4B, read at layer 16, 20 or 24 of its 32 | suite 0.744 · 0.760 · 0.760 | a System One model doesn't need the deep layers: quality flattens by layer 20 |
+| images on the layer-20 model, plus questions whose right answer is "unknown" | KoBBQ unknown-when-ambiguous 0.679 → 0.891 | images cost the model its "unknown" answer until the data asked for it |
+| pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark, fixed without retraining |
+| **v5.0-VL** | MMLU-Pro **0.429**, image top-1 **0.830**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
 
 </details>
 
@@ -78,6 +82,10 @@ generated. A second question about a document already read takes about 10 ms.
 
 ### News
 
+- **2026-10-02 · v5.0-VL 3B** cuts the LLM to what a System One model needs: the first 20 of
+  Qwen3.5-4B's 32 layers, 3.25B parameters. MMLU-Pro 0.385 → 0.429, held-out images 0.802 →
+  0.830, and it says "unknown" when a question has no answer (KoBBQ 0.18 → 0.93).
+  [Release notes](versions/v5.0-vl.md)
 - **2026-10-01 · v4.0-VL** reads images: 80.3% on five held-out image benchmarks, text held
   at v3.0's level, calibration error 0.066 → 0.043. On VisA defect photos it scores 86.6
   AUROC with no defect examples, against 82.9 for Gemma 4 12B.
@@ -89,7 +97,7 @@ generated. A second question about a document already read takes about 10 ms.
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v4.0-vl-2b --port 8000
+rsi-jev serve v5.0-vl-3b --port 8000
 ```
 
 ```bash
@@ -105,7 +113,7 @@ Or in Python, with no server:
 ```python
 from rsijev import Decider
 
-d = Decider("v4.0-vl-2b")
+d = Decider("v5.0-vl-3b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])
@@ -119,14 +127,15 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v4.0-VL-2B** | text, images | **0.756** | **0.653** | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
+| **v5.0-VL-3B** | text, images | **0.762** | **0.692** | 0.053 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
+| v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
 | v2.1-2B | text | 0.736 | 0.633 | 0.059 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
 | v2.0-2B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) |
 | v1.0-2B | text | 0.622 | 0.604 | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
-All are fine-tuned from Qwen3.5 Base. Ten of the fifteen suite benchmarks contribute
+All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers. Ten of the fifteen suite benchmarks contribute
 train-split data, so the held-out set is the zero-shot comparison; v1.0 never saw a train
 split. Per-benchmark scores, image results and caveats are in each release's
 [record](versions/). ECE is expected calibration error (lower is better).
