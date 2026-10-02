@@ -1,8 +1,8 @@
 <h1 align="center">RSI-Jev</h1>
 
 <p align="center">
-Small models that answer typed questions about text and images with a probability for every option.<br>
-Built by a self-improving loop of AI agents.
+<b>A recursively self-improving research system that builds
+<a href="https://docs.typesafe.ai/api">Jev</a>-style <i>System One</i> models.</b>
 </p>
 
 <p align="center">
@@ -19,17 +19,32 @@ Built by a self-improving loop of AI agents.
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
+AI agents propose the hypotheses, register their predictions before spending GPU time, run
+the experiments, and retire their own champions when the evidence says to. Every release, and
+every experiment that failed on the way, is published with its numbers. The loop running the
+research is the next version of [AutoScientists](https://github.com/mims-harvard/AutoScientists).
+
+<p align="center">
+  <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
+</p>
+
+Of 312 experiments since v1.0, the ones that made a release are in
+[`docs/history.md`](docs/history.md); the rest, with why each failed, are in
+[`EXPLORE.md`](EXPLORE.md).
+
+## What it builds
+
+Models that answer a yes/no, pick-one-of-*k* or rate-on-a-rubric question about a document, a
+chat or an image. One forward pass returns a calibrated probability for every option; nothing is
+generated. A second question about a document already read takes about 10 ms.
+
 <p align="center">
   <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
   <br><sub>Capsules photo from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
 </p>
 
-Ask a yes/no, pick-one-of-*k* or rate-on-a-rubric question about a document, a chat or an
-image. One forward pass returns a calibrated probability for every option; nothing is
-generated. A second question about a document already read takes about 10 ms.
-
-## News
+### News
 
 - **2026-10-01 · v4.0-VL** reads images: 80.3% on five held-out image benchmarks, text held
   at v3.0's level, calibration error 0.066 → 0.043. On VisA defect photos it scores 86.6
@@ -84,18 +99,6 @@ train-split data, so the held-out set is the zero-shot comparison; v1.0 never sa
 split. Per-benchmark scores, image results and caveats are in each release's
 [record](versions/). ECE is expected calibration error (lower is better).
 
-## How it is built
-
-AI agents propose each change, register a prediction before spending GPU time, run it, and
-keep it only if it beats the current release. Of 312 experiments since v1.0, the ones that
-made a release are in [`docs/history.md`](docs/history.md); the rest, with why each failed,
-are in [`EXPLORE.md`](EXPLORE.md). The loop is the next version of
-[AutoScientists](https://github.com/mims-harvard/AutoScientists).
-
-<p align="center">
-  <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
-</p>
-
 ## Documentation
 
 | | |
@@ -119,8 +122,8 @@ contact [Shanghua Gao](https://shgao.site).
 
 ## Acknowledgements
 
-Developed on an **HP ZGX Nano AI Station** (NVIDIA GB10 Grace Blackwell Superchip), provided
-by HP and NVIDIA.
+Thanks to **HP** and **NVIDIA** for providing the **HP ZGX Nano AI Station**, powered by the
+**NVIDIA GB10 Grace Blackwell Superchip**.
 
 ## License
 
