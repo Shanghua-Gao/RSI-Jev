@@ -1,13 +1,13 @@
 """Releases without an early exit, a recorded cap or a truncation policy (v1.0 through
-v4.0-VL) are served exactly as before the 4B exit work, and fixed-exit releases without
-aux exits exactly as before adaptive exit.
+v4.0-VL) are served exactly as before the early-exit work, and early-exit releases exactly
+as the exit port served them.
 
 The same tiny random Qwen3.5 (text + vision, no exit) is run through the serving
 paths by this tree and by the tree it was cut from (`git archive BASE_REV`), each
 in its own process: plain, read once, document cache, image states plain and read
 once, and the encoder on a state over the cap. Every probability and every encoded
 id must be bit-for-bit the same. The same for an exit-4 model against 6362d36 (the exit
-port, before adaptive exit). Skips without git history.
+port). Skips without git history.
 
     python -m pytest tests/test_old_releases_unchanged.py -q
 """
@@ -28,8 +28,8 @@ pytest.importorskip("PIL")
 pytest.importorskip("torchvision")
 
 ROOT = Path(__file__).resolve().parent.parent
-BASE_REV = "0af7fe0"            # v4-vision-serve: the serving code of v4.0-VL
-EXIT_REV = "6362d36"            # big4b-serve: the exit port, before adaptive exit
+BASE_REV = "0af7fe0"            # the serving code of v4.0-VL
+EXIT_REV = "6362d36"            # the early-exit port
 
 SCRIPT = r'''
 import json, sys

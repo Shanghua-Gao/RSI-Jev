@@ -17,7 +17,7 @@ model's final norm, and the head reads that state. What is pinned here:
 
 Needs the Qwen3.5 tokenizer and image processor (config files only, no weights).
 
-    python -m pytest tests/test_big4b_exit.py -q
+    python -m pytest tests/test_early_exit_serving.py -q
 """
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ def test_exit_equals_the_model_truncated_at_k(parts, k):
 @pytest.mark.parametrize("k", EXITS)
 def test_raw_exit_equals_a_tap_at_k_on_the_full_tower(parts, k):
     """exit_norm=False reads the un-normalised state: readout_layer=k on the full tower
-    (the internal tests/test_early_exit.py, on the tiny tower)."""
+    (on the tiny tower)."""
     tok, prep, tower, visual, enc, _ = parts
     pad = tok.convert_tokens_to_ids(IMAGE_PAD)
     torch.manual_seed(5)
@@ -214,7 +214,8 @@ def test_raw_exit_equals_a_tap_at_k_on_the_full_tower(parts, k):
 
 def test_exit_settings_are_checked(parts):
     _, _, tower, _, _, _ = parts
-    for bad in (dict(readout_layer=4, exit_layer=4), dict(readout_layer=-1, exit_layer=N_LAYERS),
+    # exit_layer may equal the depth (a tower built with only the layers it runs), not exceed it
+    for bad in (dict(readout_layer=4, exit_layer=4), dict(readout_layer=-1, exit_layer=N_LAYERS + 1),
                 dict(readout_layer=-1, exit_layer=4, residual=True)):
         with pytest.raises(ValueError):
             DecisionModel(tower, H, _arch(**bad))
@@ -405,7 +406,7 @@ def test_old_releases_load_as_before(stub_weights, tmp_path, parts, name):
     model, tok2, enc, m = load_release(d, "cpu")
     assert model.cfg.exit_layer is None
     assert enc.max_length == 2048 and enc.truncate == "left"
-    assert m["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": None, "adaptive": None}
+    assert m["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": None, "option_pool_own_tokens": False}
     if "release" in meta:
         assert isinstance(model, VisionDecisionModel)
         assert stub_weights["visual"] == [(meta["base_model"], PINNED_REVISIONS[meta["base_model"]])]
@@ -434,7 +435,7 @@ def test_an_exit_release_loads_from_meta_alone(stub_weights, tmp_path, parts):
     model, tok2, enc2, meta = load_release(d, "cpu")
     assert isinstance(model, VisionDecisionModel)
     assert model.cfg.exit_layer == 4 and model.cfg.exit_norm is True
-    assert meta["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": 4, "adaptive": None}
+    assert meta["serving"] == {"max_length": 2048, "truncate": "left", "exit_layer": 4, "option_pool_own_tokens": False}
     assert meta["vision"]["revision"] == PINNED_REVISIONS[BASE4]
     assert stub_weights["visual"] == [(BASE4, PINNED_REVISIONS[BASE4])]
     got = score_questions(model, tok2, TEXT_STATE, QS, enc2, max_options=8, device="cpu")[0]
