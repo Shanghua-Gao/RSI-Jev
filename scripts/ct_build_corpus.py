@@ -69,6 +69,11 @@ def main() -> int:
     ap.add_argument("--new", nargs="*", default=[])
     ap.add_argument("--seed", type=int, default=17)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--protect", default="",
+                    help="comma list of parent-source prefixes whose replay keeps the CONTROL's dose: "
+                         "the questions they would get in a replay-only corpus of the same budget. New "
+                         "data then displaces only the other replay sources (v5.0-VL's image stage "
+                         "protects its NLI, scope, abstention and negation replay this way).")
     a = ap.parse_args()
     budget = a.steps * a.batch
     out = Path(a.out)
@@ -86,7 +91,30 @@ def main() -> int:
     stream = replay_stream(Path(a.parent_corpus), a.parent_sources.split(","), a.seed)
     rp: dict[str, list[str]] = {}
     got = 0
-    for s, line in stream:
+    prot = tuple(x for x in a.protect.split(",") if x)
+    if prot:
+        # the control's replay = the first `budget` questions of the stream; protected sources keep
+        # exactly the lines they have there, and the rest of the need is filled from the unprotected
+        # sources in stream order (a prefix of the control's own unprotected lines)
+        ctl, c = [], 0
+        for s, line in stream:
+            if c >= budget:
+                break
+            ctl.append((s, line))
+            c += n_questions(line)
+        for s, line in ctl:
+            if s.startswith(prot):
+                rp.setdefault(s, []).append(line)
+                got += n_questions(line)
+        if got > need:
+            raise SystemExit(f"protected replay ({got} q) exceeds the room left by new data ({need} q)")
+        for s, line in ctl:
+            if got >= need:
+                break
+            if not s.startswith(prot):
+                rp.setdefault(s, []).append(line)
+                got += n_questions(line)
+    for s, line in ([] if prot else stream):
         if got >= need:
             break
         rp.setdefault(s, []).append(line)
@@ -100,6 +128,7 @@ def main() -> int:
     man = {"steps": a.steps, "batch": a.batch, "budget_questions": budget,
            "new_questions": new_q, "replay_questions": got, "seed": a.seed,
            "parent_corpus": a.parent_corpus, "parent_sources": a.parent_sources,
+           **({"protect": a.protect} if prot else {}),
            "sources": ",".join(sorted(files)), "files": files}
     (out / "manifest.json").write_text(json.dumps(man, indent=2) + "\n")
     print(f"{out}: {new_q} new + {got} replay questions (budget {budget}); "
