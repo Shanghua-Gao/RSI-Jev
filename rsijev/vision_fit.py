@@ -55,6 +55,12 @@ class VisionFeed:
             ImagePrep(mid, VisionConfig(image_token_budget=b, min_tokens_per_image=min(64, b)))
             for b in (rlb, max(16, rlb // 2))]
         self.visual = load_visual(mid).to(device)
+        # the vision tower must be the base model's own (4B: out 2560, 2B: out 2048)
+        vo = self.visual.config.out_hidden_size
+        he = model.tower.get_input_embeddings().embedding_dim
+        if vo != he:
+            raise ValueError(f"vision model {mid!r} emits {vo}-wide features; the tower "
+                             f"embeds {he}: set fit_extra.vision.model to the base model")
         for p in self.visual.parameters():
             p.requires_grad_(False)
         # per-source budgets (e.g. {"vis_docvqa": 2048}): prefix match on case.source; such rows

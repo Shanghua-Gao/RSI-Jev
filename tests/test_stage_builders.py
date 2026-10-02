@@ -53,12 +53,14 @@ def nq(path: Path) -> int:
     return sum(len(json.loads(l)["questions"]) for l in open(path) if l.strip())
 
 
-def ct(parent, sources, steps, out, new=(), seed=17, batch=16):
+def ct(parent, sources, steps, out, new=(), seed=17, batch=16, protect=""):
     cmd = [sys.executable, str(SCRIPTS / "ct_build_corpus.py"), "--parent-corpus", str(parent),
            "--parent-sources", sources, "--steps", str(steps), "--batch", str(batch),
            "--out", str(out), "--seed", str(seed)]
     if new:
         cmd += ["--new", *map(str, new)]
+    if protect:
+        cmd += ["--protect", protect]
     subprocess.run(cmd, check=True, capture_output=True, text=True)
     return json.loads((out / "manifest.json").read_text())
 
@@ -84,6 +86,17 @@ def test_replay_fills_the_budget_in_source_proportion(tmp_path, parent):
     for s, share in (("rp_a", .6), ("rp_b", .3), ("rp_c", .1)):
         assert abs(got[s] - 400 * share) <= 1, got
     assert man["sources"] == "rp_a,rp_b,rp_c"
+
+
+def test_protected_sources_keep_the_controls_dose(tmp_path, parent):
+    """--protect: new data displaces only the unprotected replay (v5.0-VL's image stage)."""
+    ctl = ct(parent, "a,b,c", 25, tmp_path / "ctl")
+    new = write(tmp_path / "new" / "pf_x.jsonl", [case(f"x:{i}", "x") for i in range(200)])
+    arm = ct(parent, "a,b,c", 25, tmp_path / "arm", new=[new], protect="c")
+    plain = ct(parent, "a,b,c", 25, tmp_path / "plain", new=[new])
+    assert arm["replay_questions"] == 200 and arm["protect"] == "c" and "protect" not in plain
+    assert (tmp_path / "arm" / "rp_c.jsonl").read_bytes() == (tmp_path / "ctl" / "rp_c.jsonl").read_bytes()
+    assert plain["files"]["rp_c"]["questions"] < ctl["files"]["rp_c"]["questions"]   # diluted without --protect
 
 
 def test_replay_is_deterministic_and_seeded(tmp_path, parent):

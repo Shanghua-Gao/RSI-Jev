@@ -262,6 +262,9 @@ def main() -> int:
     ap.add_argument("--vis-weight", type=float, default=0.15)
     ap.add_argument("--device", default=None)
     ap.add_argument("--limit", action="store_true", help="dry run: 20 questions per group")
+    ap.add_argument("--fit-seed", type=int, default=None,
+                    help="seed torch (CPU and CUDA) right before the fit; v5.0-VL's calibrator used 0. "
+                         "Unset = no reseeding (how v4.0-VL's was fitted)")
     a = ap.parse_args()
 
     import torch
@@ -294,6 +297,10 @@ def main() -> int:
         info["leak_guard_lineage"] = [c.name for _, c, _ in chain]
 
     model = dm
+    if a.fit_seed is not None:
+        torch.manual_seed(a.fit_seed)
+        torch.cuda.manual_seed_all(a.fit_seed)
+        info["fit_seed"] = a.fit_seed
     if a.vis_dev_root is None:
         rep = C.calibrate(dm, tok, dev_t, enc, method="oof_head_scorefloor", max_options=mo, device=device)
     else:
