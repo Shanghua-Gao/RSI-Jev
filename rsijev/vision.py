@@ -56,7 +56,10 @@ VISION_SPECIAL_TOKENS = (VISION_START, IMAGE_PAD, VISION_END, "<|video_pad|>")
 # weights and the image processor come from the base repo, not from the release, so
 # without a pinned revision an upstream change to that repo would change answers
 # silently. A release's meta.json may name its own (`vision.revision`).
-PINNED_REVISIONS = {"Qwen/Qwen3.5-2B-Base": "b1485b2fa6dfa1287294f269f5fb618e03d52d7c"}
+# 4B: the snapshot the 4B exit models (b4-exit20, rt5-4b-x20, vis-v4k) were trained
+# and gated on.
+PINNED_REVISIONS = {"Qwen/Qwen3.5-2B-Base": "b1485b2fa6dfa1287294f269f5fb618e03d52d7c",
+                    "Qwen/Qwen3.5-4B-Base": "1001bb4d826a52d1f399e183466143f4da7b741b"}
 
 
 def vision_revision(block: dict | None, model_id: str) -> str | None:
@@ -217,6 +220,14 @@ class VisionDecisionModel(DecisionModel):
     def __init__(self, tower, hidden, cfg, lm_head=None, *, visual: nn.Module,
                  image_token_id: int, vcfg: VisionConfig | None = None):
         super().__init__(tower, hidden, cfg, lm_head=lm_head)
+        # The vision tower must be the base model's own: its merger emits the text
+        # tower's width (2B: 2048, 4B: 2560). A ViT from another size would scatter
+        # features of the wrong width over the image tokens.
+        vo = getattr(getattr(visual, "config", None), "out_hidden_size", None)
+        he = tower.get_input_embeddings().embedding_dim
+        if vo is not None and vo != he:
+            raise ValueError(f"the vision tower emits {vo}-wide features; the text tower "
+                             f"embeds {he}: load the base model's own vision tower")
         self.visual = visual
         self.image_token_id = image_token_id
         self.vcfg = vcfg or VisionConfig()
@@ -251,11 +262,17 @@ class VisionDecisionModel(DecisionModel):
         not by its token count, so a chunk's positions depend on what came before
         it. `image_embeds` are the features of the image-pad tokens in this chunk,
         in order. Under a causal mask this computes what the full pass computes for
-        these tokens -- the same argument as `DecisionModel.encode_prefix`."""
-        with torch.no_grad():
-            return self.tower(inputs_embeds=self.embed(input_ids, image_embeds),
-                              position_ids=position_ids, past_key_values=cache,
-                              use_cache=True).past_key_values
+        these tokens -- the same argument as `DecisionModel.encode_prefix`.
+
+        An early-exit model (ArchConfig.exit_layer) runs its first exit_layer layers
+        here as everywhere else, and the cache keeps only those layers. Qwen3.5 puts
+        image features in at the input embeddings only (deepstack_visual_indexes is
+        empty for 0.8B/2B/4B), so the exit never cuts the image path."""
+        with torch.no_grad(), self.exit_tower():
+            cache = self.tower(inputs_embeds=self.embed(input_ids, image_embeds),
+                               position_ids=position_ids, past_key_values=cache,
+                               use_cache=True).past_key_values
+        return self.exit_cache(cache)
 
     def _compute(self, *, input_ids, pixel_values=None, image_grid_thw=None,
                  image_embeds=None, **kw):

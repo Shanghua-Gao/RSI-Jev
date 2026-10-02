@@ -218,6 +218,25 @@ inference procedures despite receiving equivalent payloads."*
   servers cut the start of an over-long state without a warning; the benchmark scripts still
   do, so the published numbers reproduce.
 
+  A release trained at a longer cap or with the middle cut records it in meta.json
+  (`spec.max_length`, `spec.truncate: "middle"`), and is served that way. The middle cut
+  keeps the state's first line, its head and its tail around a marker
+  (`[... N tokens of the state omitted ...]`), and every response then carries
+  `"truncated": {"state_tokens_omitted", "option_desc_tokens_omitted",
+  "question_tokens_omitted", "max_length"}` next to `usage`. `--max-length` and
+  `--truncate left|middle` (or `RSIJEV_MAX_LENGTH`, `RSIJEV_TRUNCATE`) override both for
+  any release. A release without these fields is served as before.
+- **Adaptive exit (4B releases with aux exits).** A release that carries extra heads at
+  shallower exits (`spec.arch_extra.aux_exits`, `aux_scorers.safetensors`) and a policy
+  tuned on held-out data (`meta.json` `adaptive.tau`, one calibrator per exit in
+  `adaptive_calibration.safetensors`) answers each question of a multi-question request
+  at the first exit whose calibrated top answer reaches tau, and reports the layers each
+  question ran in `usage.depth`. Single-question requests run the full exit: on the GB10,
+  adaptive exit was 6-9% faster on 8- and 32-question requests and 1-7% slower on one
+  question. `--adaptive on` uses it for every request, `--adaptive off` (or
+  `--fixed-exit`) for none; `RSIJEV_ADAPTIVE` and `meta.json` `adaptive.serving` set the
+  same. Micro-batched requests and image requests always run the full exit.
+
 ## Speed
 
 **Install `fla`** (`pip install "rsi-jev[fast]"`, or `pip install -e ".[fast]"` in a

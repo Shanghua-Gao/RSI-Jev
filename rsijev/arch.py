@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+import contextlib
 import copy
 import torch
 import torch.nn as nn
@@ -159,6 +160,34 @@ class ArchConfig:
     # (embeddings are frozen separately by the runner). 0 = train every layer,
     # which is the champion's behaviour. 1/3 at 2B freezes layers 0-7 of 24.
     freeze_lower_frac: float = 0.0
+    # jevtr_v1_arch: EARLY EXIT. The scorer reads hidden-state index exit_layer
+    # (the un-normalised output of decoder layer exit_layer-1, what
+    # readout_layer=exit_layer would tap) and decoder layers exit_layer.. are NOT
+    # RUN in the scoring pass: the text model runs its first exit_layer layers
+    # (then its final norm, or the identity without exit_norm). The weights stay in the module,
+    # so checkpoints keep the full layout, and a direct `tower(...)` call (fit.py's
+    # LM-retention term) still runs full depth. Parity with the full tower read at
+    # readout_layer=exit_layer: tests/test_big4b_exit.py. On the 24-layer 2B,
+    # 16 = output of layer 15 and 12 = output of layer 11 (both full attention).
+    # Requires readout_layer=-1, residual=False, no layer_mix. None = off.
+    exit_layer: int | None = None
+    # With exit_norm (default) the exit state goes through the text model's own
+    # final RMSNorm, i.e. the model IS a truncated Qwen3.5 (LayerSkip-style shared
+    # norm). Mid-stack states are ~13x smaller than the normed final (2B base:
+    # token norm 11.7 at index 16 vs 153.5 final), so a head continued from a
+    # tap-final parent sees inputs at the scale it was trained on. False = the
+    # raw tap, exactly readout_layer=exit_layer on the full tower.
+    exit_norm: bool = True
+    # jevtr_v1_adaexit: ADAPTIVE early exit. Extra readout heads at shallower exits
+    # (hidden-state indices < exit_layer, same convention as exit_layer), each its
+    # own OptionScorer reading the text model's final norm applied to that state
+    # (exit_norm semantics). The main scorer still reads exit_layer, and forward()
+    # returns ONLY its logits, so with the aux heads ignored the model is exactly the
+    # fixed-exit model. forward_exits() returns every exit's logits (deep-supervision
+    # training, per-exit eval); rsijev/adaptive.py runs the staged per-row exit.
+    # Checkpoint layout: the aux heads go to aux_scorers.safetensors, keyed "<L>.<name>".
+    # Needs exit_layer, exit_norm, head_design "none". () = off.
+    aux_exits: tuple = ()
 
 
 class _RowGradScale(torch.autograd.Function):
@@ -192,6 +221,40 @@ def _decoder_layers(tower: nn.Module):
         if isinstance(m, nn.ModuleList):
             return m
     raise ValueError("could not locate the tower's decoder layers")
+
+
+def _text_model(tower: nn.Module) -> nn.Module:
+    """The module that owns the decoder `layers` and the final `norm`
+    (Qwen3.5: the tower itself, or `.language_model` on the multimodal wrapper)."""
+    for path in ("", "language_model", "model"):
+        m = tower
+        try:
+            for part in [p for p in path.split(".") if p]:
+                m = getattr(m, part)
+        except AttributeError:
+            continue
+        if isinstance(getattr(m, "layers", None), nn.ModuleList) and hasattr(m, "norm"):
+            return m
+    raise ValueError("could not locate the tower's text model (layers + norm)")
+
+
+def _hook_full_depth(*models: nn.Module) -> None:
+    """Install transformers' hidden-state capturing hooks while every layer is in place.
+
+    transformers 5.x installs them once, lazily, on the layers present at the first
+    output_hidden_states call. If that call is an exit call (layers swapped to the
+    first exit_layer), only those layers are ever hooked, and a later full-depth call
+    on the same tower -- a tap model sharing it, fit.py's retention term -- returns a
+    short hidden_states tuple. Installing up front changes no exit output. A no-op on
+    transformers without the hooks, and on a module already hooked."""
+    try:
+        from transformers.modeling_utils import PreTrainedModel
+        from transformers.utils.output_capturing import maybe_install_capturing_hooks
+    except ImportError:
+        return
+    for m in models:
+        if isinstance(m, PreTrainedModel):
+            maybe_install_capturing_hooks(m)
 
 class OptionScorer(nn.Module):
     """Turns hidden states into one logit per option.
@@ -466,6 +529,76 @@ class DecisionModel(nn.Module):
             if emb is not None:
                 for p in emb.parameters():
                     p.requires_grad_(False)
+        if cfg.exit_layer:
+            if cfg.readout_layer != -1 or cfg.residual or cfg.layer_mix:
+                raise ValueError("exit_layer needs readout_layer=-1, residual=False and no layer_mix")
+            tm = _text_model(self.tower)
+            n = len(tm.layers)
+            if not 1 <= int(cfg.exit_layer) < n:
+                raise ValueError(f"exit_layer {cfg.exit_layer} outside 1..{n - 1}")
+            # plain attributes (object.__setattr__): registering them would put a
+            # second copy of every layer's keys into state_dict()
+            object.__setattr__(self, "_exit_text", tm)
+            object.__setattr__(self, "_exit_layers",
+                               nn.ModuleList(list(tm.layers)[: int(cfg.exit_layer)]))
+        if cfg.aux_exits:
+            if not cfg.exit_layer or not cfg.exit_norm:
+                raise ValueError("aux_exits needs exit_layer with exit_norm=True")
+            if cfg.head_design != "none":
+                raise ValueError("aux_exits supports head_design 'none' only")
+            ex = sorted({int(x) for x in cfg.aux_exits})
+            if any(not 1 <= x < int(cfg.exit_layer) for x in ex):
+                raise ValueError(f"aux_exits {ex} must lie in 1..{int(cfg.exit_layer) - 1}")
+            # built AFTER the main scorer, so the main head's initialisation (and
+            # every RNG draw before it) is the fixed-exit arm's
+            self.aux_scorers = nn.ModuleDict({str(x): OptionScorer(hidden, cfg) for x in ex})
+        else:
+            self.aux_scorers = None
+
+    def exit_indices(self) -> list[int]:
+        """Every exit this model can read, shallow to deep (the last is exit_layer)."""
+        aux = sorted(int(k) for k in self.aux_scorers) if self.aux_scorers is not None else []
+        return aux + [int(self.cfg.exit_layer)]
+
+    def exit_scorer(self, L: int) -> nn.Module:
+        return self.scorer if int(L) == int(self.cfg.exit_layer) else self.aux_scorers[str(int(L))]
+
+    @contextlib.contextmanager
+    def exit_tower(self):
+        """Inside this context a direct `self.tower(...)` call IS the truncated
+        model: the text model runs its first exit_layer decoder layers, then its
+        final norm (or the identity without exit_norm). With exit_norm and the
+        tied embedding, last_hidden_state @ W.T is the exit model's own LM
+        (fit.py retention_at_exit). A no-op when exit_layer is off."""
+        if not self.cfg.exit_layer:
+            yield
+            return
+        tm = self._exit_text
+        _hook_full_depth(self.tower, tm)
+        full_layers, full_norm = tm.layers, tm.norm
+        tm.layers = self._exit_layers
+        if not self.cfg.exit_norm:
+            tm.norm = nn.Identity()
+        try:
+            yield
+        finally:
+            tm.layers, tm.norm = full_layers, full_norm
+
+    def exit_cache(self, cache):
+        """A cache the exit model built, cut to the layers it runs (big4b serve-exit
+        patch, tools/big4b/make_serve_exit.py). HF builds a new cache for every layer
+        of the config, so only the first exit_layer were filled, and it asks the LAST
+        linear-attention cache layer whether a previous state exists
+        (has_previous_state()), which the exit model never filled: the cached
+        continuation then fails (internal big4b f2e27c5). A no-op when exit_layer is off."""
+        L = self.cfg.exit_layer
+        if not L or cache is None:
+            return cache
+        n = len(cache.layers)
+        for k, v in list(vars(cache).items()):
+            if isinstance(v, list) and len(v) == n:
+                setattr(cache, k, v[: int(L)])
+        return cache
 
     def encode_prefix(self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None):
         """Run a shared prefix once and return its cache.
@@ -477,9 +610,10 @@ class DecisionModel(nn.Module):
         optimisation, not an approximation, and `tests/test_prefix_cache.py`
         checks that rather than trusting it.
         """
-        with torch.no_grad():
-            return self.tower(input_ids=input_ids, attention_mask=attention_mask,
-                              use_cache=True).past_key_values
+        with torch.no_grad(), self.exit_tower():
+            cache = self.tower(input_ids=input_ids, attention_mask=attention_mask,
+                               use_cache=True).past_key_values
+        return self.exit_cache(cache)
 
     def extend_prefix(self, cache, input_ids: torch.Tensor, start: int):
         """Continue a prefix cache over `input_ids`, which follow token `start - 1`.
@@ -489,7 +623,7 @@ class DecisionModel(nn.Module):
         Under a causal mask this computes what `encode_prefix` would on the joined
         ids, so a caller holding a cache it must keep passes a copy.
         """
-        with torch.no_grad():
+        with torch.no_grad(), self.exit_tower():
             pos = torch.arange(start, start + input_ids.shape[1],
                                device=input_ids.device).unsqueeze(0).expand(input_ids.shape[0], -1)
             return self.tower(input_ids=input_ids, past_key_values=cache, use_cache=True,
@@ -523,6 +657,16 @@ class DecisionModel(nn.Module):
             extra["input_ids"] = input_ids
         else:
             extra["inputs_embeds"] = inputs_embeds
+        if self.cfg.exit_layer:
+            # rt5 (big4b exit patch): early exit. Run only the first exit_layer decoder
+            # layers (+ final norm under exit_norm); the swap is undone before returning.
+            with self.exit_tower():
+                out = self.tower(attention_mask=attention_mask, output_hidden_states=True, **extra)
+            final = out.last_hidden_state
+            hs = tuple(out.hidden_states[:-1]) + (final,)
+            if all_states:
+                return hs, final
+            return final, final
         out = self.tower(attention_mask=attention_mask, output_hidden_states=True, **extra)
         hs = out.hidden_states                      # tuple, embeddings first
         # `last_hidden_state` is unambiguously post-norm; hs[-1] is post-norm in
@@ -615,7 +759,8 @@ class DecisionModel(nn.Module):
 
     def _readout(self, h, final, b, decision_index, option_index,
                  option_span_start, option_span_end, option_token_ids,
-                 option_mask, want_base, mode_id=None, option_perm=None):
+                 option_mask, want_base, mode_id=None, option_perm=None, scorer=None):
+        scorer = self.scorer if scorer is None else scorer
         decision_h = h[b, decision_index]                        # (B, H)
         option_h = None
         if option_span_start is not None and self.cfg.option_pool == "mean":
@@ -635,7 +780,7 @@ class DecisionModel(nn.Module):
         # behaved). Cast at the boundary rather than requiring every caller to
         # remember: a mismatch here is a runtime error, not a silent wrong answer,
         # but it costs an allocation every time.
-        dtype = next(self.scorer.parameters()).dtype
+        dtype = next(scorer.parameters()).dtype
         decision_h = decision_h.to(dtype)
         if option_h is not None:
             option_h = option_h.to(dtype)
@@ -647,9 +792,9 @@ class DecisionModel(nn.Module):
         # input norm, smoothing or decay removed; frozen arms, which never use
         # autocast, never spiked. The scorer is 7 M parameters: fp32 is free.
         with torch.autocast(decision_h.device.type, enabled=False):
-            logits = self.scorer(decision_h=decision_h, option_h=option_h,
-                                 option_mask=option_mask, mode_id=mode_id,
-                                 option_perm=option_perm)
+            logits = scorer(decision_h=decision_h, option_h=option_h,
+                            option_mask=option_mask, mode_id=mode_id,
+                            option_perm=option_perm)
         if self.cfg.logit_cap:
             c = float(self.cfg.logit_cap)
             logits = c * torch.tanh(logits / c)
@@ -684,6 +829,40 @@ class DecisionModel(nn.Module):
 
     def forward(self, **kw) -> torch.Tensor:
         return self._compute(**kw)[0]
+
+    def forward_exits(self, *, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+                      decision_index: torch.Tensor,
+                      option_index: torch.Tensor | None = None,
+                      option_span_start: torch.Tensor | None = None,
+                      option_span_end: torch.Tensor | None = None,
+                      option_token_ids: torch.Tensor | None = None,
+                      option_mask: torch.Tensor | None = None,
+                      mode_id: torch.Tensor | None = None,
+                      option_perm: torch.Tensor | None = None,
+                      row_grad_scale: torch.Tensor | None = None, **_) -> dict:
+        """{exit index: logits} for every exit, from ONE pass of the exit tower.
+
+        The main exit's entry is computed exactly as forward() computes it (same
+        state, same readout, same scorer); each aux exit reads norm(hidden_states[L])
+        through its own scorer. Presented option order, -inf where masked. The
+        model's calibration (cal_mode) applies to every entry, as in forward()."""
+        if self.aux_scorers is None:
+            raise ValueError("forward_exits needs arch aux_exits")
+        hs, final = self._run_tower(input_ids, attention_mask, all_states=True)
+        b = torch.arange(final.shape[0], device=final.device)
+        norm = self._exit_text.norm
+
+        def read(h, sc):
+            if row_grad_scale is not None:
+                h = _RowGradScale.apply(h, row_grad_scale)
+            return self._readout(h, final, b, decision_index, option_index,
+                                 option_span_start, option_span_end, option_token_ids,
+                                 option_mask, False, mode_id=mode_id, option_perm=option_perm,
+                                 scorer=sc)[0]
+        out = {int(self.cfg.exit_layer): read(final, None)}
+        for k, sc in self.aux_scorers.items():
+            out[int(k)] = read(norm(hs[int(k)]), sc)
+        return dict(sorted(out.items()))
 
     def forward_with_base(self, **kw):
         """(logits, base logits) from ONE tower pass. Use this when anchoring."""

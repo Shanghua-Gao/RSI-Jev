@@ -115,7 +115,7 @@ class ModelRunner:
                 return plan_image_request(self.tok, self.prep, state, images, questions,
                                           self.venc, **({"vision_cache": vc} if vc else {}))
         except ValueError as e:
-            err = state_too_long(e, self.venc.max_length)
+            err = state_too_long(e, self.venc.max_length, self.venc)
             if err is None:
                 raise
             raise err from None
@@ -169,6 +169,12 @@ class ModelRunner:
                              device=self.device, batch_size=self.max_rows,
                              max_tokens=self.max_tokens, sort=opt["sort"],
                              trim_options=opt["trim_options"])
+        # TODO(adaptive exit): pooled rows take the fixed exit whatever --adaptive says.
+        # The aux heads are text-only, and adaptive exit was benchmarked on one
+        # request's own rows, not on rows pooled across requests.
+        from serve.infer import fixed_depth
+        for p in plans:
+            fixed_depth(self.model, p)
         out = [([], 0) for _ in plans]
         for j, r, pr in zip(owner, rows, probs):
             out[j][0].append(list(Prediction(tuple(pr)).probs))
