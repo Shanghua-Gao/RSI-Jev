@@ -92,7 +92,7 @@ def test_questions_are_independent(client):
     assert [q.key for q in questions] == ["a", "b"]
 
 
-@pytest.mark.parametrize("count,expected", [(1, 422), (2, 200), (160, 200), (161, 422)])
+@pytest.mark.parametrize("count,expected", [(1, 422), (2, 200), (160, 200), (5120, 200), (5121, 422)])
 def test_choice_option_limits(client, count, expected):
     criteria = {f"k{i}": f"description {i}" for i in range(count)}
     r = client.post("/v1/systemone", json=body(q={**CHOICE, "criteria": criteria}))
@@ -230,7 +230,8 @@ def test_models_limits_and_health(client):
 
     lim = client.get("/v1/limits").json()
     assert lim["max_questions"] == 64
-    assert lim["max_answers_per_question"] == 160
+    assert lim["max_answers_per_question"] == 5120
+    assert lim["max_input_tokens"] == 32768
     # This deployment shows option keys to the model; the reference hides them.
     assert lim["option_keys_visible_to_model"] is True
 

@@ -37,13 +37,19 @@ equivalent payloads."):
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from rsijev.contract import Prediction, Question
 
 MAX_QUESTIONS = 64
-MAX_ANSWERS = 160                      # options per choice question / levels per score;
-                                        # v3.0 trains and evaluates with max_options 160
+# The option_xattn head reads any number of options. v3.0 and v4.0-VL trained with up
+# to 160; picking one title among 5,120 still answers (no failure, accuracy falls slowly).
+MAX_ANSWERS = int(os.environ.get("RSIJEV_MAX_ANSWERS", "5120"))  # per choice / score
+# Tokens per question (state + instructions + options). Training cut states at 2,048;
+# serving does not cut: a longer question is refused with a 422. The Qwen3.5 base has
+# 262k positions.
+MAX_INPUT_TOKENS = int(os.environ.get("RSIJEV_MAX_INPUT_TOKENS", "32768"))
 NOUL_OPTIONS = ("false", "true")       # this project's contract order; the wire is key-based
 NOUL_DEFAULTS = {"true": "Yes", "false": "No"}
 CHAT_ROLES = {"system", "user", "assistant", "tool"}
@@ -206,5 +212,6 @@ def to_answer(q: Question, probs: list[float]) -> dict[str, Any]:
 
 def limits() -> dict[str, Any]:
     return {"max_answers_per_question": MAX_ANSWERS,
+            "max_input_tokens": MAX_INPUT_TOKENS,
             "max_questions": MAX_QUESTIONS,
             "option_keys_visible_to_model": True}

@@ -47,7 +47,15 @@ class EncodeConfig:
     option_pool: Literal["mean", "last"] = "mean"
     include_criteria: bool = True      # the descriptions are part of the task
     max_length: int = 2048
+    # Training and the benchmark scripts cut an over-long STATE from the left at
+    # max_length. Serving turns this off: a longer question is refused
+    # (InputTooLong) rather than answered on input it never saw.
+    truncate: bool = True
     answer_cue: str = "Answer:"
+
+
+class InputTooLong(ValueError):
+    """A question longer than EncodeConfig.max_length with truncation off."""
 
 
 def option_first_token_ids(tokenizer, options: Sequence[str],
@@ -118,6 +126,9 @@ def encode_question(tokenizer, state: str, q: Question, cfg: EncodeConfig,
     ids += tokenizer(parts[-1], add_special_tokens=False)["input_ids"]
     decision_index = len(ids) - 1
 
+    if len(ids) > cfg.max_length and not cfg.truncate:
+        raise InputTooLong(f"question {q.key} is {len(ids)} tokens, over the maximum "
+                           f"context length of {cfg.max_length}")
     if len(ids) > cfg.max_length:
         # Truncate the STATE, never the options or the cue: dropping an option
         # silently changes the task, and dropping the cue moves the readout.
