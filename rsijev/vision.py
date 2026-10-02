@@ -183,21 +183,26 @@ def load_visual(model_id: str, dtype=torch.bfloat16, revision: str | None = None
     from safetensors import safe_open
     from transformers import AutoConfig
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel
-    if revision is None:
+    local = Path(model_id).is_dir() and (Path(model_id) / "visual.safetensors").exists()
+    if revision is None and not local:
         revision = PINNED_REVISIONS.get(model_id)
     cfg = AutoConfig.from_pretrained(model_id, revision=revision)
     vc = cfg.vision_config
     vc._attn_implementation = "sdpa"
     visual = Qwen3_5VisionModel(vc)
-    idx = json.loads(Path(hf_hub_download(model_id, "model.safetensors.index.json",
-                                                    revision=revision)).read_text())
-    files = sorted({f for k, f in idx["weight_map"].items() if k.startswith("model.visual.")})
     sd = {}
-    for f in files:
-        with safe_open(hf_hub_download(model_id, f, revision=revision), framework="pt") as fh:
-            for k in fh.keys():
-                if k.startswith("model.visual."):
-                    sd[k[len("model.visual."):]] = fh.get_tensor(k)
+    if local:      # a self-contained release: visual.safetensors, keys without "model.visual."
+        with safe_open(str(Path(model_id) / "visual.safetensors"), framework="pt") as fh:
+            sd = {k: fh.get_tensor(k) for k in fh.keys()}
+    else:
+        idx = json.loads(Path(hf_hub_download(model_id, "model.safetensors.index.json",
+                                                        revision=revision)).read_text())
+        files = sorted({f for k, f in idx["weight_map"].items() if k.startswith("model.visual.")})
+        for f in files:
+            with safe_open(hf_hub_download(model_id, f, revision=revision), framework="pt") as fh:
+                for k in fh.keys():
+                    if k.startswith("model.visual."):
+                        sd[k[len("model.visual."):]] = fh.get_tensor(k)
     missing, unexpected = visual.load_state_dict(sd, strict=False)
     missing = [m for m in missing if "rotary" not in m]      # buffers, rebuilt at init
     if missing or unexpected:

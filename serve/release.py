@@ -277,7 +277,14 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     ckpt = Path(ckpt)
     meta = json.loads((ckpt / "meta.json").read_text())
     spec = meta["spec"]
-    tok = AutoTokenizer.from_pretrained(meta["base_model"])
+    # A self-contained release (config.json next to meta.json) carries everything it
+    # runs: the tokenizer, the image processor, the text tower with its embeddings and
+    # the vision tower. It never touches the base model on the Hub. Older releases
+    # take those from `base_model`.
+    local = (ckpt / "config.json").exists()
+    src = str(ckpt) if local else meta["base_model"]
+    meta["weights_source"] = src
+    tok = AutoTokenizer.from_pretrained(src)
     # Load straight into the precision the tower will run in, rather than fp32
     # then a cast: the fp32 checkpoint rounds to the target once either way, and
     # this never materialises a second copy. That matters on a laptop, and on a
@@ -291,20 +298,26 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     kw = {}
     if exit_layer:
         from transformers import AutoConfig
-        bc = AutoConfig.from_pretrained(meta["base_model"])
+        bc = AutoConfig.from_pretrained(src)
         tc = getattr(bc, "text_config", None) or bc
         tc.num_hidden_layers = int(exit_layer)
         if getattr(tc, "layer_types", None):
             tc.layer_types = list(tc.layer_types)[: int(exit_layer)]
         kw["config"] = bc
-    lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
-                                              dtype=infer_dtype or torch.float32, **kw)
+    if local:
+        from transformers import AutoConfig
+        lm = AutoModelForCausalLM.from_config(kw.get("config") or AutoConfig.from_pretrained(src),
+                                              dtype=infer_dtype or torch.float32)
+    else:
+        lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
+                                                  dtype=infer_dtype or torch.float32, **kw)
     tower = getattr(lm, "model", lm)
     sd = load_file(str(ckpt / "tower.safetensors"))
     if exit_layer:
         sd = {k: v for k, v in sd.items() if not _layer_at_or_above(k, int(exit_layer))}
     missing, unexpected = tower.load_state_dict(sd, strict=False)
-    bad = [k for k in missing if "embed_tokens" not in k]
+    # a base-model release takes its embeddings from the Hub; a self-contained one ships them
+    bad = list(missing) if local else [k for k in missing if "embed_tokens" not in k]
     if bad or unexpected:
         raise RuntimeError(f"checkpoint does not match {meta['base_model']}: "
                            f"missing {bad[:5]}, unexpected {list(unexpected)[:5]}")
@@ -326,11 +339,11 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
             raise RuntimeError(f"the checkpoint was trained with the vision tower of "
                                f"{vb['model']}, but its base model is {meta['base_model']}")
         vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
-        revision = vision_revision(vb, meta["base_model"])
+        revision = None if local else vision_revision(vb, meta["base_model"])
         # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
         # is how the vision releases were trained and gated.
         model = VisionDecisionModel(tower, cfg.hidden_size, arch,
-                                    visual=load_visual(meta["base_model"], revision=revision),
+                                    visual=load_visual(src, revision=revision),
                                     image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD),
                                     vcfg=vcfg).to(device)
         meta["vision"] = {"image_token_budget": vcfg.image_token_budget,
