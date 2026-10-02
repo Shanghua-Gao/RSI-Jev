@@ -216,6 +216,24 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
     return A.Policy(exits, cal, float(block["tau"])), None
 
 
+def _layer_at_or_above(key: str, n: int) -> bool:
+    """True for a decoder-layer weight with index >= n ("layers.<i>." in the key)."""
+    m = re.search(r"(?:^|\.)layers\.(\d+)\.", key)
+    return bool(m) and int(m.group(1)) >= n
+
+
+def strip_exit_tower(src: str | Path, dst: str | Path, exit_layer: int) -> dict:
+    """Write a tower.safetensors without the decoder layers an early-exit release never
+    runs (index >= exit_layer). Every kept tensor is copied unchanged."""
+    from safetensors.torch import load_file, save_file
+    sd = load_file(str(src))
+    kept = {k: v.contiguous() for k, v in sd.items() if not _layer_at_or_above(k, exit_layer)}
+    save_file(kept, str(dst), metadata={"format": "pt"})
+    return {"kept": len(kept), "dropped": len(sd) - len(kept),
+            "params_kept": sum(v.numel() for v in kept.values()),
+            "params_dropped": sum(v.numel() for k, v in sd.items() if k not in kept)}
+
+
 def own_token_pool(spec: dict, meta: dict) -> bool:
     """Own-token option pooling: meta's flag, or RSIJEV_OPTION_POOL_OWN_TOKENS=1|0 to override."""
     env = os.environ.get("RSIJEV_OPTION_POOL_OWN_TOKENS")
@@ -265,11 +283,27 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     # this never materialises a second copy. That matters on a laptop, and on a
     # unified-memory box holding two checkpoints at once. The base weights are
     # bf16 on the Hub, so fp32 is an exact upcast and bf16 is a no-op.
+    # An early-exit release runs only its first exit_layer decoder layers, so build the
+    # tower with just those: the deeper layers are never loaded, and a release may ship
+    # a tower.safetensors without them (strip_exit_tower). A full-depth file loads too;
+    # its deeper layers are dropped here.
+    exit_layer = (spec.get("arch_extra") or {}).get("exit_layer")
+    kw = {}
+    if exit_layer:
+        from transformers import AutoConfig
+        bc = AutoConfig.from_pretrained(meta["base_model"])
+        tc = getattr(bc, "text_config", None) or bc
+        tc.num_hidden_layers = int(exit_layer)
+        if getattr(tc, "layer_types", None):
+            tc.layer_types = list(tc.layer_types)[: int(exit_layer)]
+        kw["config"] = bc
     lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
-                                              dtype=infer_dtype or torch.float32)
+                                              dtype=infer_dtype or torch.float32, **kw)
     tower = getattr(lm, "model", lm)
-    missing, unexpected = tower.load_state_dict(load_file(str(ckpt / "tower.safetensors")),
-                                                strict=False)
+    sd = load_file(str(ckpt / "tower.safetensors"))
+    if exit_layer:
+        sd = {k: v for k, v in sd.items() if not _layer_at_or_above(k, int(exit_layer))}
+    missing, unexpected = tower.load_state_dict(sd, strict=False)
     bad = [k for k in missing if "embed_tokens" not in k]
     if bad or unexpected:
         raise RuntimeError(f"checkpoint does not match {meta['base_model']}: "

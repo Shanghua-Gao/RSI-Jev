@@ -534,8 +534,9 @@ class DecisionModel(nn.Module):
                 raise ValueError("exit_layer needs readout_layer=-1, residual=False and no layer_mix")
             tm = _text_model(self.tower)
             n = len(tm.layers)
-            if not 1 <= int(cfg.exit_layer) < n:
-                raise ValueError(f"exit_layer {cfg.exit_layer} outside 1..{n - 1}")
+            # n == exit_layer when the tower was built with only the layers it runs
+            if not 1 <= int(cfg.exit_layer) <= n:
+                raise ValueError(f"exit_layer {cfg.exit_layer} outside 1..{n}")
             # plain attributes (object.__setattr__): registering them would put a
             # second copy of every layer's keys into state_dict()
             object.__setattr__(self, "_exit_text", tm)
