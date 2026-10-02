@@ -85,6 +85,13 @@ class FitConfig:
     retention_pool: int = 2048               # rows whose base targets are cached
     retention_topk: int = 64
     retention_max_tokens: int = 384
+    # v5.0-VL (early exit trained from the base, layers above the exit dropped): the
+    # retention term runs the EXIT model -- the first exit_layer decoder layers, the
+    # final norm and the tied lm_head -- for both the base targets (the base cut at the
+    # same layer) and the student. Nothing then runs layers >= exit_layer, so they are
+    # frozen and a step costs the truncated tower only. Needs arch exit_layer with
+    # exit_norm. Off = full-depth retention (targets and student at full depth).
+    retention_at_exit: bool = False
     # (b) Per-source TOWER gradient weight: {source_prefix: scale}. The scale
     # multiplies that row's gradient into the tower only (arch._RowGradScale);
     # the scorer sees the full loss. {} = every row at 1.0 (champion behaviour).
@@ -215,6 +222,33 @@ def _pad(tokenizer, rows, device):
     return ids.to(device), am.to(device)
 
 
+def _retention_ctx(model, cfg: FitConfig):
+    """The context retention's tower calls run in: the exit model under
+    retention_at_exit, else the full tower."""
+    import contextlib
+    if not cfg.retention_at_exit:
+        return contextlib.nullcontext()
+    acfg = model.cfg
+    if not getattr(acfg, "exit_layer", None) or not getattr(acfg, "exit_norm", True):
+        raise ValueError("retention_at_exit needs arch exit_layer with exit_norm=True")
+    return model.exit_tower()
+
+
+def _freeze_above_exit(model) -> int:
+    """requires_grad=False for the decoder layers >= exit_layer, which no pass runs
+    under retention_at_exit. Returns the number of parameters frozen."""
+    import re
+    L = int(model.cfg.exit_layer)
+    pat = re.compile(r"(?:^|\.)layers\.(\d+)\.")
+    n = 0
+    for name, p in model.tower.named_parameters():
+        m = pat.search(name)
+        if m and "visual" not in name and int(m.group(1)) >= L and p.requires_grad:
+            p.requires_grad_(False)
+            n += p.numel()
+    return n
+
+
 @torch.no_grad()
 def _retention_targets(model, tokenizer, rows, cfg: FitConfig, device, dev_type):
     """Base top-k next-token log-probs per position, from the UNTRAINED tower."""
@@ -225,7 +259,8 @@ def _retention_targets(model, tokenizer, rows, cfg: FitConfig, device, dev_type)
     for i in range(0, len(rows), 8):
         chunk = rows[i:i + 8]
         ids, am = _pad(tokenizer, chunk, device)
-        with torch.autocast(dev_type, dtype=torch.bfloat16, enabled=cfg.autocast_bf16):
+        with torch.autocast(dev_type, dtype=torch.bfloat16, enabled=cfg.autocast_bf16), \
+                _retention_ctx(model, cfg):
             final = model.tower(input_ids=ids, attention_mask=am).last_hidden_state
         for r, row in enumerate(chunk):
             n = len(row) - 1                      # positions that predict a next token
@@ -355,6 +390,23 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
         max_options: int, seed: int, device: str = "cuda", _helpers: dict | None = None) -> dict:
     """Train in place. Returns the averaged scorer state plus a small history."""
     g = seed_everything(seed)
+    dev_type0 = "cuda" if str(device).startswith("cuda") else "cpu"
+    if cfg.retention_at_exit:
+        _retention_ctx(model, cfg)          # validates exit_layer / exit_norm
+        n_frz = _freeze_above_exit(model)
+        print(f"    retention_at_exit: layers >= {model.cfg.exit_layer} dropped from every pass; "
+              f"{n_frz:,} params frozen", flush=True)
+    ret_rows = ret_tgt = None
+    if cfg.retention_kl and cfg.init_from:
+        # BEFORE init_from: the retention targets are the BASE model's next-token
+        # distribution (cut at the exit under retention_at_exit). After the load they
+        # would be the parent's, and a decision-tuned parent's LM is destroyed. No RNG
+        # is consumed here, so the data order is unchanged.
+        ret_rows = _retention_rows(tokenizer, cases, cfg, seed)
+        ret_tgt = _retention_targets(model, tokenizer, ret_rows, cfg, device, dev_type0)
+        print(f"    retention_kl={cfg.retention_kl}: {len(ret_rows)} rows, base targets cached "
+              f"before init_from{' (base cut at exit ' + str(model.cfg.exit_layer) + ')' if cfg.retention_at_exit else ''}",
+              flush=True)
     # Continue from a saved release checkpoint. Loaded after seeding and
     # before the optimiser, so the data order and option shuffling are the same
     # as a from-base arm with this seed.
@@ -409,10 +461,8 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     final_norm = next((p for n, p in model.named_parameters()
                        if n.endswith("tower.norm.weight") or n == "tower.norm.weight"), None)
 
-    dev_type0 = "cuda" if str(device).startswith("cuda") else "cpu"
-    ret_rows = ret_tgt = None
     ret_order_rng = random.Random(seed + 31415)
-    if cfg.retention_kl:
+    if cfg.retention_kl and ret_rows is None:
         ret_rows = _retention_rows(tokenizer, cases, cfg, seed)
         ret_tgt = _retention_targets(model, tokenizer, ret_rows, cfg, device, dev_type0)
         print(f"    retention_kl={cfg.retention_kl}: {len(ret_rows)} rows, "
@@ -490,7 +540,8 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
                     ret_cur = 0
                 pick.append(ret_perm[ret_cur]); ret_cur += 1
             r_ids, r_am = _pad(tokenizer, [ret_rows[i] for i in pick], device)
-            with torch.autocast(dev_type, dtype=torch.bfloat16, enabled=cfg.autocast_bf16):
+            with torch.autocast(dev_type, dtype=torch.bfloat16, enabled=cfg.autocast_bf16), \
+                    _retention_ctx(model, cfg):
                 r_final = model.tower(input_ids=r_ids, attention_mask=r_am).last_hidden_state
             W = _text_tower_embed(model).detach().float()
             kls = []
