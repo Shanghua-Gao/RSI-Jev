@@ -127,8 +127,8 @@ through `Decider`) and [`examples/breakout/`](../examples/breakout/) (a game pla
 - 1–4 PNG, JPEG or WebP images per request, as data URLs; http(s) URLs are not fetched.
 - 1,024 image tokens per question, split evenly: one image up to about one megapixel, four up
   to 256 tokens each. Larger images are scaled down.
-- 2,048 text tokens on top. A longer state is cut from its start, as for text; if the cut
-  would reach an image, the request is refused.
+- Up to 32,768 text tokens on top (`RSIJEV_MAX_INPUT_TOKENS`). Nothing is cut: a longer
+  request is refused with a 422.
 - The vision tower runs once per request, and the state with its image tokens is read once:
   every question continues from that reading, as it does for text. With `--profile agent`, a
   repeated image state (same image bytes, same text) is not read again at all.
@@ -186,10 +186,10 @@ Agent(model, output_type=bool, instructions="Does the user request a refund?").r
 | routes | `POST /v1/systemone`, `GET /v1/models`, `GET /v1/limits`, `GET /health`, `GET /health/live` | the same |
 | question types | `noul`, `choice`, `score`, with their `criteria` shapes | the same, and the same answer shapes |
 | questions per request | 1–64 | 1–64 |
-| options per question | 2–64 | 2–160 |
+| options per question | 2–64 | 2–5,120 (`RSIJEV_MAX_ANSWERS`) |
 | structured criteria (an object instead of a string) | accepted | rejected with 422; strings or `null` only |
 | `model` | `jev-latest` or a version | `jev-latest`, the served name, or any name given with `--accept-model`; the answer names this server |
-| state longer than the context | — | cut from the start to fit 2,048 tokens, without a warning |
+| input length | — | up to 32,768 tokens per question (`RSIJEV_MAX_INPUT_TOKENS`); longer is a 422, never cut |
 | option keys | hidden from the model | part of the prompt, so renaming a key can move the answer (`/v1/limits` reports `option_keys_visible_to_model: true`) |
 | prompt | chat template, label logprobs | the encoder the model was trained with; a chat state is serialized as compact JSON |
 | `usage.output_tokens` | N + 1 | N, one readout per question |

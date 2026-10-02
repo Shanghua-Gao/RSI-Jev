@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from rsijev.contract import Question
+from rsijev.encode import InputTooLong
 from serve.batcher import CallRunner, GpuWorker
 from serve.images import MAX_IMAGES, parse_images
 from serve.wire import (MAX_ANSWERS, MAX_QUESTIONS, RequestError, limits,
@@ -184,6 +185,11 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         headers = {"Retry-After": "1"} if status in {429, 503, 529} else {}
         return JSONResponse({"error": {"message": message}}, status_code=status,
                             headers=headers)
+
+    @app.exception_handler(InputTooLong)
+    async def _too_long(_request: Request, exc: InputTooLong) -> JSONResponse:
+        return error(f"{exc}; the input is not truncated, shorten it or raise "
+                     "RSIJEV_MAX_INPUT_TOKENS", 422)
 
     @app.exception_handler(RequestError)
     async def _request_error(_request: Request, exc: RequestError) -> JSONResponse:

@@ -143,7 +143,7 @@ checks.
 | size | 20 MiB decoded, 20 million pixels, a single frame, aspect ratio at most 200:1 |
 | markers | none, or exactly one `<image>` per image; Qwen's `<\|image_pad\|>`-style tokens are refused in the state |
 | image tokens | 1,024 per question, split evenly: one image up to 1,024 tokens (~1 MP at 32x32 px per token), four up to 256 each. Larger images are scaled down |
-| total length | 2,048 text tokens plus the image budget. A longer state is cut from the start, as for text. If that would cut into an image, the request is refused. Shorten the state, or put the markers after the text |
+| total length | 32,768 text tokens plus the image budget, as for text. Nothing is cut: a longer request is refused with a 422 |
 
 EXIF rotation is applied, so a phone photo is seen the way it is displayed. `GET /v1/limits`
 reports all of this under `images` (`supported: false` for a text-only release, with a
@@ -206,18 +206,17 @@ inference procedures despite receiving equivalent payloads."*
 - **`usage.output_tokens`.** This path generates nothing; it reports one readout
   per question. The reference reports N+1 because it decodes one token per
   question plus a prefix warm-up.
-- **Up to 160 options per question** (from v3.0; 64 before), because v3.0 trains and
-  evaluates with 160. The reference admits 64.
+- **Up to 5,120 options per question** (`RSIJEV_MAX_ANSWERS`). The models train with up to
+  160, and the option head reads any number. The reference admits 64.
 - **Criteria must be strings (or `null`).** Jev also accepts a structured criterion —
   an object such as `{"what": …, "includes": […]}` — and this server rejects it with 422.
   No release so far was trained on a rendering of structured criteria, and serving one the
   model never saw would be guessing; it arrives together with a model trained on it.
-- **A state longer than the model's context is cut from the start.** The encoder keeps the
-  question, the options and the answer cue whole and drops the *beginning* of the state
-  until the request fits (2,048 tokens for v1.0–v4.0-VL; `rsijev/encode.py`). Nothing reports
-  that it happened. So a request that puts its query first — `"Query: …"` followed by long
-  candidates — loses the query, and the answer is about text the model never saw the
-  question for. Keep states under the limit, or put what matters last.
+- **Inputs are never cut.** A question (state, instructions and options) may be up to
+  32,768 tokens (`RSIJEV_MAX_INPUT_TOKENS`); a longer one gets a 422 saying so. The models
+  trained on inputs up to 2,048 tokens, and the Qwen3.5 base reads far longer ones. Earlier
+  servers cut the start of an over-long state without a warning; the benchmark scripts still
+  do, so the published numbers reproduce.
 
 ## Speed
 

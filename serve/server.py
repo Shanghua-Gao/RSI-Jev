@@ -15,6 +15,7 @@ the Python API runs exactly what the server runs.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import time
 from dataclasses import dataclass, field
@@ -69,12 +70,14 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     dtype_name = dtype or default_dtype_name(device)
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype)
+    # Serve whole inputs: no left cut at the training length, a 422 past the cap.
+    from serve.wire import MAX_INPUT_TOKENS
+    enc = dataclasses.replace(enc, max_length=MAX_INPUT_TOKENS, truncate=False)
     applied = apply_env(model)
     name = checkpoint_name(ref, path)
     s = Served(model, tok, enc, meta, device, dtype_name, path, name,
                release_version(name), applied)
     if meta.get("vision"):
-        import dataclasses
         from rsijev.vision import ImagePrep, VisionConfig
         v = meta["vision"]
         try:

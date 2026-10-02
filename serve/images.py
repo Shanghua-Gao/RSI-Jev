@@ -172,15 +172,11 @@ def to_data_url(image) -> str:
 
 
 def state_too_long(e: ValueError, max_length: int) -> RequestError | None:
-    """The 422 for an image request whose state would be cut into an image, or None
-    when `e` is some other ValueError (which stays a 500)."""
+    """The 422 for an image request whose markers or image tokens do not line up, or
+    None when `e` is some other ValueError (which stays a 500)."""
     if "cut into an image" not in str(e) and "markers" not in str(e):
         return None
-    return RequestError(
-        "the state is too long to keep its images whole: the input is "
-        f"capped at {max_length} tokens and a longer state is cut from "
-        "the left. Shorten the state or put the <image> markers after the "
-        f"text ({e})")
+    return RequestError(f"the images do not fit the state: {e}")
 
 
 def text_only_error(name: str, reason: str | None = None) -> RequestError:
