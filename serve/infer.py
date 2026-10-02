@@ -25,8 +25,8 @@ import torch
 import torch.nn.functional as F
 
 from rsijev.contract import Prediction, Question
-from rsijev.encode import (EncodeConfig, collate, encode_question, option_permutation, render,
-                           unpermute_logits)
+from rsijev.encode import (EncodeConfig, collate, encode_question, option_permutation,
+                           own_token_spans, render, unpermute_logits)
 
 DEFAULT_MAX_OPTIONS = 80
 
@@ -284,6 +284,8 @@ def encode_questions(tokenizer, state: str, questions: Sequence[Question],
             row = row + ids[b]
             spans.append((start, len(row)))
         row = row + ids[tail]
+        if enc.option_pool_own_tokens:
+            spans = own_token_spans(tokenizer, spans, [q.options[i] for i in order])
         if len(row) > enc.max_length:              # truncation: let the original do it
             rows.append(encode_question(tokenizer, state, q, enc))
             continue

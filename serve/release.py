@@ -317,12 +317,15 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     model.eval()
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
-                       option_order="canonical", max_length=cap, truncate=policy)
+                       option_order="canonical", max_length=cap, truncate=policy,
+                       option_pool_own_tokens=bool(spec.get("option_pool_own_tokens")
+                                                   or meta.get("option_pool_own_tokens")))
     ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
     model.adaptive_policy = ada
     served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
     meta["serving"] = {"max_length": cap, "truncate": policy,
-                       "exit_layer": arch.exit_layer, "adaptive": served_ada}
+                       "exit_layer": arch.exit_layer, "adaptive": served_ada,
+                       "option_pool_own_tokens": enc.option_pool_own_tokens}
     if why:
         meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta

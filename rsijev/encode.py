@@ -47,6 +47,11 @@ class EncodeConfig:
     # "last" takes its final token, which is usually punctuation and can carry
     # almost no option identity in a model with weak context mixing.
     option_pool: Literal["mean", "last"] = "mean"
+    # Mean-pool only an option's own tokens: drop its leading "\n- key:" tokens,
+    # which in a causal tower sit right after the PREVIOUS option and carry it.
+    # Whole-block pooling made the 4B exit line pick the option after the right
+    # one on long numbered lists (CLINC150: 45% gold+1). Set from meta.
+    option_pool_own_tokens: bool = False
     include_criteria: bool = True      # the descriptions are part of the task
     max_length: int = 2048
     answer_cue: str = "Answer:"
@@ -224,10 +229,21 @@ def _encode(tokenizer, state: str, q: Question, cfg: EncodeConfig, order) -> dic
         else:
             ids, option_index, spans, decision_index, state_cut = _middle_cut(
                 tokenizer, state, q, cfg, head_ids, ids, option_index, spans)
+    if cfg.option_pool_own_tokens:
+        spans = own_token_spans(tokenizer, spans, [q.options[i] for i in order])
     return {"input_ids": ids, "option_index": option_index,
             "option_span": spans, "decision_index": decision_index,
             "options": [q.options[i] for i in order],
             "option_perm": order, "mode": q.mode, "state_cut": state_cut}
+
+
+def own_token_spans(tokenizer, spans, keys):
+    """Each [start, end) moved past its block's leading "\\n- key:" tokens (never empty)."""
+    out = []
+    for (a, b), key in zip(spans, keys):
+        k = len(tokenizer("\n- " + key + ":", add_special_tokens=False)["input_ids"])
+        out.append((min(a + k, b - 1), b))
+    return out
 
 
 def _cut_state(tokenizer, state: str, budget: int, cfg: EncodeConfig) -> tuple[list[int], int]:
