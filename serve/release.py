@@ -216,6 +216,14 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
     return A.Policy(exits, cal, float(block["tau"])), None
 
 
+def own_token_pool(spec: dict, meta: dict) -> bool:
+    """Own-token option pooling: meta's flag, or RSIJEV_OPTION_POOL_OWN_TOKENS=1|0 to override."""
+    env = os.environ.get("RSIJEV_OPTION_POOL_OWN_TOKENS")
+    if env is not None:
+        return env == "1"
+    return bool(spec.get("option_pool_own_tokens") or meta.get("option_pool_own_tokens"))
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                  vision: bool | None = None, max_length: int | None = None,
                  truncate: str | None = None, fixed_exit: bool | None = None,
@@ -318,8 +326,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
                        option_order="canonical", max_length=cap, truncate=policy,
-                       option_pool_own_tokens=bool(spec.get("option_pool_own_tokens")
-                                                   or meta.get("option_pool_own_tokens")))
+                       option_pool_own_tokens=own_token_pool(spec, meta))
     ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
     model.adaptive_policy = ada
     served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
