@@ -87,6 +87,10 @@ def _needs_option_tokens(model) -> bool:
     return cfg is None or bool(getattr(cfg, "residual", True))
 
 
+# Padded tokens per forward pass (rows x longest row, prefix included); see run_rows.
+FORWARD_MAX_TOKENS = int(os.environ.get("RSIJEV_FORWARD_MAX_TOKENS", "32768"))
+
+
 def row_order(lengths: Sequence[int], batch_size: int, sort: bool = False,
               max_tokens: int | None = None) -> list[list[int]]:
     """Which rows go through the model together, as lists of indices.
@@ -136,7 +140,13 @@ def run_rows(model, tokenizer, rows: Sequence[dict], *, max_options: int, device
     ks = [len(e["option_index"]) for e in rows]
     out: list[list[float] | None] = [None] * len(rows)
     tokens = _needs_option_tokens(model)
-    for idx in row_order([len(e["input_ids"]) for e in rows], batch_size, sort, max_tokens):
+    # A forward pass holds at most FORWARD_MAX_TOKENS padded tokens, each row counted
+    # with the prefix it reads, so many long questions split over more passes instead
+    # of running the GPU out of memory. Rows under the budget batch exactly as before.
+    if max_tokens is None:
+        max_tokens = FORWARD_MAX_TOKENS
+    lengths = [len(e["input_ids"]) + npfx for e in rows]
+    for idx in row_order(lengths, batch_size, sort, max_tokens):
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if trim_options else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
