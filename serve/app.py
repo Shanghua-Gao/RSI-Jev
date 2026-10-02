@@ -72,16 +72,21 @@ class NoulQuestion(StrictModel):
     criteria: NoulCriteria = Field(default_factory=NoulCriteria)
 
 
+# A criterion is a string, or a structured one (an object or array, as Jev accepts)
+# that reaches the model as compact JSON, the rendering structured states get.
+Criterion = str | dict[str, Any] | list[Any]
+
+
 class ChoiceQuestion(StrictModel):
     type: Literal["choice"]
     instructions: Content
-    criteria: dict[str, str | None] = Field(min_length=2, max_length=MAX_ANSWERS)
+    criteria: dict[str, Criterion | None] = Field(min_length=2, max_length=MAX_ANSWERS)
 
 
 class ScoreQuestion(StrictModel):
     type: Literal["score"]
     instructions: Content
-    criteria: list[str] = Field(min_length=2, max_length=MAX_ANSWERS)
+    criteria: list[Criterion] = Field(min_length=2, max_length=MAX_ANSWERS)
 
 
 QuestionModel = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion,

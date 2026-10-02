@@ -187,7 +187,7 @@ Agent(model, output_type=bool, instructions="Does the user request a refund?").r
 | question types | `noul`, `choice`, `score`, with their `criteria` shapes | the same, and the same answer shapes |
 | questions per request | 1–64 | 1–64 |
 | options per question | 2–64 | 2–5,120 (`RSIJEV_MAX_ANSWERS`) |
-| structured criteria (an object instead of a string) | accepted | rejected with 422; strings or `null` only |
+| structured criteria (an object instead of a string) | accepted | accepted, read as compact JSON |
 | `model` | `jev-latest` or a version | `jev-latest`, the served name, or any name given with `--accept-model`; the answer names this server |
 | input length | — | up to 32,768 tokens per question (`RSIJEV_MAX_INPUT_TOKENS`); longer is a 422, never cut |
 | option keys | hidden from the model | part of the prompt, so renaming a key can move the answer (`/v1/limits` reports `option_keys_visible_to_model: true`) |
