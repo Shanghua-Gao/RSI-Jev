@@ -6,6 +6,12 @@
 </p>
 
 <p align="center">
+  <b><a href="docs/history.md">How each release was found</a> ·
+  <a href="EXPLORE.md">Every experiment, failures included</a> ·
+  <a href="docs/rl.md">Where RL helped and didn't</a></b>
+</p>
+
+<p align="center">
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
   <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v4_vl_quickstart.ipynb">Colab</a> ·
@@ -28,9 +34,9 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
   <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
 </p>
 
-Of 312 experiments since v1.0, the ones that made a release are in
-[`docs/history.md`](docs/history.md); the rest, with why each failed, are in
-[`EXPLORE.md`](EXPLORE.md).
+**Read the exploration:** of 312 experiments since v1.0, the ones that made a release are in
+[**docs/history.md**](docs/history.md); all the others, with why each failed, are in
+[**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
 
 ## What it builds
 
