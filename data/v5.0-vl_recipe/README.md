@@ -37,11 +37,15 @@ python scripts/release_train.py --model Qwen/Qwen3.5-4B-Base --seed 17 --root D 
     --spec data/v5.0-vl_recipe/vis-v4k.json --corpus D/vis-v4k \
     --save-dir D/vis-v4k/s17 --out D/runs --name vis-v4k
 
-# 3. the calibrator, read with own-token pooling, DEV from stage 1's corpus, seed 0
-RSIJEV_OPTION_POOL_OWN_TOKENS=1 python scripts/fit_release_calibration.py --ckpt D/vis-v4k/s17 \
+# 3. the decision head, retrained for own-token pooling: 600 steps, batch 8, lr 1e-5, seed 1, tower frozen
+RSIJEV_OPTION_POOL_OWN_TOKENS=1 python scripts/fit_head.py --ckpt D/vis-v4k/s17 \
+    --corpus D/vis-v4k --dev-corpus D/rt4-tap16-ret-b --out D/headft-B/s17 --seed 1
+
+# 4. the calibrator, read with own-token pooling, DEV from stage 1's corpus, seed 0
+RSIJEV_OPTION_POOL_OWN_TOKENS=1 python scripts/fit_release_calibration.py --ckpt D/headft-B/s17 \
     --root D --lineage --dev-corpus D/rt4-tap16-ret-b \
     --dev-sources "$(python -c "import json;print(json.load(open('data/v5.0-vl_recipe/b4-exit20.json'))['sources'])")" \
-    --fit-seed 0 --out D/vis-v4k/s17
+    --fit-seed 0 --out D/headft-B/s17
 ```
 
 ## Not yet public
