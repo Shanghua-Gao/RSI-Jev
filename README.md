@@ -127,7 +127,7 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v5.0-VL-3B** | text, images | **0.764** | **0.689** | 0.048 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
+| **v5.0-VL-3B** | text, images | **0.764** | **0.689** | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
 | v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
 | v2.1-2B | text | 0.736 | 0.633 | 0.059 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
