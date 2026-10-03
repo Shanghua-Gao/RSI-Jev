@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
-  <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v4_vl_quickstart.ipynb">Colab</a> ·
+  <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v5_vl_quickstart.ipynb">Colab</a> ·
   <a href="docs/inference.md">Docs</a> ·
   <a href="versions/v5.0-vl.md">Release notes</a>
 </p>

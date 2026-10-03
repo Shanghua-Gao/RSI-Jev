@@ -1,5 +1,5 @@
 ---
-title: RSI-Jev v4.0-VL
+title: RSI-Jev v5.0-VL 3B
 emoji: 🖼️
 colorFrom: gray
 colorTo: blue
@@ -9,21 +9,21 @@ python_version: "3.12"
 app_file: app.py
 suggested_hardware: l4x1
 license: mit
-short_description: Typed questions about an image, answered with probabilities
+short_description: Typed questions about text or images, answered with probabilities
 models:
-  - shgao/rsi-jev-v4.0-vl-qwen3.5-2b
+  - shgao/rsi-jev-v5.0-vl-3b
 ---
 
-# RSI-Jev v4.0-VL
+# RSI-Jev v5.0-VL 3B
 
-Upload an image, type a yes/no or multiple-choice question, and get a probability for every
-allowed answer. The app calls the package's own `Decider`, so each answer is what
+Paste a text, add an image if you like, type a yes/no or multiple-choice question, and get a
+probability for every allowed answer. The app calls the package's own `Decider`, so each answer is what
 `POST /v1/systemone` on `rsi-jev serve` returns for the same request.
 
 - Code, docs and the release record: <https://github.com/Shanghua-Gao/RSI-Jev>
-- Weights: `shgao/rsi-jev-v4.0-vl-qwen3.5-2b` (set `RSIJEV_MODEL` to use another checkpoint)
-- Hardware: a GPU. The app loads the model at startup (it runs in bf16 on CUDA), so pick a
-  GPU with native bf16, such as an L4.
+- Weights: `shgao/rsi-jev-v5.0-vl-3b`, 6.2 GB in bf16 (set `RSIJEV_MODEL` to use another checkpoint)
+- Hardware: a GPU with native bf16, such as an L4, or ZeroGPU (the app uses `spaces.GPU` when
+  it is available). The model loads at startup.
 
 ## Example images
 

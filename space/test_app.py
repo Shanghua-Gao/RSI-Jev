@@ -36,20 +36,24 @@ def test_examples_are_there_and_answer(decider):
     answer = app.make_answer(decider)
     from PIL import Image
     for path, context, question, kind, options in app.EXAMPLES:
-        assert Path(path).exists(), path
-        probs, line, out = answer(Image.open(path), context, question, kind, options)
+        assert path is None or Path(path).exists(), path
+        image = Image.open(path) if path else None
+        probs, line, out = answer(image, context, question, kind, options)
         assert abs(sum(probs.values()) - 1) < 1e-6
         assert out["answers"]["answer"]["type"] == ("noul" if kind == "yes/no" else "choice")
         if kind == "choice":
             assert list(probs) == list(app.parse_options(options))
-        assert seen[-1][1] == 1 and "<image>" in seen[-1][0]
+        if path:
+            assert seen[-1][1] == 1 and "<image>" in seen[-1][0]
+        else:                                       # text only: no image, no placeholder
+            assert seen[-1][1] == 0 and "<image>" not in seen[-1][0]
 
 
 def test_bad_forms_are_refused(decider):
     answer = app.make_answer(decider)
     from PIL import Image
     im = Image.new("RGB", (32, 32))
-    for args in [(None, "", "q?", "yes/no", ""), (im, "", " ", "yes/no", ""),
+    for args in [(None, "", "q?", "yes/no", ""), (None, "  ", "q?", "yes/no", ""), (im, "", " ", "yes/no", ""),
                  (im, "", "q?", "choice", "only"), (im, "", "q?", "choice", "a\na")]:
         with pytest.raises(gr.Error):
             answer(*args)
@@ -61,9 +65,13 @@ def test_the_app_serves_over_http(decider):
     demo.queue().launch(prevent_thread_lock=True, server_port=7869, quiet=True)
     try:
         c = client_mod.Client("http://127.0.0.1:7869/", verbose=False)
-        ex = app.EXAMPLES[3]
+        ex = next(e for e in app.EXAMPLES if e[0] and e[0].endswith("checkout.png"))
         probs, line, raw = c.predict(client_mod.handle_file(ex[0]), *ex[1:], api_name="/answer")
         assert raw["answers"]["answer"]["choice"] in ("paid", "declined", "pending")
         assert "input tokens" in line
+        text = next(e for e in app.EXAMPLES if e[0] is None)
+        probs, line, raw = c.predict(None, *text[1:], api_name="/answer")
+        assert raw["answers"]["answer"]["type"] == "noul"
+        assert {c["label"] for c in probs["confidences"]} == {"yes", "no"}
     finally:
         demo.close()
