@@ -14,6 +14,8 @@ bookkeeping stays fixed.
 """
 from __future__ import annotations
 
+import dataclasses
+import json
 import random
 from dataclasses import dataclass
 from typing import Literal, Sequence
@@ -45,13 +47,46 @@ class EncodeConfig:
     # "last" takes its final token, which is usually punctuation and can carry
     # almost no option identity in a model with weak context mixing.
     option_pool: Literal["mean", "last"] = "mean"
+    # Mean-pool only an option's own tokens: drop its leading "\n- key:" tokens,
+    # which in a causal tower sit right after the PREVIOUS option and carry it.
+    # Whole-block pooling made the 4B exit line pick the option after the right
+    # one on long numbered lists (CLINC150: 45% gold+1). Set from meta.
+    option_pool_own_tokens: bool = False
     include_criteria: bool = True      # the descriptions are part of the task
     max_length: int = 2048
-    # Training and the benchmark scripts cut an over-long STATE from the left at
-    # max_length. Serving turns this off: a longer question is refused
-    # (InputTooLong) rather than answered on input it never saw.
-    truncate: bool = True
     answer_cue: str = "Answer:"
+    # What happens to a STATE that does not fit max_length. The question, the
+    # option labels and the cue are never cut.
+    #   "middle"  keep the state's head and tail, drop the middle and put
+    #             `cut_marker` where it was. The tail gets 1 - head_frac of the
+    #             kept tokens (evidence tends to sit near the end: kev_hard),
+    #             and the head always keeps the state's first line (a leading
+    #             "Query: ..." line) when it fits in half the room. If the
+    #             question and options alone leave the state no room, the
+    #             option DESCRIPTIONS are trimmed evenly (labels intact) and
+    #             the row reports `options_cut`; the encoder never refuses a
+    #             row whose labels, question and cue fit.
+    #   "left"    drop the state's start, silently (v1.0 - v4.0-VL behaviour; a
+    #             leading query was the first thing lost).
+    #   "none"    cut nothing: a longer question raises InputTooLong. Serving uses
+    #             this, so no request is answered on input it never saw; training
+    #             and the benchmark scripts keep "left" so published numbers reproduce.
+    # Either way the encoded row reports `state_cut` = state tokens dropped
+    # (0 when the row fits, which is then encoded exactly as before).
+    # "left" is the default: every release so far was trained and gated with it.
+    # "middle" is the long-context encoder; a
+    # release trained with it says so in meta.json (`spec.truncate`), and
+    # serve/release.py then serves it that way. In "left" mode a row is encoded
+    # byte for byte as by the v1.0 - v4.0-VL encoder, structured option
+    # descriptions included (see `render`).
+    truncate: Literal["middle", "left", "none"] = "left"
+    head_frac: float = 0.25          # share of the kept state taken from its head
+    cut_marker: str = "\n[... {n} tokens of the state omitted ...]\n"
+    desc_marker: str = " ..."        # appended to a trimmed option description
+
+
+class _NoRoom(ValueError):
+    """The question and options leave the state no room (middle mode only)."""
 
 
 class InputTooLong(ValueError):
@@ -88,12 +123,43 @@ def option_permutation(q: Question, cfg: EncodeConfig,
     return order
 
 
+def criterion_text(c) -> str:
+    """One option's description as text. A string is returned unchanged, so string
+    criteria encode byte-identically to before. A structured description is rendered
+    deterministically: {"what": ..., "includes": [...], "excludes": [...]} ->
+    "<what>. Includes: a; b. Excludes: c." Other keys follow in their given order as
+    "<Key>: <value>"; lists join with "; "; numbers and booleans as JSON; None -> ""."""
+    if isinstance(c, str):
+        return c
+    if c is None:
+        return ""
+    if isinstance(c, (list, tuple)):
+        return "; ".join(t for t in (criterion_text(x) for x in c) if t)
+    if isinstance(c, dict):
+        first = [k for k in ("what", "includes", "excludes") if k in c]
+        parts = []
+        for k in first + [k for k in c if k not in first]:
+            v = criterion_text(c[k]).strip()
+            if v:
+                v = v if k == "what" else f"{str(k)[:1].upper()}{str(k)[1:]}: {v}"
+                parts.append(v if v[-1] in ".!?" else v + ".")
+        return " ".join(parts)
+    return json.dumps(c, ensure_ascii=False)
+
+
+def _criterion(c, cfg: EncodeConfig):
+    """A description as the encoder in force renders it: `criterion_text` for the
+    long-context encoder (e1069bf, as the 4B line was trained), the value as it is
+    (the v1.0 - v4.0-VL encoder) otherwise. A string is the same either way."""
+    return criterion_text(c) if cfg.truncate == "middle" else c
+
+
 def render(state: str, q: Question, cfg: EncodeConfig,
            order: Sequence[int] | None = None) -> tuple[str, list[str]]:
     """Return the prompt prefix and the per-option blocks, in PRESENTED order."""
     order = list(range(len(q.options))) if order is None else list(order)
     blocks = [
-        f"- {q.options[i]}: {q.criteria[q.options[i]]}"
+        f"- {q.options[i]}: {_criterion(q.criteria[q.options[i]], cfg)}"
         if cfg.include_criteria and q.criteria.get(q.options[i]) else f"- {q.options[i]}"
         for i in order
     ]
@@ -113,8 +179,23 @@ def render(state: str, q: Question, cfg: EncodeConfig,
 
 def encode_question(tokenizer, state: str, q: Question, cfg: EncodeConfig,
                     rng: random.Random | None = None) -> dict[str, list[int]]:
-    """Token ids plus the positions the readout needs. No padding here."""
+    """Token ids plus the positions the readout needs. No padding here.
+
+    Every row carries `state_cut` (state tokens dropped) and `options_cut`
+    (option-description tokens dropped); both are 0 for a row that fits, which
+    is then encoded exactly as by the v1.0-v2.1 encoder."""
     order = option_permutation(q, cfg, rng)
+    try:
+        out = _encode(tokenizer, state, q, cfg, order)
+        out["options_cut"] = 0
+        return out
+    except _NoRoom:
+        if cfg.truncate != "middle":
+            raise
+    return _encode_trimmed(tokenizer, state, q, cfg, order)
+
+
+def _encode(tokenizer, state: str, q: Question, cfg: EncodeConfig, order) -> dict:
     head, parts = render(state, q, cfg, order)
     ids = tokenizer(head, add_special_tokens=False)["input_ids"]
     spans: list[tuple[int, int]] = []
@@ -126,25 +207,172 @@ def encode_question(tokenizer, state: str, q: Question, cfg: EncodeConfig,
     ids += tokenizer(parts[-1], add_special_tokens=False)["input_ids"]
     decision_index = len(ids) - 1
 
-    if len(ids) > cfg.max_length and not cfg.truncate:
+    if len(ids) > cfg.max_length and cfg.truncate == "none":
         raise InputTooLong(f"question {q.key} is {len(ids)} tokens, over the maximum "
                            f"context length of {cfg.max_length}")
+    state_cut = 0
     if len(ids) > cfg.max_length:
-        # Truncate the STATE, never the options or the cue: dropping an option
-        # silently changes the task, and dropping the cue moves the readout.
+        # Truncate the STATE, never the options, the question or the cue:
+        # dropping an option silently changes the task, and dropping the cue
+        # moves the readout.
         overflow = len(ids) - cfg.max_length
         head_ids = tokenizer(head, add_special_tokens=False)["input_ids"]
-        if overflow >= len(head_ids):
-            raise ValueError(f"cannot fit {q.key}: options alone exceed max_length")
-        keep = head_ids[overflow:]
-        ids = keep + ids[len(head_ids):]
-        option_index = [i - overflow for i in option_index]
-        spans = [(a - overflow, b - overflow) for a, b in spans]
-        decision_index -= overflow
+        if cfg.truncate == "left":
+            if overflow >= len(head_ids):
+                raise _NoRoom(f"cannot fit {q.key}: options alone exceed max_length")
+            keep = head_ids[overflow:]
+            ids = keep + ids[len(head_ids):]
+            option_index = [i - overflow for i in option_index]
+            spans = [(a - overflow, b - overflow) for a, b in spans]
+            decision_index -= overflow
+            state_cut = overflow
+        else:
+            ids, option_index, spans, decision_index, state_cut = _middle_cut(
+                tokenizer, state, q, cfg, head_ids, ids, option_index, spans)
+    if cfg.option_pool_own_tokens:
+        spans = own_token_spans(tokenizer, spans, [q.options[i] for i in order])
     return {"input_ids": ids, "option_index": option_index,
             "option_span": spans, "decision_index": decision_index,
             "options": [q.options[i] for i in order],
-            "option_perm": order, "mode": q.mode}
+            "option_perm": order, "mode": q.mode, "state_cut": state_cut}
+
+
+def own_token_spans(tokenizer, spans, keys):
+    """Each [start, end) moved past its block's leading "\\n- key:" tokens (never empty)."""
+    out = []
+    for (a, b), key in zip(spans, keys):
+        k = len(tokenizer("\n- " + key + ":", add_special_tokens=False)["input_ids"])
+        out.append((min(a + k, b - 1), b))
+    return out
+
+
+def _cut_state(tokenizer, state: str, budget: int, cfg: EncodeConfig) -> tuple[list[int], int]:
+    """The state's token ids cut to at most `budget` tokens: head + marker + tail.
+    Returns (ids, state tokens dropped)."""
+    s_ids = tokenizer(state, add_special_tokens=False)["input_ids"]
+    if len(s_ids) <= budget:
+        return s_ids, 0
+    # the marker's length depends on the count it prints; size it for the
+    # largest count first, so the kept head + tail can only get more room
+    room = budget - len(tokenizer(cfg.cut_marker.format(n=len(s_ids)),
+                                  add_special_tokens=False)["input_ids"])
+    if room < MIN_STATE_ROOM:
+        raise _NoRoom("state budget is smaller than the cut marker")
+    h = int(room * cfg.head_frac)
+    # the first line (a leading "Query: ..." line) is always in the head
+    first = state.split("\n", 1)[0]
+    n_first = len(tokenizer(first, add_special_tokens=False)["input_ids"]) + 1
+    if n_first <= room // 2:
+        h = max(h, n_first)
+    t = room - h
+    n = len(s_ids) - h - t
+    marker = tokenizer(cfg.cut_marker.format(n=n), add_special_tokens=False)["input_ids"]
+    return s_ids[:h] + marker + (s_ids[len(s_ids) - t:] if t else []), n
+
+
+def _middle_cut(tokenizer, state, q, cfg, head_ids, ids, option_index, spans):
+    """Re-encode an over-long row with the middle of its state replaced by a
+    marker. The state is tokenised on its own here; everything outside it keeps
+    the ids it had."""
+    if not state.strip():
+        raise _NoRoom(f"cannot fit {q.key}: question and options alone exceed max_length")
+    if cfg.layout == "options_first":
+        # state sits in the tail: ...options | "\n\n" state "\n\n" cue
+        n_opt = spans[-1][1] if spans else len(head_ids)
+        pre = tokenizer("\n\n", add_special_tokens=False)["input_ids"]
+        post = tokenizer(f"\n\n{cfg.answer_cue}", add_special_tokens=False)["input_ids"]
+        budget = cfg.max_length - n_opt - len(pre) - len(post)
+        if budget <= 0:
+            raise _NoRoom(f"cannot fit {q.key}: question and options alone exceed max_length")
+        s_ids, cut = _cut_state(tokenizer, state, budget, cfg)
+        ids = ids[:n_opt] + pre + s_ids + post
+        return ids, option_index, spans, len(ids) - 1, cut
+    rest = tokenizer(f"\n\n{q.instructions}\nOptions:\n", add_special_tokens=False)["input_ids"]
+    fixed = len(rest) + len(ids) - len(head_ids)       # question + options + cue
+    budget = cfg.max_length - fixed
+    if budget <= 0:
+        raise _NoRoom(f"cannot fit {q.key}: question and options alone exceed max_length")
+    s_ids, cut = _cut_state(tokenizer, state, budget, cfg)
+    new_head = s_ids + rest
+    shift = len(head_ids) - len(new_head)
+    ids = new_head + ids[len(head_ids):]
+    option_index = [i - shift for i in option_index]
+    spans = [(a - shift, b - shift) for a, b in spans]
+    return ids, option_index, spans, len(ids) - 1, cut
+
+
+MIN_STATE_ROOM = 32     # state tokens kept around the marker before options are trimmed
+
+
+def _ntok(tokenizer, text: str) -> int:
+    return len(tokenizer(text, add_special_tokens=False)["input_ids"])
+
+
+def _encode_trimmed(tokenizer, state, q, cfg, order) -> dict:
+    """The question and options leave the state no room: trim every option
+    description to the same token allowance (shorter ones stay whole, labels
+    are never touched), so the state keeps min(its length, max(256, cap/8))
+    tokens. If the labels, question and cue alone still do not fit, drop the
+    descriptions, then cut the middle of the question text."""
+    cap = cfg.max_length
+    s_tok = _ntok(tokenizer, state) if state.strip() else 0
+    reserve = min(s_tok, max(256, cap // 8)) if s_tok else 0
+    desc = {o: criterion_text(q.criteria.get(o)) if cfg.include_criteria else "" for o in q.options}
+    d_ids = {o: tokenizer(d, add_special_tokens=False)["input_ids"] for o, d in desc.items()}
+    # question + options + cue, untruncated
+    fixed = len(_encode(tokenizer, "", q, dataclasses.replace(cfg, max_length=10 ** 9), order)["input_ids"])
+    total = sum(len(v) for v in d_ids.values())
+
+    def with_allowance(a: int) -> Question:
+        crit = {}
+        for o in q.options:
+            v = d_ids[o]
+            crit[o] = desc[o] if len(v) <= a else (
+                tokenizer.decode(v[:a]).rstrip() + cfg.desc_marker if a > 0 else "")
+        return dataclasses.replace(q, criteria=crit)
+
+    need = fixed - (cap - reserve) + 16
+    lo, hi = 0, max((len(v) for v in d_ids.values()), default=0)
+    while lo < hi:                              # largest allowance under budget
+        mid = (lo + hi + 1) // 2
+        if total - sum(min(len(v), mid) for v in d_ids.values()) >= need:
+            lo = mid
+        else:
+            hi = mid - 1
+    a = lo
+    for _ in range(12):
+        q2 = with_allowance(a)
+        try:
+            out = _encode(tokenizer, state, q2, cfg, order)
+            out["options_cut"] = total - sum(min(len(v), a) for v in d_ids.values())
+            out["options"] = [q.options[i] for i in order]
+            return out
+        except _NoRoom:
+            if a == 0:
+                break
+            a = int(a * 0.8)
+    # labels + question + cue do not fit: cut the middle of the question text
+    q2 = with_allowance(0)
+    ins = tokenizer(q.instructions, add_special_tokens=False)["input_ids"]
+    big = dataclasses.replace(cfg, max_length=10 ** 9)
+    over = len(_encode(tokenizer, "", q2, big, order)["input_ids"]) + min(s_tok, MIN_STATE_ROOM + 32) - cap + 24
+    keep = len(ins) - over
+    if keep < 16:
+        raise ValueError(f"cannot fit {q.key}: the option labels alone exceed max_length")
+    h = keep // 2
+    text = (tokenizer.decode(ins[:h]) + " [...] " + tokenizer.decode(ins[len(ins) - (keep - h):]))
+    q3 = dataclasses.replace(q2, instructions=text)
+    out = _encode(tokenizer, state, q3, cfg, order)
+    out["options_cut"] = total
+    out["question_cut"] = len(ins) - keep
+    out["options"] = [q.options[i] for i in order]
+    return out
+
+
+def truncation_report(tokenizer, pairs, cfg: EncodeConfig) -> list[int]:
+    """state_cut per (case, question) pair, for records written outside the
+    protected evaluator (0 = the row fits and is unchanged)."""
+    return [encode_question(tokenizer, c.state, q, cfg)["state_cut"] for c, q in pairs]
 
 
 def collate(tokenizer, examples: Sequence[dict], max_options: int,

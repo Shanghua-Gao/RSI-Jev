@@ -25,8 +25,8 @@ import torch
 import torch.nn.functional as F
 
 from rsijev.contract import Prediction, Question
-from rsijev.encode import (EncodeConfig, collate, encode_question, option_permutation, render,
-                           unpermute_logits)
+from rsijev.encode import (EncodeConfig, collate, encode_question, option_permutation,
+                           own_token_spans, render, unpermute_logits)
 
 DEFAULT_MAX_OPTIONS = 80
 
@@ -87,6 +87,10 @@ def _needs_option_tokens(model) -> bool:
     return cfg is None or bool(getattr(cfg, "residual", True))
 
 
+# Padded tokens per forward pass (rows x longest row, prefix included); see run_rows.
+FORWARD_MAX_TOKENS = int(os.environ.get("RSIJEV_FORWARD_MAX_TOKENS", "32768"))
+
+
 def row_order(lengths: Sequence[int], batch_size: int, sort: bool = False,
               max_tokens: int | None = None) -> list[list[int]]:
     """Which rows go through the model together, as lists of indices.
@@ -136,7 +140,13 @@ def run_rows(model, tokenizer, rows: Sequence[dict], *, max_options: int, device
     ks = [len(e["option_index"]) for e in rows]
     out: list[list[float] | None] = [None] * len(rows)
     tokens = _needs_option_tokens(model)
-    for idx in row_order([len(e["input_ids"]) for e in rows], batch_size, sort, max_tokens):
+    # A forward pass holds at most FORWARD_MAX_TOKENS padded tokens, each row counted
+    # with the prefix it reads, so many long questions split over more passes instead
+    # of running the GPU out of memory. Rows under the budget batch exactly as before.
+    if max_tokens is None:
+        max_tokens = FORWARD_MAX_TOKENS
+    lengths = [len(e["input_ids"]) + npfx for e in rows]
+    for idx in row_order(lengths, batch_size, sort, max_tokens):
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if trim_options else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
@@ -274,14 +284,30 @@ def encode_questions(tokenizer, state: str, questions: Sequence[Question],
             row = row + ids[b]
             spans.append((start, len(row)))
         row = row + ids[tail]
+        if enc.option_pool_own_tokens:
+            spans = own_token_spans(tokenizer, spans, [q.options[i] for i in order])
         if len(row) > enc.max_length:              # truncation: let the original do it
             rows.append(encode_question(tokenizer, state, q, enc))
             continue
         rows.append({"input_ids": row, "option_index": [e - 1 for _, e in spans],
                      "option_span": spans, "decision_index": len(row) - 1,
                      "options": [q.options[i] for i in order],
-                     "option_perm": order, "mode": q.mode})
+                     "option_perm": order, "mode": q.mode, "state_cut": 0, "options_cut": 0})
     return rows, list(lead_ids)
+
+
+def truncation_report(encoded: Sequence[dict], enc: EncodeConfig) -> dict | None:
+    """What the encoder cut from one request, for the response's `truncated` field,
+    or None when this model is not served with the long-context encoder (the field
+    is then left out, as it always was). The state is one text, so its count is the
+    most any question lost of it; description and question counts add up over the
+    questions. All 0 when nothing was cut."""
+    if getattr(enc, "truncate", "left") != "middle":
+        return None
+    return {"state_tokens_omitted": max((int(e.get("state_cut", 0)) for e in encoded), default=0),
+            "option_desc_tokens_omitted": sum(int(e.get("options_cut", 0)) for e in encoded),
+            "question_tokens_omitted": sum(int(e.get("question_cut", 0)) for e in encoded),
+            "max_length": int(enc.max_length)}
 
 
 def _shared_prefix(tokenizer, state: str, enc: EncodeConfig, encoded: list[dict],
@@ -696,10 +722,10 @@ def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: Enco
     else:
         path = "cached"
     return {"encoded": encoded, "prefix": prefix, "path": path, "doc_cache": doc_cache,
-            "options": [len(q.options) for q in questions]}
+            "options": [len(q.options) for q in questions],
+            "truncated": truncation_report(encoded, enc)}
 
 
-@torch.no_grad()
 def score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
                   batch_size: int = 16, temperature: float = 1.0,
                   sort: bool | None = None, trim_options: bool | None = None):
@@ -834,7 +860,7 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
     plan = {"path": "image", "image_path": "plain", "encoded": encoded, "pixel_values": pv,
             "grid": grid, "options": [len(q.options) for q in questions],
             "ntok": list(ntok), "image_feats": feats, "vision_cache": vision_cache,
-            "vision_key": vkey}
+            "vision_key": vkey, "truncated": truncation_report(encoded, enc)}
     if not read_once:
         return plan
     if doc_cache is None:

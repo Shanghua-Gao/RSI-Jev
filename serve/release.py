@@ -13,6 +13,7 @@ Hugging Face cache, so a second run downloads nothing.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -24,13 +25,14 @@ from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
+REPOS = {"v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
+         "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
          "v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
          "v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
-LATEST = "v4.0-vl-2b"
+LATEST = "v5.0-vl-3b"
 
 _REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
 
@@ -93,8 +95,67 @@ def release_version(name: str) -> str | None:
         (found.group(1) or "").upper()
 
 
+# The input cap of every release that does not record its own (v1.0 - v4.0-VL).
+DEFAULT_MAX_LENGTH = 2048
+
+
+def serving_encoder(spec: dict, max_length: int | None = None,
+                    truncate: str | None = None) -> tuple[int, str]:
+    """(input cap, over-cap policy) a release is served with.
+
+    The cap is the one the checkpoint was trained at, `spec.max_length` in its
+    meta.json, or 2048 when it records none (every release up to v4.0-VL). The
+    policy is `spec.truncate`: "left" (the default, every release so far) or
+    "middle" (the long-context encoder, rsijev/encode.py). An explicit argument, or
+    RSIJEV_MAX_LENGTH / RSIJEV_TRUNCATE, overrides either; that is a choice made at
+    serving time, not what the model was gated with.
+
+    TODO (not in this release): order averaging (score each question in 2 or 5
+    option orders and average; 2x/5x cost) is a kept result that is not served yet."""
+    if max_length is None:
+        env = os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
+        max_length = int(env) if env else None
+    if truncate is None:
+        truncate = os.environ.get("RSIJEV_TRUNCATE", "").strip() or None
+    cap = int(max_length if max_length is not None
+              else (spec.get("max_length") or DEFAULT_MAX_LENGTH))
+    policy = truncate or spec.get("truncate") or "left"
+    if policy not in ("left", "middle"):
+        raise ValueError(f"truncate must be 'left' or 'middle', got {policy!r}")
+    if cap < 64:
+        raise ValueError(f"max_length {cap} is too small to hold a question")
+    return cap, policy
+
+
+def _layer_at_or_above(key: str, n: int) -> bool:
+    """True for a decoder-layer weight with index >= n ("layers.<i>." in the key)."""
+    m = re.search(r"(?:^|\.)layers\.(\d+)\.", key)
+    return bool(m) and int(m.group(1)) >= n
+
+
+def strip_exit_tower(src: str | Path, dst: str | Path, exit_layer: int) -> dict:
+    """Write a tower.safetensors without the decoder layers an early-exit release never
+    runs (index >= exit_layer). Every kept tensor is copied unchanged."""
+    from safetensors.torch import load_file, save_file
+    sd = load_file(str(src))
+    kept = {k: v.contiguous() for k, v in sd.items() if not _layer_at_or_above(k, exit_layer)}
+    save_file(kept, str(dst), metadata={"format": "pt"})
+    return {"kept": len(kept), "dropped": len(sd) - len(kept),
+            "params_kept": sum(v.numel() for v in kept.values()),
+            "params_dropped": sum(v.numel() for k, v in sd.items() if k not in kept)}
+
+
+def own_token_pool(spec: dict, meta: dict) -> bool:
+    """Own-token option pooling: meta's flag, or RSIJEV_OPTION_POOL_OWN_TOKENS=1|0 to override."""
+    env = os.environ.get("RSIJEV_OPTION_POOL_OWN_TOKENS")
+    if env is not None:
+        return env == "1"
+    return bool(spec.get("option_pool_own_tokens") or meta.get("option_pool_own_tokens"))
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
-                 vision: bool | None = None):
+                 vision: bool | None = None, max_length: int | None = None,
+                 truncate: str | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
@@ -105,24 +166,64 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     `rsijev.vision.VisionDecisionModel`; a text request runs exactly the text
     path. `vision=False` loads it text-only. `meta["vision"]` then says what an
     image request may carry; a text-only model's meta has no such key.
+
+    An early-exit checkpoint (the 4B releases: `spec.arch_extra.exit_layer`, e.g. 20
+    of 32) is read the same way: ArchConfig takes exit_layer / exit_norm from
+    arch_extra, and every tower call -- the scoring pass, the prefix and document
+    caches, image states -- runs only the first exit_layer layers and the head reads
+    that layer. A checkpoint without exit_layer loads exactly as before.
+
+    `max_length` / `truncate`: see `serving_encoder`. `meta["serving"]` records what
+    was used.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
     ckpt = Path(ckpt)
     meta = json.loads((ckpt / "meta.json").read_text())
     spec = meta["spec"]
-    tok = AutoTokenizer.from_pretrained(meta["base_model"])
+    # A self-contained release (config.json next to meta.json) carries everything it
+    # runs: the tokenizer, the image processor, the text tower with its embeddings and
+    # the vision tower. It never touches the base model on the Hub. Older releases
+    # take those from `base_model`.
+    local = (ckpt / "config.json").exists()
+    src = str(ckpt) if local else meta["base_model"]
+    meta["weights_source"] = src
+    tok = AutoTokenizer.from_pretrained(src)
     # Load straight into the precision the tower will run in, rather than fp32
     # then a cast: the fp32 checkpoint rounds to the target once either way, and
     # this never materialises a second copy. That matters on a laptop, and on a
     # unified-memory box holding two checkpoints at once. The base weights are
     # bf16 on the Hub, so fp32 is an exact upcast and bf16 is a no-op.
-    lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
+    # An early-exit release runs only its first exit_layer decoder layers, so build the
+    # tower with just those: the deeper layers are never loaded, and a release may ship
+    # a tower.safetensors without them (strip_exit_tower). A full-depth file loads too;
+    # its deeper layers are dropped here.
+    exit_layer = (spec.get("arch_extra") or {}).get("exit_layer")
+    kw = {}
+    if exit_layer:
+        from transformers import AutoConfig
+        bc = AutoConfig.from_pretrained(src)
+        tc = getattr(bc, "text_config", None) or bc
+        tc.num_hidden_layers = int(exit_layer)
+        if getattr(tc, "layer_types", None):
+            tc.layer_types = list(tc.layer_types)[: int(exit_layer)]
+        kw["config"] = bc
+    if local:
+        from transformers import AutoConfig
+        lm = AutoModelForCausalLM.from_config(kw.get("config") or AutoConfig.from_pretrained(src),
                                               dtype=infer_dtype or torch.float32)
+    else:
+        lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
+                                                  dtype=infer_dtype or torch.float32, **kw)
     tower = getattr(lm, "model", lm)
-    missing, unexpected = tower.load_state_dict(load_file(str(ckpt / "tower.safetensors")),
-                                                strict=False)
-    bad = [k for k in missing if "embed_tokens" not in k]
+    sd = load_file(str(ckpt / "tower.safetensors"))
+    if exit_layer:
+        sd = {k: v for k, v in sd.items() if not _layer_at_or_above(k, int(exit_layer))}
+    missing, unexpected = tower.load_state_dict(sd, strict=False)
+    # a base-model release takes its embeddings from the Hub; a self-contained one ships them
+    bad = list(missing) if local else [k for k in missing if "embed_tokens" not in k]
+    if exit_layer:                     # layers at or past the exit never run
+        bad = [k for k in bad if not _layer_at_or_above(k, int(exit_layer))]
     if bad or unexpected:
         raise RuntimeError(f"checkpoint does not match {meta['base_model']}: "
                            f"missing {bad[:5]}, unexpected {list(unexpected)[:5]}")
@@ -137,12 +238,18 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     if vb:
         from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
                                    vision_revision)
+        # Training loads the vision tower named in the vision block; serving loads the
+        # base model's. They must be the same model (a 2B ViT emits 2048-wide features,
+        # the 4B tower embeds 2560).
+        if vb.get("model") and vb["model"] != meta["base_model"]:
+            raise RuntimeError(f"the checkpoint was trained with the vision tower of "
+                               f"{vb['model']}, but its base model is {meta['base_model']}")
         vcfg = VisionConfig(image_token_budget=int(vb.get("budget", 1024)))
-        revision = vision_revision(vb, meta["base_model"])
+        revision = None if local else vision_revision(vb, meta["base_model"])
         # The ViT runs in bf16 whatever the tower does (fp32 rotary buffers), which
         # is how the vision releases were trained and gated.
         model = VisionDecisionModel(tower, cfg.hidden_size, arch,
-                                    visual=load_visual(meta["base_model"], revision=revision),
+                                    visual=load_visual(src, revision=revision),
                                     image_token_id=tok.convert_tokens_to_ids(IMAGE_PAD),
                                     vcfg=vcfg).to(device)
         meta["vision"] = {"image_token_budget": vcfg.image_token_budget,
@@ -163,8 +270,12 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
         meta["calibration"] = "none"
     model.scorer.to(torch.float32)          # never follows the tower down
     model.eval()
+    cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
-                       option_order="canonical")
+                       option_order="canonical", max_length=cap, truncate=policy,
+                       option_pool_own_tokens=own_token_pool(spec, meta))
+    meta["serving"] = {"max_length": cap, "truncate": policy, "exit_layer": arch.exit_layer,
+                       "option_pool_own_tokens": enc.option_pool_own_tokens}
     return model, tok, enc, meta
 
 

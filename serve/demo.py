@@ -1,7 +1,7 @@
 """`rsi-jev demo`: the playground page (serve/ui.html) on the served path.
 
-    rsi-jev demo v4.0-vl-2b                      # http://127.0.0.1:8000
-    rsi-jev demo v4.0-vl-2b v3.0-2b --host 0.0.0.0
+    rsi-jev demo v5.0-vl-3b                      # http://127.0.0.1:8000
+    rsi-jev demo v5.0-vl-3b v4.0-vl-2b --host 0.0.0.0
 
 Each model is loaded exactly as `rsi-jev serve` loads it and answered by the
 server's own scorer (`serve.server.make_scorer`), so the page shows what the API
@@ -119,9 +119,9 @@ def create_demo_app(models: Sequence[tuple[str, Callable, dict]], *, hardware: s
 
 
 def add_demo_args(ap) -> None:
-    ap.add_argument("models", nargs="*", default=["v4.0-vl-2b"],
+    ap.add_argument("models", nargs="*", default=["v5.0-vl-3b"],
                     help="checkpoint directories, Hugging Face repo ids or aliases "
-                         "(default: v4.0-vl-2b)")
+                         "(default: v5.0-vl-3b)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--device", default=None, help="default: cuda, else mps, else cpu")

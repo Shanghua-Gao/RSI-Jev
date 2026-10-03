@@ -69,7 +69,7 @@ The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v4.0-vl-qwen3.5-2b`;
-- an alias: `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -148,6 +148,23 @@ per-question path, and the probabilities differ by no more than bf16 rounding al
 them. An image costs roughly what the same number of text tokens would, and the photo's size
 decides that number.
 
+### v5.0-VL 3B: a cut model
+
+v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 decoder layers and reads its decision there;
+the deeper layers are neither downloaded nor built. The checkpoint is self-contained: tokenizer,
+embeddings and vision tower ship with it, so `rsi-jev serve v5.0-vl-3b` downloads 11 GB and
+nothing from the base model. Older releases still take their embeddings and vision tower from
+the base, as before.
+
+Measured on the GB10 (bf16 tower, fla; p50 over warm requests):
+
+| questions per request | 1 | 8 | 32 |
+|---|---|---|---|
+| v5.0-VL 3B | 43.7 ms | 124.6 ms | 338.2 ms |
+
+That is about 1.45× v4.0-VL on the GB10, which is compute-bound; on an H100 with CUDA graphs a
+4B model cut at layer 20 runs within 0–13% of the 2B.
+
 ## A local, drop-in Jev replacement
 
 Code written against Jev only needs its base URL changed. We ran each snippet below against
@@ -187,7 +204,7 @@ Agent(model, output_type=bool, instructions="Does the user request a refund?").r
 | question types | `noul`, `choice`, `score`, with their `criteria` shapes | the same, and the same answer shapes |
 | questions per request | 1–64 | 1–64 |
 | options per question | 2–64 | 2–5,120 (`RSIJEV_MAX_ANSWERS`) |
-| structured criteria (an object instead of a string) | accepted | rejected with 422; strings or `null` only |
+| structured criteria (an object instead of a string) | accepted | accepted, read as compact JSON |
 | `model` | `jev-latest` or a version | `jev-latest`, the served name, or any name given with `--accept-model`; the answer names this server |
 | input length | — | up to 32,768 tokens per question (`RSIJEV_MAX_INPUT_TOKENS`); longer is a 422, never cut |
 | option keys | hidden from the model | part of the prompt, so renaming a key can move the answer (`/v1/limits` reports `option_keys_visible_to_model: true`) |

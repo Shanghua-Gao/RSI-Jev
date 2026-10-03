@@ -208,15 +208,24 @@ inference procedures despite receiving equivalent payloads."*
   question plus a prefix warm-up.
 - **Up to 5,120 options per question** (`RSIJEV_MAX_ANSWERS`). The models train with up to
   160, and the option head reads any number. The reference admits 64.
-- **Criteria must be strings (or `null`).** Jev also accepts a structured criterion —
-  an object such as `{"what": …, "includes": […]}` — and this server rejects it with 422.
-  No release so far was trained on a rendering of structured criteria, and serving one the
-  model never saw would be guessing; it arrives together with a model trained on it.
+- **Structured criteria are read as compact JSON.** A criterion may be an object or an
+  array, such as `{"what": …, "includes": […]}`, as in Jev. The model reads it as compact
+  JSON, the same rendering a structured state gets. No release was trained on structured
+  criteria; a string describes an option most reliably.
 - **Inputs are never cut.** A question (state, instructions and options) may be up to
   32,768 tokens (`RSIJEV_MAX_INPUT_TOKENS`); a longer one gets a 422 saying so. The models
   trained on inputs up to 2,048 tokens, and the Qwen3.5 base reads far longer ones. Earlier
   servers cut the start of an over-long state without a warning; the benchmark scripts still
   do, so the published numbers reproduce.
+
+  A release trained at a longer cap or with the middle cut records it in meta.json
+  (`spec.max_length`, `spec.truncate: "middle"`), and is served that way. The middle cut
+  keeps the state's first line, its head and its tail around a marker
+  (`[... N tokens of the state omitted ...]`), and every response then carries
+  `"truncated": {"state_tokens_omitted", "option_desc_tokens_omitted",
+  "question_tokens_omitted", "max_length"}` next to `usage`. `--max-length` and
+  `--truncate left|middle` (or `RSIJEV_MAX_LENGTH`, `RSIJEV_TRUNCATE`) override both for
+  any release. A release without these fields is served as before.
 
 ## Speed
 

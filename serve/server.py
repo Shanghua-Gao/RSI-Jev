@@ -57,10 +57,16 @@ class Served:
 
 
 def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None,
-                     revision: str | None = None) -> Served:
+                     revision: str | None = None, max_length: int | None = None,
+                     truncate: str | None = None) -> Served:
     """Resolve `ref`, load it the way the server does, and apply the opt-in speed
     paths the environment asks for (RSIJEV_COMPILE; the document cache needs
-    nothing here)."""
+    nothing here).
+
+    `max_length` and `truncate` override the input cap and the over-cap policy the
+    checkpoint's meta.json gives (serve.release.load_release; RSIJEV_MAX_LENGTH and
+    RSIJEV_TRUNCATE do the same). Left unset, every release is served as it was
+    trained."""
     import torch
     from serve.accel import apply_env
     from serve.runtime import keep_fused_kernels_off
@@ -69,10 +75,20 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     keep_fused_kernels_off(device)
     dtype_name = dtype or default_dtype_name(device)
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
-    model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype)
-    # Serve whole inputs: no left cut at the training length, a 422 past the cap.
-    from serve.wire import MAX_INPUT_TOKENS
-    enc = dataclasses.replace(enc, max_length=MAX_INPUT_TOKENS, truncate=False)
+    model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype,
+                                         max_length=max_length, truncate=truncate)
+    # Serve whole inputs: unless a cap or a cut policy was asked for explicitly
+    # (--max-length / --truncate, RSIJEV_MAX_LENGTH / RSIJEV_TRUNCATE), nothing is cut
+    # and a question past RSIJEV_MAX_INPUT_TOKENS gets a 422. load_release itself keeps
+    # the training cap and its cut, which the benchmark scripts reproduce numbers with.
+    explicit = (max_length is not None or truncate is not None
+                or os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
+                or os.environ.get("RSIJEV_TRUNCATE", "").strip())
+    if not explicit:
+        from serve.wire import MAX_INPUT_TOKENS
+        enc = dataclasses.replace(enc, max_length=MAX_INPUT_TOKENS, truncate="none")
+        meta["serving"] = {**(meta.get("serving") or {}),
+                           "max_length": MAX_INPUT_TOKENS, "truncate": "none"}
     applied = apply_env(model)
     name = checkpoint_name(ref, path)
     s = Served(model, tok, enc, meta, device, dtype_name, path, name,
@@ -91,9 +107,11 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
             # (serve/kernels.py); RSIJEV_VISION_ROPE=0 turns it off.
             from serve.kernels import install
             install()
-            s.prep = ImagePrep(meta["base_model"], VisionConfig(
+            src = meta.get("weights_source") or meta["base_model"]
+            s.prep = ImagePrep(src, VisionConfig(
                 image_token_budget=v["image_token_budget"],
-                min_tokens_per_image=v["min_tokens_per_image"]), revision=v.get("revision"))
+                min_tokens_per_image=v["min_tokens_per_image"]),
+                revision=None if src != meta["base_model"] else v.get("revision"))
         # The budget is added to the text length, so no state is cut shorter
         # because it came with an image.
         s.venc = dataclasses.replace(enc, max_length=enc.max_length + v["image_token_budget"],
@@ -101,33 +119,45 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     return s
 
 
+def _env_int(name: str) -> int | None:
+    v = os.environ.get(name, "").strip()
+    return int(v) if v else None
+
+
 def make_scorer(s: Served, batch_size: int = 16):
     """(state_text, questions[, images]) -> (probabilities, prompt tokens), as
     create_app wants. `images` are validated PIL images (serve/images.py)."""
     from serve.images import state_too_long, text_only_error
-    from serve.infer import score_image_questions_cached, score_questions_cached
+    from serve.infer import (plan_image_request, plan_request, score_image_planned,
+                             score_planned)
     spec = s.meta["spec"]
 
     def scorer(state: str, questions, images=None):
+        """score_questions_cached / score_image_questions_cached, split into plan and
+        run so the plan's reports reach the response. A third element ({"truncated"}) is
+        returned only for a model served with the long-context encoder."""
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
         if images:
             if s.prep is None:
                 raise text_only_error(s.name, s.vision_error)
             # The state and its image tokens are read once; see score_image_questions_cached.
             try:
-                preds, tokens = score_image_questions_cached(
-                    s.model, s.tok, s.prep, state, images, questions, s.venc, device=s.device,
-                    batch_size=batch_size, max_options=mo)
+                plan = plan_image_request(s.tok, s.prep, state, images, questions, s.venc)
             except ValueError as e:
-                err = state_too_long(e, s.venc.max_length)
+                err = state_too_long(e, s.venc.max_length, s.venc)
                 if err is None:
                     raise
                 raise err from None
-            return [list(p.probs) for p in preds], tokens
-        preds, tokens = score_questions_cached(s.model, s.tok, state, questions, s.enc,
-                                               device=s.device, batch_size=batch_size,
-                                               max_options=mo)
-        return [list(p.probs) for p in preds], tokens
+            preds, tokens = score_image_planned(s.model, s.tok, plan, max_options=mo,
+                                                device=s.device, batch_size=batch_size)
+        else:
+            s.model.eval()
+            plan = plan_request(s.tok, state, questions, s.enc)
+            preds, tokens = score_planned(s.model, s.tok, plan, max_options=mo,
+                                          device=s.device, batch_size=batch_size)
+        out = [list(p.probs) for p in preds], tokens
+        extras = {k: plan[k] for k in ("truncated",) if plan.get(k) is not None}
+        return (*out, extras) if extras else out
 
     return scorer
 
@@ -193,6 +223,16 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                          "probabilities slightly. Also RSIJEV_BATCH_WINDOW_MS.")
     ap.add_argument("--no-warmup", action="store_true",
                     help="skip the throwaway requests run before serving")
+    ap.add_argument("--max-length", type=int, default=_env_int("RSIJEV_MAX_LENGTH"),
+                    help="input cap in tokens (text; images add their budget), with the cut "
+                         "--truncate picks. Default: RSIJEV_MAX_INPUT_TOKENS (32,768) and "
+                         "nothing cut, a longer question gets a 422. Also RSIJEV_MAX_LENGTH.")
+    ap.add_argument("--truncate", default=os.environ.get("RSIJEV_TRUNCATE") or None,
+                    choices=["left", "middle"],
+                    help="a state over the cap: 'left' cuts its start (every release up to "
+                         "v4.0-VL); 'middle' keeps its first line, head and tail around a "
+                         "marker, and responses then carry a `truncated` field. Default: "
+                         "nothing is cut. Also RSIJEV_TRUNCATE.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -210,7 +250,9 @@ def serve(a: argparse.Namespace) -> int:
     import uvicorn
     from serve.app import create_app
 
-    s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision)
+    s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision,
+                         max_length=getattr(a, "max_length", None),
+                         truncate=getattr(a, "truncate", None))
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
     from serve.batcher import model_worker
@@ -248,6 +290,11 @@ def serve(a: argparse.Namespace) -> int:
               flush=True)
     elif il.get("reason"):
         print(f"images: off ({il['reason']})", flush=True)
+    sv = s.meta.get("serving") or {}
+    print(f"input cap {s.enc.max_length} tokens; "
+          + {"middle": "over-cap states cut in the middle (responses report `truncated`)",
+             "left": "over-cap states cut from the start",
+             "none": "nothing is cut, a longer question gets a 422"}[s.enc.truncate], flush=True)
     print(f"serving {ref} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {s.meta['base_model']}, calibration {s.meta.get('calibration', 'none')}",
           flush=True)

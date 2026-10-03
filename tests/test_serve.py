@@ -168,6 +168,17 @@ def test_choice_accepts_null_and_empty_descriptions(client):
     assert set(r.json()["answers"]["q"]["probabilities"]) == {"a", "b", "c"}
 
 
+def test_structured_criteria_are_read_as_compact_json(client):
+    r = client.post("/v1/systemone", json=body(q={**CHOICE, "criteria": {
+        "e4": {"move": "e2e4", "piece": "pawn"}, "red": [255, 0, 0], "plain": "text"}}))
+    assert r.status_code == 200
+    q = calls[0][1][0]
+    assert q.criteria == {"e4": '{"move":"e2e4","piece":"pawn"}', "red": "[255,0,0]",
+                          "plain": "text"}
+    r = client.post("/v1/systemone", json=body(q={**SCORE, "criteria": ["low", {"level": 2}]}))
+    assert r.status_code == 200
+
+
 def test_structured_state_is_serialized_as_compact_json(client):
     client.post("/v1/systemone", json={"model": "jev-latest", "questions": {"q": NOUL},
                                        "state": {"ticket": 12, "body": "charged twice"}})

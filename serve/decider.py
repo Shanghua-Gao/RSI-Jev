@@ -66,7 +66,8 @@ class Decider:
 
     def request(self, state: Any, questions: dict[str, Any],
                 images: list | None = None) -> dict[str, Any]:
-        """The full response body: {"model", "answers", "usage"}.
+        """The full response body: {"model", "answers", "usage"}, plus "truncated"
+        for a model served with the long-context encoder, as the HTTP API gives it.
 
         `images` are what the HTTP request's `images` carries: data URLs. For
         convenience a PIL image, a file path or raw bytes are also taken; each is
@@ -80,8 +81,12 @@ class Decider:
                                    f"{self.name} is a text-only model; it does not take images")
             body["images"] = [to_data_url(im) for im in images]
         req = SystemOneRequest.model_validate(body)
-        answers, usage, _, _ = answer_request(self._scorer, req)
-        return {"model": self.name, "answers": answers, "usage": usage}
+        report: dict = {}
+        answers, usage, _, _ = answer_request(self._scorer, req, report=report)
+        body = {"model": self.name, "answers": answers, "usage": usage}
+        if report.get("truncated") is not None:
+            body["truncated"] = report["truncated"]
+        return body
 
     def decide(self, state: Any, questions: dict[str, Any],
                images: list | None = None) -> dict[str, Any]:
