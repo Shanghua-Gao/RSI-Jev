@@ -1,8 +1,9 @@
-"""RSI-Jev v4.0-VL on a Hugging Face Space: upload an image, ask a typed question.
+"""RSI-Jev v5.0-VL 3B on a Hugging Face Space: ask a typed question about text and, optionally, an image.
 
 The answer comes from the same `Decider` the package ships (`from rsijev import Decider`),
 which runs the server's own request path. RSIJEV_MODEL picks the checkpoint: a Hugging Face
-repo id, an alias or a local directory.
+repo id, an alias or a local directory. On ZeroGPU hardware (the `spaces` package is present)
+each answer runs inside a GPU slot; elsewhere the decorator is a no-op.
 """
 from __future__ import annotations
 
@@ -12,11 +13,21 @@ from pathlib import Path
 
 import gradio as gr
 
-MODEL = os.environ.get("RSIJEV_MODEL", "shgao/rsi-jev-v4.0-vl-qwen3.5-2b")
+try:                                               # ZeroGPU: a GPU slot per call
+    import spaces
+    gpu = spaces.GPU
+except ImportError:
+    def gpu(fn):
+        return fn
+
+MODEL = os.environ.get("RSIJEV_MODEL", "shgao/rsi-jev-v5.0-vl-3b")
 HERE = Path(__file__).resolve().parent
 EX = HERE / "examples"
 
 EXAMPLES = [
+    [None, "Ticket #4471: The invoice PDF downloads but every page is blank. Tried Chrome and "
+     "Safari. This is blocking our month-end close.",
+     "Is the customer blocked from finishing their work?", "yes/no", ""],
     [str(EX / "stop.jpg"), "A frame from the car's front camera.",
      "What should the car do?", "choice",
      "stop_then_go: Stop, wait two seconds, then drive on\n"
@@ -53,12 +64,15 @@ def parse_options(text: str) -> dict[str, str | None]:
 
 def build_request(image, context: str, question: str, kind: str, options: str):
     """(state, questions) for Decider.decide, from the form fields."""
-    if image is None:
-        raise gr.Error("Upload an image first.")
     if not (question or "").strip():
         raise gr.Error("Type a question.")
     context = (context or "").strip()
-    state = context if "<image>" in context else ("<image>\n" + context).strip()
+    if image is None:
+        if not context:
+            raise gr.Error("Give the model something to read: text, an image, or both.")
+        state = context.replace("<image>", "").strip()
+    else:
+        state = context if "<image>" in context else ("<image>\n" + context).strip()
     if kind == "yes/no":
         q = {"type": "noul", "instructions": question.strip()}
     else:
@@ -70,11 +84,12 @@ def build_request(image, context: str, question: str, kind: str, options: str):
 
 
 def make_answer(decider):
+    @gpu
     def answer(image, context, question, kind, options):
         state, questions = build_request(image, context, question, kind, options)
         t = time.perf_counter()
         try:
-            out = decider.request(state, questions, images=[image])
+            out = decider.request(state, questions, images=[image] if image is not None else None)
         except Exception as e:                     # a 422 from the request checks, shown as is
             raise gr.Error(str(e)) from e
         ms = (time.perf_counter() - t) * 1000
@@ -92,19 +107,20 @@ def make_answer(decider):
 
 
 def build_demo(decider) -> gr.Blocks:
-    with gr.Blocks(title="RSI-Jev v4.0-VL") as demo:
+    with gr.Blocks(title="RSI-Jev v5.0-VL 3B") as demo:
         gr.Markdown(
-            "# RSI-Jev v4.0-VL\n"
-            "Ask a yes/no or multiple-choice question about an image. The model scores every "
+            "# RSI-Jev v5.0-VL 3B\n"
+            "Ask a yes/no or multiple-choice question about a text, an image or both. The model "
+            "runs the first 20 of Qwen3.5-4B-Base's 32 layers and scores every "
             "allowed answer in one forward pass and returns calibrated probabilities; it does not "
             "write text. [Code](https://github.com/Shanghua-Gao/RSI-Jev) · "
             f"model `{decider.name}` · calibration `{decider.calibration}`")
         with gr.Row():
             with gr.Column():
-                image = gr.Image(type="pil", label="Image")
-                context = gr.Textbox(label="Context (optional)", lines=2,
-                                     placeholder="Text that goes with the image. "
-                                                 "Put <image> where the image belongs.")
+                image = gr.Image(type="pil", label="Image (optional)")
+                context = gr.Textbox(label="Text", lines=3,
+                                     placeholder="The document, message or context. With an image, "
+                                                 "put <image> where it belongs.")
                 question = gr.Textbox(label="Question", placeholder="Is the part defective?")
                 kind = gr.Radio(["yes/no", "choice"], value="yes/no", label="Answer type")
                 options = gr.Textbox(label="Options (choice only), one per line: key or key: description",
