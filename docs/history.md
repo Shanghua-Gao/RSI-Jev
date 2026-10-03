@@ -4,17 +4,26 @@
   <img src="../assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v4.0-VL**, the current release, **reads images.** Send one to four pictures with a request —
-a photo, a screenshot, a scanned page — and ask the same typed questions about them. On five
-image benchmarks held out from training it answers 80.3% correctly, and 45.8% with the images
-blanked out. On text it keeps v3.0's level (suite 0.756). It is v3.0's lineage with two rounds
+**v5.0-VL 3B**, the current release, **stops at layer 20.** It runs the first 20 of
+Qwen3.5-4B-Base's 32 layers: for a model that decides rather than writes, the loop found that
+reading at layer 20 scores like reading at 32 on the decision suite and the held-out set (0.760
+vs 0.761, 0.688 vs 0.686); only knowledge-heavy MMLU-Pro keeps rising. On Decision Index 0.2.1
+it scores 38.38, the best at 3B and under on the public board and ahead of eleven 4B-class
+entries. It reads images as v4.0-VL does, reads each option from that option's own tokens, and
+ships as 3.25B parameters with nothing fetched from the base model.
+[`versions/v5.0-vl.md`](../versions/v5.0-vl.md) is its record.
+
+<details>
+<summary>the five releases behind it</summary>
+
+**v4.0-VL reads images.** It takes one to four pictures with a request —
+a photo, a screenshot, a scanned page — and answers the same typed questions about them. On five
+image benchmarks held out from training it answered 80.3% correctly, and 45.8% with the images
+blanked out. On text it kept v3.0's level (suite 0.756). It is v3.0's lineage with two rounds
 of image training and a new RL stage that charges a confident mistake four times what it charges
 a timid correct answer. That stage takes held-out ECE before calibration from 0.200 to 0.082,
 one seed ([how it works](rl.md#v40-vl-a-reward-that-prices-confident-mistakes)).
 [`versions/v4.0-vl.md`](../versions/v4.0-vl.md) is its record.
-
-<details>
-<summary>the four releases behind it</summary>
 
 **v3.0** is **the first release where reinforcement learning works**. The loop found the reward
 RL needs here: one that scores the *order* of many candidates, which no per-item label can
@@ -45,7 +54,7 @@ zero-shot and remain the reference every later release is compared against.
 reported, compare each bin with how often it was actually right, average the gaps. Lower is
 better, 0 is perfect.*
 
-Of the 312 arms run since v1.0, these are the ones that got from one release to the next, each
+Of the 374 arms run since v1.0, these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
@@ -71,11 +80,12 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
 | the same recipe on Qwen3.5-4B, read at layer 16, 20 or 24 of its 32 | suite 0.744 · 0.760 · 0.760 | a System One model doesn't need the deep layers: quality flattens by layer 20 |
 | images on the layer-20 model, plus questions whose right answer is "unknown" | KoBBQ unknown-when-ambiguous 0.679 → 0.891 | images cost the model its "unknown" answer until the data asked for it |
-| pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark, fixed without retraining |
+| pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
+| retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
-and every arm on v4.0-VL's line, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
+and every arm on the v4.0-VL and v5.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## Human in the loop

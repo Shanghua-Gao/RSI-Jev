@@ -16,12 +16,12 @@
   <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
   <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v4_vl_quickstart.ipynb">Colab</a> ·
   <a href="docs/inference.md">Docs</a> ·
-  <a href="versions/v4.0-vl.md">Release notes</a>
+  <a href="versions/v5.0-vl.md">Release notes</a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-black" alt="MIT"></a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
@@ -34,12 +34,12 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
   <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
 </p>
 
-**Read the exploration:** of 312 experiments since v1.0, the ones that made a release are in
+**Read the exploration:** of 374 experiments since v1.0, the ones that made a release are in
 [**docs/history.md**](docs/history.md); all the others, with why each failed, are in
 [**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
 
 <details>
-<summary><b>The path from v1.0 to v4.0-VL: each experiment that moved a release, and what it ruled out</b></summary>
+<summary><b>The path from v1.0 to v5.0-VL: each experiment that moved a release, and what it ruled out</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -63,7 +63,8 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | **v4.0-VL** | image top-1 **0.803** held out, suite **0.756**, ECE **0.043** | **reads images**, with text held at v3.0's level |
 | the same recipe on Qwen3.5-4B, read at layer 16, 20 or 24 of its 32 | suite 0.744 · 0.760 · 0.760 | a System One model doesn't need the deep layers: quality flattens by layer 20 |
 | images on the layer-20 model, plus questions whose right answer is "unknown" | KoBBQ unknown-when-ambiguous 0.679 → 0.891 | images cost the model its "unknown" answer until the data asked for it |
-| pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark, fixed without retraining |
+| pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
+| retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
 
 </details>

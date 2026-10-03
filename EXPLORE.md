@@ -552,8 +552,9 @@ belong to.
   rows whose right answer is "unknown" brought it to 0.891.
 - **A readout bug, found by an outside benchmark.** On long numbered option lists the 4B line
   picked the option after the right one, because each option's pooled vector began with tokens
-  that had just read the previous option. Pooling only an option's own tokens fixed it without
-  retraining (CLINC150 0.383 → 0.753).
+  that had just read the previous option. Pooling only an option's own tokens fixed it on the same
+  weights (CLINC150 0.383 → 0.753); a 600-step stage that retrains only the decision head for the
+  new pooling then brought final ECE after calibration from 0.080 to 0.042.
 
 | arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
 |---|---|---|---|---|---|---|

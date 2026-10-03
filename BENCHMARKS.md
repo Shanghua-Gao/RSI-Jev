@@ -83,7 +83,7 @@ same bytes we did rather than a copy of ours.
 
 ```bash
 python scripts/suite.py --list                     # every benchmark, its pin and its licence
-python scripts/suite.py --ckpt DIR                 # the fifteen (--suite v3), as v3.0 and v4.0-VL report
+python scripts/suite.py --ckpt DIR                 # the fifteen (--suite v3), as v3.0, v4.0-VL and v5.0-VL report
 python scripts/suite.py --ckpt DIR --suite v2      # the twelve, as v2.0 and v2.1 report
 python scripts/suite.py --ckpt DIR --only kev_hard_v1
 ```
