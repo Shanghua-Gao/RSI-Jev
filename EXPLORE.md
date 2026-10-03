@@ -564,4 +564,5 @@ belong to.
 | `vis-v4` | vision | rejected | 0.7655 | 0.6881 | – | images on `b4-exit20` (24k image + 24k text questions): image probes up across the board, KoBBQ unknown 0.828 → 0.679 |
 | `vis-v4k` | vision | **kept** (stage 2) | 0.7670 | 0.6961 | 0.438 | `vis-v4` plus 2,000 "unknown"-answer text rows and more abstention images: every pre-registered line passed; KoBBQ 0.899 / 0.891 |
 | `exit12`, `exit13`, `exit28`, `exit32` | depth | context | 0.6809 · 0.7116 · 0.7584 · 0.7609 | 0.5905 · 0.6343 · 0.6774 · 0.6859 | 0.291 · 0.338 · 0.415 · 0.457 | the depth curve completed: 20 scores like 32 on suite and held-out |
-| `vis-v4k` + own-token readout | readout | **kept = v5.0-VL** | 0.7621 | 0.6915 | 0.429 | same weights, each option pooled over its own tokens, calibrator refitted: CLINC150 0.383 → 0.753, short lists unchanged |
+| `vis-v4k` + own-token readout | readout | kept (parent of the head stage) | 0.7621 | 0.6915 | 0.429 | same weights, each option pooled over its own tokens, calibrator refitted: CLINC150 0.383 → 0.753, short lists unchanged; final ECE 0.080 |
+| `headft-B` seed 1 | head | **kept = v5.0-VL** | 0.7637 | 0.6889 | 0.429 | the decision head retrained for the own-token readout, 600 steps, tower frozen: final ECE 0.042, Decision Index 38.38 (seed 0: 0.053, 38.18) |
