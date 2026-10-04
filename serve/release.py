@@ -295,6 +295,22 @@ def own_token_pool(spec: dict, meta: dict) -> bool:
     return bool(spec.get("option_pool_own_tokens") or meta.get("option_pool_own_tokens"))
 
 
+# spec.arch_extra keys that only shape training (which layers train, at what rate); serving ignores them.
+TRAINING_ONLY_ARCH_KEYS = ("freeze_lower_n", "lower_lr_mult", "retention_at_exit")
+
+
+def serving_arch_extra(spec: dict) -> dict:
+    """spec.arch_extra minus the training-only keys. Any other key ArchConfig doesn't know is an
+    error: it may change what the model computes."""
+    import dataclasses
+    extra = {k: v for k, v in dict(spec.get("arch_extra") or {}).items() if k not in TRAINING_ONLY_ARCH_KEYS}
+    known = {f.name for f in dataclasses.fields(ArchConfig)}
+    unknown = sorted(set(extra) - known)
+    if unknown:
+        raise RuntimeError(f"spec.arch_extra has keys this server does not know: {unknown}")
+    return extra
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                  vision: bool | None = None, max_length: int | None = None,
                  truncate: str | None = None, fixed_exit: bool | None = None,
@@ -382,7 +398,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                       option_pool=spec["option_pool"], residual=spec["residual"],
                       logit_cap=spec.get("logit_cap"),
                       head_input_norm=spec.get("head_input_norm", False),
-                      **dict(spec.get("arch_extra") or {}))
+                      **serving_arch_extra(spec))
     vb = vision_block(meta) if vision is not False else None
     if vb:
         from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
