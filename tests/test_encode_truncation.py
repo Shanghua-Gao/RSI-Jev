@@ -1,5 +1,5 @@
 """encode_question over-cap policy: middle-cut with a visible marker (the long-context
-encoder).
+encoder, ported from the private branch longctx e1069bf with its tests).
 
 The public default stays truncate="left", so `MID` below asks for "middle" where the
 private tests relied on it being the default.

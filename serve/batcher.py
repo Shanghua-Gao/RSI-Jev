@@ -169,6 +169,12 @@ class ModelRunner:
                              device=self.device, batch_size=self.max_rows,
                              max_tokens=self.max_tokens, sort=opt["sort"],
                              trim_options=opt["trim_options"])
+        # TODO(adaptive exit): pooled rows take the fixed exit whatever --adaptive says.
+        # The aux heads are text-only, and adaptive exit was benchmarked on one
+        # request's own rows, not on rows pooled across requests.
+        from serve.infer import fixed_depth
+        for p in plans:
+            fixed_depth(self.model, p)
         out = [([], 0) for _ in plans]
         for j, r, pr in zip(owner, rows, probs):
             out[j][0].append(list(Prediction(tuple(pr)).probs))

@@ -138,15 +138,16 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-EXTRAS = ("truncated",)
+EXTRAS = ("truncated", "depth")
 
 
 def _split(result, plan=None):
     """A scorer's or worker's result -> (probs, prompt_tokens, extras).
 
     A scorer returns (probs, tokens), or (probs, tokens, extras) where extras may hold
-    "truncated" (the long-context encoder's report, serve.infer.truncation_report). A
-    worker's plan carries the same key. extras is {} for every other model."""
+    "truncated" (the long-context encoder's report, serve.infer.truncation_report) and
+    "depth" (the exit each question used, for models with aux exits). A worker's plan
+    carries the same keys. extras is {} for every other model."""
     probs, tokens = result[0], result[1]
     extras = dict(result[2]) if len(result) > 2 and result[2] else {}
     if isinstance(plan, dict):
@@ -156,6 +157,13 @@ def _split(result, plan=None):
     return probs, tokens, {k: v for k, v in extras.items() if v is not None}
 
 
+def _with_depth(usage: dict, questions, extras: dict) -> dict:
+    """usage["depth"] = {question key: decoder layers run}, when the model reports it."""
+    if extras.get("depth") is not None:
+        usage["depth"] = {q.key: int(d) for q, d in zip(questions, extras["depth"])}
+    return usage
+
+
 def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
                    report: dict | None = None):
     """One validated request -> (answers, usage, prepare_ms, infer_ms).
@@ -163,7 +171,8 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
     `serve.decider.Decider` calls this, and the route runs the same `prepare` and
     `finish` around the same scorer, so the Python API and the HTTP API cannot give
     different answers to the same request. `report`, if given, receives
-    "truncated" (what the long-context encoder cut, or None)."""
+    "truncated" (what the long-context encoder cut, or None). usage carries "depth"
+    for a model with aux exits."""
     t0 = time.perf_counter()
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
@@ -181,6 +190,7 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
         report["truncated"] = extras.get("truncated")
 
     answers, usage = finish(questions, probs, prompt_tokens)
+    _with_depth(usage, questions, extras)
     return answers, usage, prepared_ms, infer_ms
 
 
@@ -255,6 +265,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
             await asyncio.wrap_future(worker.enqueue(plan)), plan)
         infer_ms = (time.perf_counter() - t1) * 1000
         answers, usage = finish(questions, probs, prompt_tokens)
+        _with_depth(usage, questions, extras)
         truncated = extras.get("truncated")
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}
