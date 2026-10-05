@@ -135,7 +135,7 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | [PLACEHOLDER: suite ECE]¹ | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
+| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | –² | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
 | v5.0-VL-3B | text, images | 0.764 | 0.689 | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
 | v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
@@ -145,6 +145,8 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
 ¹ From v6.0-VL the suite and its ECE are reported without `open_jev_ood`, which overlapped training data (v5.0-VL's figures include it; see its errata in [`versions/v6.0-vl.md`](versions/v6.0-vl.md#8-corrections-to-v50-vls-record)). v6.0-VL's figures are as served by default.
+
+² v6.0-VL's suite calibration is not compared with earlier releases'; its held-out (final-set) ECE is 0.036 as served, against 0.042 for v5.0-VL.
 
 All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers, and v6.0-VL answers at layer 16, 20 or 32 of it. Ten of the fifteen suite benchmarks contribute
 train-split data, so the held-out set is the zero-shot comparison; v1.0 never saw a train
