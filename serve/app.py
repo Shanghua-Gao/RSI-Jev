@@ -105,6 +105,9 @@ class SystemOneRequest(StrictModel):
     # full or auto (aliases low, medium, high, max). Omitted, the server default applies;
     # with none set anywhere, serving is what it was before `effort` existed.
     effort: str | None = Field(default=None, max_length=16)
+    # For the cascade (effort auto, or the default adaptive path): the calibrated top-1
+    # probability a question must reach to stop at an aux exit. Default: the release's tau.
+    confidence_threshold: float | None = None
 
 
 def _wire_questions(req: SystemOneRequest) -> list[Question]:
@@ -137,6 +140,15 @@ def _effort(req: SystemOneRequest) -> str | None:
         raise RequestError(str(e)) from None
 
 
+def _threshold(req: SystemOneRequest) -> float | None:
+    """The request's confidence_threshold, checked to lie in (0, 1], or a 422."""
+    from serve.effort import threshold
+    try:
+        return threshold(req.confidence_threshold)
+    except ValueError as e:
+        raise RequestError(str(e)) from None
+
+
 def finish(questions: list[Question], probs, prompt_tokens: int):
     """Probabilities -> (answers, usage)."""
     # A non-finite probability used to fail inside the stdlib JSON encoder
@@ -151,7 +163,7 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-EXTRAS = ("truncated", "depth", "effort")
+EXTRAS = ("truncated", "depth", "effort", "confidence")
 
 
 def _split(result, plan=None):
@@ -174,6 +186,9 @@ def _with_depth(usage: dict, questions, extras: dict) -> dict:
     """usage["depth"] = {question key: decoder layers run}, when the model reports it."""
     if extras.get("depth") is not None:
         usage["depth"] = {q.key: int(d) for q, d in zip(questions, extras["depth"])}
+    if extras.get("confidence") is not None:
+        # each question's calibrated top-1 probability at the exit that answered it
+        usage["confidence"] = {q.key: float(c) for q, c in zip(questions, extras["confidence"])}
     if extras.get("effort") is not None:
         usage["effort"] = extras["effort"]       # the effort the request actually ran at
     return usage
@@ -192,7 +207,8 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
     args = (state, questions, images) if images else (state, questions)
-    kw = {"effort": _effort(req)} if req.effort is not None else {}
+    kw = {k: v for k, v in (("effort", _effort(req)), ("threshold", _threshold(req)))
+          if v is not None}
     prepared_ms = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
@@ -271,10 +287,10 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # Decoding up to four 20 MiB images is too slow for the event loop.
         questions, state, pics = (await run_in_threadpool(prepare, req) if req.images
                                   else prepare(req))
-        effort = _effort(req)
+        effort, thr = _effort(req), _threshold(req)
         prepared_ms = (time.perf_counter() - t0) * 1000
         t1 = time.perf_counter()
-        kw = {"effort": effort} if effort is not None else {}
+        kw = {k: v for k, v in (("effort", effort), ("threshold", thr)) if v is not None}
         if plan_off_loop:
             plan = await run_in_threadpool(lambda: worker.plan(state, questions, pics, **kw))
         else:

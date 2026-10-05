@@ -136,17 +136,18 @@ def make_scorer(s: Served, batch_size: int = 16):
                              score_planned)
     spec = s.meta["spec"]
 
-    def scorer(state: str, questions, images=None, effort=None):
+    def scorer(state: str, questions, images=None, effort=None, threshold=None):
         """score_questions_cached / score_image_questions_cached, split into plan and
         run so the plan's reports reach the response. A third element ({"truncated",
         "depth"}) is returned only for a model served with the long-context encoder or
         one with aux exits."""
-        from serve.effort import canonical, check_supported
+        from serve.effort import canonical, resolve
+        from serve.effort import threshold as check_threshold
+        from serve.infer import record_confidence
         from serve.wire import RequestError
         try:
-            effort = canonical(effort)
-            if effort is not None and not images:
-                check_supported(s.model, effort)
+            effort, threshold = resolve(s.model, canonical(effort), check_threshold(threshold),
+                                        bool(images))
         except ValueError as e:
             raise RequestError(str(e)) from None
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
@@ -162,18 +163,22 @@ def make_scorer(s: Served, batch_size: int = 16):
                     raise
                 raise err from None
             if effort is not None:
-                plan["effort"] = "full"         # the aux heads read text only
+                plan["effort"] = effort         # "full": the aux heads read text only
             preds, tokens = score_image_planned(s.model, s.tok, plan, max_options=mo,
                                                 device=s.device, batch_size=batch_size)
+            record_confidence(s.model, plan, preds)
         else:
             s.model.eval()
             plan = plan_request(s.tok, state, questions, s.enc)
             if effort is not None:
                 plan["effort"] = effort
+            if threshold is not None:
+                plan["threshold"] = threshold
             preds, tokens = score_planned(s.model, s.tok, plan, max_options=mo,
                                           device=s.device, batch_size=batch_size)
         out = [list(p.probs) for p in preds], tokens
-        extras = {k: plan[k] for k in ("truncated", "depth", "effort") if plan.get(k) is not None}
+        extras = {k: plan[k] for k in ("truncated", "depth", "effort", "confidence")
+                  if plan.get(k) is not None}
         return (*out, extras) if extras else out
 
     return scorer

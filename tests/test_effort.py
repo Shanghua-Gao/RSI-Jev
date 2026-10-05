@@ -232,3 +232,105 @@ def test_the_route_passes_effort_and_reports_it():
     assert r.status_code == 200 and "effort" not in r.json()["usage"] and calls[-1] is None
     r = c.post("/v1/systemone", json=_body(effort="turbo"))
     assert r.status_code == 422 and "effort must be one of" in r.text
+
+
+# -- confidence_threshold and usage.confidence ----------------------------------------------
+
+def _with_threshold(model, state, path, effort, thr, qs=QS):
+    from serve.effort import resolve
+    eff, t = resolve(model, effort, thr, False)
+    cfg = PATHS[path]
+    plan = infer.plan_request(tok_ref[0], state, qs, ENC, min_saved_tokens=cfg["min_saved_tokens"],
+                              doc_cache=_dc(cfg["doc"]))
+    if eff is not None:
+        plan["effort"] = eff
+    if t is not None:
+        plan["threshold"] = t
+    got, _ = infer.score_planned(model, tok_ref[0], plan, max_options=8, device="cpu", batch_size=2)
+    return plan, [p.probs for p in got]
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_the_release_tau_as_threshold_is_auto_bitwise(models, path):
+    ad = _ada(models, 0.9)
+    for state in STATES[:4]:
+        p1, got = _with_threshold(ad, state, path, "auto", 0.9)
+        p2, want = _run(ad, state, path, "auto")
+        assert got == want and p1["depth"] == p2["depth"]
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_threshold_one_is_full(models, path):
+    ad = _ada(models, 0.9)
+    for state in STATES[:4]:
+        for eff in ("auto", None):
+            p1, got = _with_threshold(ad, state, path, eff, 1.0)
+            p2, want = _run(ad, state, path, "full")
+            assert got == want and p1["depth"] == [EXIT] * len(QS) and p1["effort"] == "full"
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_a_tiny_threshold_is_light(models, path):
+    ad = _ada(models, 0.9)
+    for state in STATES[:4]:
+        p1, got = _with_threshold(ad, state, path, "auto", 1e-6)
+        p2, want = _run(ad, state, path, "light")
+        assert got == want and p1["depth"] == p2["depth"] == [AUX] * len(QS)
+
+
+def test_threshold_is_validated_and_scoped(models):
+    from serve.effort import resolve, threshold
+    for bad in (0, -0.1, 1.5, "x", float("nan")):
+        with pytest.raises(ValueError):
+            threshold(bad)
+    assert threshold(1) == 1.0 and threshold(None) is None
+    ad = _ada(models, 0.9)
+    for eff in ("light", "balanced", "full"):
+        with pytest.raises(ValueError, match="applies to effort 'auto'"):
+            resolve(ad, eff, 0.5, False)
+    with pytest.raises(ValueError, match="multi-exit"):
+        resolve(models[1], None, 0.5, False)
+    assert resolve(ad, None, None, True) == (None, None)            # images, nothing asked
+    assert resolve(ad, "light", None, True) == ("full", None)       # images run at full depth
+    assert resolve(ad, "auto", 0.5, True) == ("full", None)
+
+
+@pytest.mark.parametrize("effort", [None, "light", "balanced", "full", "auto"])
+def test_confidence_is_the_calibrated_top1_at_the_exit_used(models, effort):
+    ad = _ada(models, 0.9)
+    sh = _temp(copy.deepcopy(models[3]), T_AUX)                      # the single-exit model at AUX
+    fx = _ada(models, 0.9)
+    fx.adaptive_policy, fx.adaptive_mode = None, "off"
+    for state in STATES[:4]:
+        plan, got = _run(ad, state, "plain", effort)
+        conf = plan["confidence"]
+        assert conf == [float(max(p)) for p in got]
+        _, at_aux = _run(sh, state, "plain")
+        _, at_main = _run(fx, state, "plain")
+        for d, c, a, m in zip(plan["depth"], conf, at_aux, at_main):
+            if d == AUX:
+                assert c == float(max(a))                           # softmax(z / e^logT).max at AUX
+            elif effort in ("full", None):
+                assert c == float(max(m))
+
+
+def test_confidence_on_the_image_and_pooled_paths(models):
+    ad = _ada(models, 0.9)
+    from rsijev.contract import Prediction
+    plan = {"path": "image", "encoded": []}
+    infer.record_confidence(ad, plan, [Prediction((0.2, 0.8)), Prediction((0.6, 0.3, 0.1))])
+    assert plan["confidence"] == [0.8, 0.6]
+    infer.record_confidence(models[1], plan2 := {}, [Prediction((0.2, 0.8))])
+    assert "confidence" not in plan2                                 # single-exit: shape unchanged
+    r = _runner(ad)
+    plans = [r.plan(s, QS[:1]) for s in STATES[:3]]
+    out = r._pooled(plans)
+    for p, (probs, _) in zip(plans, out):
+        assert p["confidence"] == [float(max(x)) for x in probs] and p["depth"] == [EXIT]
+
+
+def test_the_route_validates_the_threshold():
+    calls = []
+    c = _client(calls)
+    assert c.post("/v1/systemone", json=_body(confidence_threshold=1.2)).status_code == 422
+    assert c.post("/v1/systemone", json=_body(confidence_threshold=0)).status_code == 422

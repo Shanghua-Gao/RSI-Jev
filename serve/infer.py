@@ -732,6 +732,13 @@ def reports_depth(model) -> bool:
     return bool(getattr(getattr(model, "cfg", None), "aux_exits", ()))
 
 
+def record_confidence(model, plan: dict, preds) -> None:
+    """plan["confidence"]: each question's calibrated top-1 probability at the exit that
+    answered it (the value the cascade compares with tau), for models with aux exits."""
+    if reports_depth(model):
+        plan["confidence"] = [float(max(p.probs)) for p in preds]
+
+
 def fixed_depth(model, plan: dict) -> None:
     """Record the exit every question of `plan` used on a fixed-exit path."""
     if reports_depth(model):
@@ -805,6 +812,9 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
         policy = policy_for(model, plan["effort"])
     else:
         policy = model.adaptive_policy
+    if plan.get("threshold") is not None:
+        # a request's confidence_threshold replaces the release's tau at every aux exit
+        policy = A.Policy(list(policy.exits), dict(policy.cal), float(plan["threshold"]))
     opt = speed_options(sort=sort, trim_options=trim_options)
     encoded, prefix = plan["encoded"], plan["prefix"]
     cache, npfx = None, 0
@@ -856,6 +866,16 @@ def score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
     A model with an adaptive-exit policy answers the plans `adaptive_applies` picks
     (by default, multi-question requests) through score_adaptive; everything else runs
     the fixed exit."""
+    preds, tokens = _score_planned(model, tokenizer, plan, max_options=max_options, device=device,
+                                   batch_size=batch_size, temperature=temperature, sort=sort,
+                                   trim_options=trim_options)
+    record_confidence(model, plan, preds)
+    return preds, tokens
+
+
+def _score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
+                   batch_size: int = 16, temperature: float = 1.0,
+                   sort: bool | None = None, trim_options: bool | None = None):
     if adaptive_applies(model, plan):
         return score_adaptive(model, tokenizer, plan, max_options=max_options, device=device,
                               batch_size=batch_size, temperature=temperature, sort=sort,

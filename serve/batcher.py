@@ -39,10 +39,11 @@ class CallRunner:
     def __init__(self, scorer: Callable):
         self.scorer = scorer
 
-    def plan(self, state, questions, images=None, effort=None):
+    def plan(self, state, questions, images=None, effort=None, threshold=None):
         args = (state, questions, images) if images else (state, questions)
         # A scorer written before `effort` existed is still called exactly as before.
-        return (args, {"effort": effort}) if effort is not None else (args, {})
+        kw = {k: v for k, v in (("effort", effort), ("threshold", threshold)) if v is not None}
+        return args, kw
 
     def run(self, plans: list) -> list:
         return [_capture(self.scorer, *a, **kw) for a, kw in plans]
@@ -101,26 +102,26 @@ class ModelRunner:
     def max_options(self, questions) -> int:
         return max(self.spec_max_options, max(len(q.options) for q in questions))
 
-    def plan(self, state, questions, images=None, effort=None) -> dict:
-        from serve.effort import canonical, check_supported
+    def plan(self, state, questions, images=None, effort=None, threshold=None) -> dict:
+        from serve.effort import canonical, resolve
+        from serve.effort import threshold as check_threshold
         from serve.infer import plan_request
         from serve.wire import RequestError
         try:
             effort = canonical(effort) if effort is not None else self.default_effort
-            if effort is not None and not images:
-                check_supported(self.model, effort)
+            # the aux heads read text only: an image request runs at full depth
+            effort, threshold = resolve(self.model, effort, check_threshold(threshold), bool(images))
         except ValueError as e:
             raise RequestError(str(e)) from None
         if images:
             p = self._plan_images(state, questions, images)
-            if effort is not None:
-                # the aux heads read text only: an image request runs at full depth
-                effort = "full"
         else:
             with self._tok_lock:
                 p = plan_request(self.tok, state, questions, self.enc)
         if effort is not None:
             p["effort"] = effort
+        if threshold is not None:
+            p["threshold"] = threshold
         p["max_options"] = self.max_options(questions)
         return p
 
@@ -146,6 +147,9 @@ class ModelRunner:
         with self._maybe_tok_lock():
             preds, tokens = run(self.model, self.tok, plan, max_options=plan["max_options"],
                                 device=self.device, batch_size=self.batch_size)
+        if plan["path"] == "image":
+            from serve.infer import record_confidence
+            record_confidence(self.model, plan, preds)
         return [list(p.probs) for p in preds], tokens
 
     def _maybe_tok_lock(self):
@@ -194,12 +198,14 @@ class ModelRunner:
         # TODO(adaptive exit): pooled rows take the fixed exit whatever --adaptive says.
         # The aux heads are text-only, and adaptive exit was benchmarked on one
         # request's own rows, not on rows pooled across requests.
-        from serve.infer import fixed_depth
+        from serve.infer import fixed_depth, record_confidence
         for p in plans:
             fixed_depth(self.model, p)
         out = [([], 0) for _ in plans]
         for j, r, pr in zip(owner, rows, probs):
             out[j][0].append(list(Prediction(tuple(pr)).probs))
+        for (ps, _), p in zip(out, plans):
+            record_confidence(self.model, p, [Prediction(tuple(x)) for x in ps])
         return [(ps, sum(len(e["input_ids"]) for e in p["encoded"]))
                 for (ps, _), p in zip(out, plans)]
 
@@ -228,11 +234,11 @@ class GpuWorker:
         self._thread.start()
 
     # -- caller side
-    def plan(self, state, questions, images=None, effort=None):
+    def plan(self, state, questions, images=None, effort=None, threshold=None):
         """Tokenize and choose a path, in the caller's thread. `images` (validated
-        PIL images) and `effort` are passed on only when given, so a runner written for
-        text alone keeps working."""
-        kw = {"effort": effort} if effort is not None else {}
+        PIL images), `effort` and `threshold` are passed on only when given, so a runner
+        written for text alone keeps working."""
+        kw = {k: v for k, v in (("effort", effort), ("threshold", threshold)) if v is not None}
         if images:
             return self.runner.plan(state, questions, images, **kw)
         return self.runner.plan(state, questions, **kw)
@@ -242,9 +248,9 @@ class GpuWorker:
         self._q.put((time.perf_counter(), plan, f))
         return f
 
-    def __call__(self, state, questions, images=None, effort=None):
+    def __call__(self, state, questions, images=None, effort=None, threshold=None):
         """Synchronous use, as a scorer: plan here, run on the worker, wait."""
-        return self.enqueue(self.plan(state, questions, images, effort)).result()
+        return self.enqueue(self.plan(state, questions, images, effort, threshold)).result()
 
     def close(self) -> None:
         self._q.put(None)

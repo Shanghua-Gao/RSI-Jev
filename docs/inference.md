@@ -139,6 +139,21 @@ Image requests run at full depth whatever the effort, because the aux heads read
 their `usage.effort` is `full`. A release with a single exit serves `full` (or no effort) as
 before and answers `light`, `balanced` and `auto` with a 422, as it does an unknown value.
 
+**Confidence.** Every response from a multi-exit release carries `usage.confidence`: for each
+question, the calibrated probability of its top option at the exit that answered it (the
+value the cascade compares with the threshold), next to `usage.depth`, at every effort and on
+image requests (layer 32, the main head's calibration). A single-exit release's responses keep
+their shape.
+
+**Threshold.** `"confidence_threshold"` (a number in (0, 1]) replaces the release's tau (0.59 on
+v6.0-VL) for one request: a question stops at the first aux exit where its calibrated top-1
+probability is at least the threshold, the same threshold at every aux exit. It applies to
+effort `auto` and to the default adaptive path (multi-question requests); with `light`,
+`balanced` or `full`, or outside the range, it is a 422. Lower thresholds stop earlier (any
+value below 1/K, the uniform probability, answers every question at the first aux exit, as
+`light` does). `1.0` means never stop early: the request runs at full depth and reports
+effort `full`; this also covers a single-option question, whose confidence is exactly 1.
+
 ### Images
 
 A release trained with images (v4.0-VL on) also answers questions about 1–4 images. It needs

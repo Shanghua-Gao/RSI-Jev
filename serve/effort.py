@@ -43,6 +43,41 @@ def canonical(value) -> str | None:
     return v
 
 
+def threshold(value) -> float | None:
+    """A request's `confidence_threshold`: None, or a number in (0, 1]. Raises ValueError."""
+    if value is None:
+        return None
+    try:
+        t = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"confidence_threshold must be a number in (0, 1]; got {value!r}") from None
+    if not (0.0 < t <= 1.0):
+        raise ValueError(f"confidence_threshold must be in (0, 1]; got {value!r}")
+    return t
+
+
+def resolve(model, effort, conf_threshold, images: bool) -> tuple[str | None, float | None]:
+    """(effort, threshold) a plan runs with, after validation; raises ValueError.
+
+    `conf_threshold` replaces the release's tau for the cascade, so it applies to effort
+    auto and to the default adaptive path; with light, balanced or full it is refused. 1.0
+    means never exit early: the plan runs at full depth (exactly the main exit), which also
+    covers a single-option question whose confidence is exactly 1. Images run at full depth
+    whatever is asked."""
+    if conf_threshold is not None:
+        if effort in ("light", "balanced", "full"):
+            raise ValueError(f"confidence_threshold applies to effort 'auto' or the default "
+                             f"adaptive path, not to effort {effort!r}")
+        if getattr(model, "effort_base", None) is None:
+            raise ValueError("confidence_threshold needs a multi-exit release with an adaptive policy")
+    if images:
+        return ("full" if effort is not None or conf_threshold is not None else None), None
+    check_supported(model, effort)
+    if conf_threshold == 1.0:
+        return "full", None
+    return effort, conf_threshold
+
+
 def default_effort(cli_value=None) -> str | None:
     """The server default: --effort, else RSIJEV_EFFORT, else None (unset)."""
     if cli_value is not None:
