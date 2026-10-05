@@ -812,9 +812,13 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
         policy = policy_for(model, plan["effort"])
     else:
         policy = model.adaptive_policy
-    if plan.get("threshold") is not None:
-        # a request's confidence_threshold replaces the release's tau at every aux exit
-        policy = A.Policy(list(policy.exits), dict(policy.cal), float(plan["threshold"]))
+    t = plan.get("threshold")
+    if isinstance(t, dict):
+        # effort auto with a per-exit confidence_threshold (filled from the release's default)
+        policy = A.Policy(list(policy.exits), dict(policy.cal), policy.tau, taus=dict(t))
+    elif t is not None:
+        # a single confidence_threshold replaces the tau at every aux exit
+        policy = A.Policy(list(policy.exits), dict(policy.cal), float(t))
     opt = speed_options(sort=sort, trim_options=trim_options)
     encoded, prefix = plan["encoded"], plan["prefix"]
     cache, npfx = None, 0

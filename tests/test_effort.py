@@ -334,3 +334,90 @@ def test_the_route_validates_the_threshold():
     c = _client(calls)
     assert c.post("/v1/systemone", json=_body(confidence_threshold=1.2)).status_code == 422
     assert c.post("/v1/systemone", json=_body(confidence_threshold=0)).status_code == 422
+
+
+# -- per-exit thresholds for effort auto (owner option A) -----------------------------------
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_an_object_threshold_equal_to_the_number_is_bitwise_the_number(models, path):
+    ad = _ada(models, 0.9)
+    for state in STATES[:4]:
+        p1, got = _with_threshold(ad, state, path, "auto", {str(AUX): 0.7})
+        p2, want = _with_threshold(ad, state, path, "auto", 0.7)
+        assert got == want and p1["depth"] == p2["depth"]
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_one_at_an_exit_never_stops_there(models, two_aux, path):
+    ad = _ada(models, 0.9)
+    for state in STATES[:4]:
+        p1, got = _with_threshold(ad, state, path, "auto", {str(AUX): 1.0})
+        p2, want = _run(ad, state, path, "high")
+        assert got == want and p1["depth"] == [EXIT] * len(QS)
+    m, _ = two_aux
+    seen = set()
+    for state in STATES:
+        p, _ = _with_threshold(m, state, path, "auto", {"4": 1.0, "8": 1e-6})
+        assert 4 not in p["depth"] and set(p["depth"]) <= {8}
+        seen |= set(p["depth"])
+    assert seen == {8}
+
+
+def test_a_partial_object_fills_from_the_default(models, two_aux):
+    m, _ = two_aux                                                    # tau 0.7 at 4 and 8
+    for state in STATES[:4]:
+        p1, got = _with_threshold(m, state, "plain", "auto", {"8": 0.7})
+        p2, want = _run(m, state, "plain", "auto")
+        assert got == want and p1["depth"] == p2["depth"]
+
+
+@pytest.mark.parametrize("bad", [{"5": 0.5}, {"x": 0.5}, {str(AUX): 1.5}, {str(AUX): 0}, {}, True])
+def test_bad_threshold_objects_are_refused(models, bad):
+    from serve.effort import resolve, threshold
+    ad = _ada(models, 0.9)
+    with pytest.raises(ValueError):
+        resolve(ad, "auto", threshold(bad), False)
+
+
+def test_an_object_needs_effort_auto(models):
+    from serve.effort import resolve, threshold
+    ad = _ada(models, 0.9)
+    with pytest.raises(ValueError, match="needs effort 'auto'"):
+        resolve(ad, None, threshold({str(AUX): 0.5}), False)
+
+
+def test_auto_uses_the_release_auto_thresholds_and_unset_ignores_them(models):
+    ad = _ada(models, 0.9)
+    plain = _ada(models, 0.9)
+    ad.effort_auto_taus = {AUX: 0.6}
+    for state in STATES[:4]:
+        p1, got = _run(ad, state, "plain", "auto")
+        p2, want = _with_threshold(plain, state, "plain", "auto", 0.6)
+        assert got == want and p1["depth"] == p2["depth"]
+        p3, unset = _run(ad, state, "plain")                         # default path: the single tau
+        p4, before = _run(plain, state, "plain")
+        assert unset == before and p3["depth"] == p4["depth"]
+
+
+def test_the_release_reads_auto_thresholds(stub_lm, tmp_path, models):
+    import json
+    from serve.release import load_release
+    _, _, ada, _ = models
+    d = _write_release(tmp_path / "ada", ada, tau=0.9)
+    meta = json.loads((d / "meta.json").read_text())
+    meta["adaptive"]["auto_thresholds"] = {str(AUX): 0.75}
+    (d / "meta.json").write_text(json.dumps(meta))
+    m, _, _, _ = load_release(d, "cpu")
+    assert m.effort_auto_taus == {AUX: 0.75} and m.adaptive_policy.tau == 0.9
+    meta["adaptive"]["auto_thresholds"] = {"3": 0.5}
+    (d / "meta.json").write_text(json.dumps(meta))
+    with pytest.raises(RuntimeError, match="auto_thresholds"):
+        load_release(d, "cpu")
+
+
+def test_the_route_takes_a_threshold_object():
+    calls = []
+    c = _client(calls)
+    assert c.post("/v1/systemone", json=_body(effort="auto", confidence_threshold={"16": 0.7})).status_code == 200
+    assert c.post("/v1/systemone", json=_body(confidence_threshold=0.5)).status_code == 200
+    assert c.post("/v1/systemone", json=_body(confidence_threshold={"16": 2})).status_code == 422

@@ -107,7 +107,7 @@ class SystemOneRequest(StrictModel):
     effort: str | None = Field(default=None, max_length=16)
     # For the cascade (effort auto, or the default adaptive path): the calibrated top-1
     # probability a question must reach to stop at an aux exit. Default: the release's tau.
-    confidence_threshold: float | None = None
+    confidence_threshold: float | dict[str, float] | None = None
 
 
 def _wire_questions(req: SystemOneRequest) -> list[Question]:

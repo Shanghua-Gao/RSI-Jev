@@ -245,6 +245,11 @@ class Policy:
     exits: list
     cal: dict = field(default_factory=dict)       # {exit: cal dict}
     tau: float = 2.0
+    # per-exit thresholds {exit: tau} overriding `tau` at those exits (empty: `tau` everywhere)
+    taus: dict = field(default_factory=dict)
+
+    def tau_at(self, L) -> float:
+        return self.taus.get(int(L), self.tau)
 
 
 def layer_period(tm) -> int:
@@ -409,7 +414,7 @@ def staged_scores(tm, scorers: dict, policy: Policy, batch: dict, *, cache_facto
             out[rows] = z if finalize is None else finalize(L, z, dh, rows).to(out.dtype)
             break
         conf = calibrated_conf(z, dh, batch["mode_id"][rows], policy.cal[L])
-        stop = conf >= policy.tau
+        stop = conf >= policy.tau_at(L)
         if bool(stop.any()):
             zs = z if finalize is None else finalize(L, z, dh, rows).to(out.dtype)
             out[rows[stop]] = zs[stop]
@@ -469,7 +474,7 @@ def staged_scores_bucketed(tm, scorers: dict, policy: Policy, batch: dict, *, gr
                 out[r] = z
                 continue
             conf = calibrated_conf(z, dh, batch["mode_id"][r], policy.cal[L])
-            stop = conf >= policy.tau
+            stop = conf >= policy.tau_at(L)
             if bool(stop.any()):
                 out[r[stop]] = z[stop]
                 depth[r[stop]] = L
@@ -637,7 +642,7 @@ def staged_scores_fast(tm, scorers: dict, policy: Policy, batch: dict, *, cache_
     lo = 0
     pool = None
     # tau > 1: no exit but the last can ever be taken (conf <= 1), so no aux head runs
-    exits = policy.exits if policy.tau <= 1.0 else policy.exits[-1:]
+    exits = policy.exits if any(policy.tau_at(L) <= 1.0 for L in policy.exits[:-1]) else policy.exits[-1:]
     for i, L in enumerate(exits):
         last = i == len(exits) - 1
         R.prepare(rows, h, full)
@@ -660,13 +665,13 @@ def staged_scores_fast(tm, scorers: dict, policy: Policy, batch: dict, *, cache_
             break
         mode = batch["mode_id"] if full else batch["mode_id"][rows]
         # exact skip: if no row can reach tau under ANY calibration, the calibrator is not run
-        if not any((conf_upper_bound(z, mode, policy.cal[L]) >= policy.tau - CONF_BOUND_MARGIN).tolist()):
+        if not any((conf_upper_bound(z, mode, policy.cal[L]) >= policy.tau_at(L) - CONF_BOUND_MARGIN).tolist()):
             if stats is not None:
                 stats["cal_skipped"] = stats.get("cal_skipped", 0) + 1
             lo = L
             continue
         conf = calibrated_conf(z, dh, mode, policy.cal[L])
-        stop_host = (conf >= policy.tau).tolist()          # the one host read at this exit
+        stop_host = (conf >= policy.tau_at(L)).tolist()          # the one host read at this exit
         if any(stop_host):
             zs = z if finalize is None else finalize(L, z, dh, rows).to(out.dtype)
             si = [k for k, s in enumerate(stop_host) if s]

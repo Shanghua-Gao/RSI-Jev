@@ -196,6 +196,7 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
     multi-question requests only); mode off serves the fixed exit and loads no policy."""
     model.adaptive_mode = "off"
     model.effort_base = None
+    model.effort_auto_taus = None
     if not getattr(model.cfg, "aux_exits", ()):
         return None, None
     temps = exit_temperatures(ckpt, model.exit_indices())      # validated even when off
@@ -211,11 +212,34 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
             model.effort_base = _build_policy(meta, ckpt, model, device, block, temps)
         except RuntimeError:
             model.effort_base = None
+        if model.effort_base is not None:
+            model.effort_auto_taus = auto_thresholds(block, model.effort_base.exits)
         return None, f"fixed exit forced ({src})"
     policy = _build_policy(meta, ckpt, model, device, block, temps)
     model.effort_base = policy
+    model.effort_auto_taus = auto_thresholds(block, policy.exits)
     model.adaptive_mode = mode
     return policy, None
+
+
+def auto_thresholds(block: dict, exits: list) -> dict | None:
+    """meta.json adaptive.auto_thresholds {"<aux exit>": tau in (0, 1]}: per-exit thresholds
+    for effort auto only (serve/effort.py); the default (unset effort) keeps the single tau.
+    A partial block is filled from that tau. Absent: None."""
+    raw = block.get("auto_thresholds")
+    if raw is None:
+        return None
+    aux = [str(L) for L in exits[:-1]]
+    if not isinstance(raw, dict) or not set(map(str, raw)) <= set(aux):
+        raise RuntimeError(f"meta.json adaptive.auto_thresholds must map aux exits {aux} to "
+                           f"thresholds in (0, 1]; got {raw!r}")
+    out = {}
+    for k, v in raw.items():
+        t = float(v)
+        if not (0.0 < t <= 1.0):
+            raise RuntimeError(f"meta.json adaptive.auto_thresholds[{k!r}] = {v!r} is not in (0, 1]")
+        out[int(k)] = 2.0 if t >= 1.0 else t
+    return out
 
 
 def _build_policy(meta: dict, ckpt: Path, model, device, block: dict, temps):

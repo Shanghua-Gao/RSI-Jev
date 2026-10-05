@@ -158,6 +158,15 @@ value below 1/K, the uniform probability, answers every question at the first au
 `low` does). `1.0` means never stop early: the request runs at full depth and reports
 effort `high`; this also covers a single-option question, whose confidence is exactly 1.
 
+With effort `auto` the threshold can also be set per aux exit, as an object:
+`"confidence_threshold": {"16": 0.8, "20": 0.6}`. An exit left out keeps effort auto's default
+there; `1.0` at an exit means never stop at that exit; an exit the release does not have, or a
+value outside (0, 1], is a 422. The object form is refused without effort `auto`. Effort auto's
+default is the release's `meta.json` `adaptive.auto_thresholds` (`{"16": ..., "20": ...}`) when
+it has one, else the single tau; v6.0-VL ships without it, so its default is 0.59 at both exits.
+The unset default (no effort) always uses the single tau and ignores `auto_thresholds`, so the
+numbers above hold.
+
 Choosing a threshold on v6.0-VL (dev sets, descriptive, not used for any selection; quality is the
 suite-like score, held-out accuracy and Decision-Index-style skill):
 

@@ -40,17 +40,39 @@ def canonical(value) -> str | None:
     return v
 
 
-def threshold(value) -> float | None:
-    """A request's `confidence_threshold`: None, or a number in (0, 1]. Raises ValueError."""
-    if value is None:
-        return None
+NEVER = 2.0      # a tau no calibrated probability reaches: never stop at that exit
+
+
+def _one(value, what="confidence_threshold"):
     try:
         t = float(value)
     except (TypeError, ValueError):
-        raise ValueError(f"confidence_threshold must be a number in (0, 1]; got {value!r}") from None
+        raise ValueError(f"{what} must be a number in (0, 1]; got {value!r}") from None
     if not (0.0 < t <= 1.0):
-        raise ValueError(f"confidence_threshold must be in (0, 1]; got {value!r}")
+        raise ValueError(f"{what} must be in (0, 1]; got {value!r}")
     return t
+
+
+def threshold(value):
+    """A request's `confidence_threshold`: None, a number in (0, 1] (every aux exit), or an
+    object {"<aux exit>": number in (0, 1], ...} (effort auto only). Raises ValueError."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if not value:
+            raise ValueError("confidence_threshold object is empty")
+        return {str(k).strip(): _one(v, f"confidence_threshold[{k!r}]") for k, v in value.items()}
+    if isinstance(value, bool):
+        raise ValueError(f"confidence_threshold must be a number in (0, 1]; got {value!r}")
+    return _one(value)
+
+
+def auto_taus(model) -> dict:
+    """{aux exit: tau} effort auto starts from: meta.json adaptive.auto_thresholds when the
+    release has them, else the single tau at every aux exit."""
+    base = model.effort_base
+    own = getattr(model, "effort_auto_taus", None) or {}
+    return {int(L): float(own.get(int(L), base.tau)) for L in base.exits[:-1]}
 
 
 def resolve(model, effort, conf_threshold, images: bool) -> tuple[str | None, float | None]:
@@ -67,11 +89,24 @@ def resolve(model, effort, conf_threshold, images: bool) -> tuple[str | None, fl
                              f"adaptive path, not to effort {effort!r}")
         if getattr(model, "effort_base", None) is None:
             raise ValueError("confidence_threshold needs a multi-exit release with an adaptive policy")
+        if isinstance(conf_threshold, dict):
+            if effort != "auto":
+                raise ValueError("a per-exit confidence_threshold object needs effort 'auto'")
+            aux = [str(L) for L in model.effort_base.exits[:-1]]
+            bad = sorted(set(conf_threshold) - set(aux))
+            if bad:
+                raise ValueError(f"confidence_threshold names exits {bad}; this release's aux "
+                                 f"exits are {aux}")
     if images:
         return ("high" if effort is not None or conf_threshold is not None else None), None
     check_supported(model, effort)
     if conf_threshold == 1.0:
         return "high", None
+    if isinstance(conf_threshold, dict):
+        # a partial object fills the other exits from effort auto's default; 1.0 = never there
+        taus = auto_taus(model)
+        taus.update({int(k): v for k, v in conf_threshold.items()})
+        conf_threshold = {L: (NEVER if t >= 1.0 else t) for L, t in taus.items()}
     return effort, conf_threshold
 
 
@@ -97,7 +132,13 @@ def policy_for(model, effort: str):
     from rsijev.adaptive import Policy
     base = model.effort_base
     if effort == "auto":
-        return base
+        own = getattr(model, "effort_auto_taus", None)
+        if not own:
+            return base
+        cache = model.__dict__.setdefault("_effort_policies", {})
+        if "auto" not in cache:
+            cache["auto"] = Policy(list(base.exits), dict(base.cal), base.tau, taus=auto_taus(model))
+        return cache["auto"]
     cache = model.__dict__.setdefault("_effort_policies", {})
     if effort not in cache:
         aux = base.exits[:-1]
