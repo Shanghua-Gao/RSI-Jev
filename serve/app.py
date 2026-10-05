@@ -101,8 +101,8 @@ class SystemOneRequest(StrictModel):
     # base64 data URLs, referenced from the state by `<image>` markers
     # (serve/images.py). Omitted, null or empty, the request is a text request.
     images: list[str] | None = Field(default=None, max_length=MAX_IMAGES)
-    # An RSI-Jev extension for multi-exit releases (serve/effort.py): light, balanced,
-    # full or auto (aliases low, medium, high, max). Omitted, the server default applies;
+    # An RSI-Jev extension for multi-exit releases (serve/effort.py): low, medium, high
+    # or auto. Omitted, the server default applies;
     # with none set anywhere, serving is what it was before `effort` existed.
     effort: str | None = Field(default=None, max_length=16)
     # For the cascade (effort auto, or the default adaptive path): the calibrated top-1

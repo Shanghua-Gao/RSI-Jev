@@ -4,42 +4,39 @@ A release with aux exits (spec.arch_extra.aux_exits) and a tuned policy (meta.js
 `adaptive`) can answer at more than one depth. `effort` picks one, using the heads the
 release already has; no other weights are involved:
 
-  light     the shallowest aux exit for every question (v6.0-VL: layer 16)
-  balanced  the deepest aux exit for every question (v6.0-VL: layer 20)
-  full      the main exit for every question (v6.0-VL: layer 32), i.e. --adaptive off
+  low       the shallowest aux exit for every question (v6.0-VL: layer 16)
+  medium    the deepest aux exit for every question (v6.0-VL: layer 20)
+  high      the main exit, all layers, for every question (v6.0-VL: layer 32), i.e. --adaptive off
   auto      the release's confidence cascade (exit to exit, stop at the first whose
             calibrated top-1 probability reaches tau) for every text request, a single
             question included, i.e. --adaptive on
 
-Aliases: low = light, medium = balanced, high = max = full.
+There are no aliases; any other value, including names from earlier drafts, is refused.
 
 Left unset (no `effort` in the request, no --effort / RSIJEV_EFFORT), serving is exactly
 what it was before `effort` existed: the release's adaptive mode (--adaptive, meta.json
 `adaptive.serving`, else auto: the cascade for multi-question requests, the main exit for
 one question). Requests with images run at full depth whatever the effort, because the aux
-heads read text only; their response reports effort "full". A release without aux exits
-answers effort full (or unset) as before and refuses light, balanced and auto with a 422.
+heads read text only; their response reports effort "high". A release without aux exits
+answers effort high (or unset) as before and refuses low, medium and auto with a 422.
 """
 from __future__ import annotations
 
 import os
 
-EFFORTS = ("light", "balanced", "full", "auto")
-ALIASES = {"low": "light", "medium": "balanced", "high": "full", "max": "full"}
-NEEDS_EXITS = ("light", "balanced", "auto")
+EFFORTS = ("low", "medium", "high", "auto")
+NEEDS_EXITS = ("low", "medium", "auto")
 
 
 def canonical(value) -> str | None:
-    """'Medium' -> 'balanced'; None or '' -> None. Raises ValueError for anything else."""
+    """' Medium ' -> 'medium'; None or '' -> None. Raises ValueError for anything else."""
     if value is None:
         return None
     v = str(value).strip().lower()
     if not v:
         return None
-    v = ALIASES.get(v, v)
     if v not in EFFORTS:
-        names = ", ".join(list(EFFORTS) + [f"{a} ({b})" for a, b in ALIASES.items()])
-        raise ValueError(f"effort must be one of {names}; got {value!r}")
+        raise ValueError(f"effort must be one of {', '.join(EFFORTS)}; got {value!r}")
     return v
 
 
@@ -60,21 +57,21 @@ def resolve(model, effort, conf_threshold, images: bool) -> tuple[str | None, fl
     """(effort, threshold) a plan runs with, after validation; raises ValueError.
 
     `conf_threshold` replaces the release's tau for the cascade, so it applies to effort
-    auto and to the default adaptive path; with light, balanced or full it is refused. 1.0
+    auto and to the default adaptive path; with low, medium or high it is refused. 1.0
     means never exit early: the plan runs at full depth (exactly the main exit), which also
     covers a single-option question whose confidence is exactly 1. Images run at full depth
     whatever is asked."""
     if conf_threshold is not None:
-        if effort in ("light", "balanced", "full"):
+        if effort in ("low", "medium", "high"):
             raise ValueError(f"confidence_threshold applies to effort 'auto' or the default "
                              f"adaptive path, not to effort {effort!r}")
         if getattr(model, "effort_base", None) is None:
             raise ValueError("confidence_threshold needs a multi-exit release with an adaptive policy")
     if images:
-        return ("full" if effort is not None or conf_threshold is not None else None), None
+        return ("high" if effort is not None or conf_threshold is not None else None), None
     check_supported(model, effort)
     if conf_threshold == 1.0:
-        return "full", None
+        return "high", None
     return effort, conf_threshold
 
 
@@ -90,13 +87,13 @@ def check_supported(model, effort: str | None) -> None:
     if effort in NEEDS_EXITS and getattr(model, "effort_base", None) is None:
         if not getattr(getattr(model, "cfg", None), "aux_exits", ()):
             raise ValueError(f"effort {effort!r} needs a release with aux exits; this one has a "
-                             f"single exit, so only effort 'full' (or no effort) is served")
+                             f"single exit, so only effort 'high' (or no effort) is served")
         raise ValueError(f"effort {effort!r} needs the release's adaptive policy (meta.json "
                          f"adaptive.tau and per-exit calibration), which this release lacks")
 
 
 def policy_for(model, effort: str):
-    """The rsijev.adaptive.Policy a text plan runs with at `effort` (light/balanced/auto)."""
+    """The rsijev.adaptive.Policy a text plan runs with at `effort` (low/medium/auto)."""
     from rsijev.adaptive import Policy
     base = model.effort_base
     if effort == "auto":
@@ -104,10 +101,10 @@ def policy_for(model, effort: str):
     cache = model.__dict__.setdefault("_effort_policies", {})
     if effort not in cache:
         aux = base.exits[:-1]
-        if effort == "light":
+        if effort == "low":
             # tau -1: every row stops at the first exit; the policy's other stages never run
             cache[effort] = Policy(list(base.exits), dict(base.cal), -1.0)
-        elif effort == "balanced":
+        elif effort == "medium":
             L = aux[-1]
             cache[effort] = Policy([L, base.exits[-1]], {L: base.cal[L]}, -1.0)
         else:

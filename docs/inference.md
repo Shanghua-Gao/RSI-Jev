@@ -112,20 +112,22 @@ A multi-exit release answers at more than one depth. `effort` picks the depth pe
 `RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
 weights:
 
-| effort | aliases | depth (v6.0-VL) | Decision Index 0.2.1 | median |
-|---|---|---|---:|---:|
-| `light` | `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
-| `balanced` | `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
-| `full` | `high`, `max` | the main exit: layer 32 | 45.9 | 40 ms |
-| `auto` | | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches tau 0.59), every text request | 44.9 | 30 ms |
-| unset | | the default below | 45.7 | 40 ms |
+| effort | depth (v6.0-VL) | Decision Index 0.2.1 | median |
+|---|---|---:|---:|
+| `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
+| `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
+| `high` | the main exit, all layers: layer 32 | 45.9 | 40 ms |
+| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches the threshold, tau 0.59 by default), every text request | 44.9 | 30 ms |
+| unset | the default below | 45.7 | 40 ms |
+
+Any other value is a 422 that lists these four.
 
 Decision Index figures are reads of the kit's stratified 16,000-request sample (one H200, bf16,
 one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample.
 
 ```bash
-rsi-jev serve v6.0-vl-5b --effort balanced          # server default
-curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"light", ...}'
+rsi-jev serve v6.0-vl-5b --effort medium            # server default
+curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"low", ...}'
 ```
 
 With no effort anywhere, serving is what it was before `effort` existed: `--adaptive auto`
@@ -136,8 +138,8 @@ effort carry `usage.effort` (the effort it actually ran at) next to `usage.depth
 each question was answered at).
 
 Image requests run at full depth whatever the effort, because the aux heads read text only;
-their `usage.effort` is `full`. A release with a single exit serves `full` (or no effort) as
-before and answers `light`, `balanced` and `auto` with a 422, as it does an unknown value.
+their `usage.effort` is `high`. A release with a single exit serves `high` (or no effort) as
+before and answers `low`, `medium` and `auto` with a 422, as it does an unknown value.
 
 **Confidence.** Every response from a multi-exit release carries `usage.confidence`: for each
 question, the calibrated probability of its top option at the exit that answered it (the
@@ -148,20 +150,20 @@ their shape.
 **Threshold.** `"confidence_threshold"` (a number in (0, 1]) replaces the release's tau (0.59 on
 v6.0-VL) for one request: a question stops at the first aux exit where its calibrated top-1
 probability is at least the threshold, the same threshold at every aux exit. It applies to
-effort `auto` and to the default adaptive path (multi-question requests); with `light`,
-`balanced` or `full`, or outside the range, it is a 422. Lower thresholds stop earlier (any
+effort `auto` and to the default adaptive path (multi-question requests); with `low`,
+`medium` or `high`, or outside the range, it is a 422. Lower thresholds stop earlier (any
 value below 1/K, the uniform probability, answers every question at the first aux exit, as
-`light` does). `1.0` means never stop early: the request runs at full depth and reports
-effort `full`; this also covers a single-option question, whose confidence is exactly 1.
+`low` does). `1.0` means never stop early: the request runs at full depth and reports
+effort `high`; this also covers a single-option question, whose confidence is exactly 1.
 
 Choosing a threshold on v6.0-VL (dev sets, descriptive, not used for any selection; quality is the
 suite-like score, held-out accuracy and Decision-Index-style skill):
 
 | setting | layers | stops at 16 / 20 / 32 | suite-like | held-out | Decision-Index-style |
 |---|---:|---|---:|---:|---:|
-| `light` (16) | 16.0 | 100 / 0 / 0 % | 0.752 | 0.697 | 0.521 |
-| `balanced` (20) | 20.0 | 0 / 100 / 0 % | 0.760 | 0.703 | 0.550 |
-| `full` (32) | 32.0 | 0 / 0 / 100 % | 0.765 | 0.697 | 0.555 |
+| `low` (16) | 16.0 | 100 / 0 / 0 % | 0.752 | 0.697 | 0.521 |
+| `medium` (20) | 20.0 | 0 / 100 / 0 % | 0.760 | 0.703 | 0.550 |
+| `high` (32) | 32.0 | 0 / 0 / 100 % | 0.765 | 0.697 | 0.555 |
 | threshold 0.50 | 19.4 | 76 / 4 / 20 % | 0.758 | 0.705 | 0.532 |
 | **threshold 0.59** (default) | 20.9 | 65 / 5 / 30 % | 0.765 | 0.705 | 0.535 |
 | threshold 0.70 | 22.9 | 52 / 6 / 42 % | 0.766 | 0.698 | 0.542 |
@@ -170,8 +172,8 @@ suite-like score, held-out accuracy and Decision-Index-style skill):
 | threshold 0.95 | 28.3 | 21 / 4 / 76 % | 0.765 | 0.697 | 0.555 |
 
 Layers and stop shares are on the suite-like set. From 0.59 up, suite-like and held-out text match
-`full`; on inputs unlike the training data a low threshold costs quality, which comes back only from
-about 0.9. If inputs may be unusual, use a threshold of 0.9 or more, or `balanced`.
+`high`; on inputs unlike the training data a low threshold costs quality, which comes back only from
+about 0.9. If inputs may be unusual, use a threshold of 0.9 or more, or `medium`.
 
 ### Images
 

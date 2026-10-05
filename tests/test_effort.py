@@ -1,7 +1,7 @@
 """`effort` (serve/effort.py): a request's depth on a multi-exit release, mapped onto its heads.
 
-light = the shallowest aux exit for every question, balanced = the deepest aux exit,
-full = the main exit, auto = the release's cascade on every text request. Each must give,
+low = the shallowest aux exit for every question, medium = the deepest aux exit,
+high = the main exit (all layers), auto = the release's cascade on every text request. Each must give,
 bitwise, what the existing paths give for the same depth; with no effort anywhere,
 serving is unchanged.
 """
@@ -55,23 +55,22 @@ def _run(model, state, path, effort=None, qs=QS):
 
 # -- parsing ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,want", [("light", "light"), ("LOW", "light"), ("medium", "balanced"),
-                                      ("balanced", "balanced"), ("high", "full"), ("max", "full"),
-                                      (" Full ", "full"), ("auto", "auto"), (None, None), ("", None)])
-def test_effort_names_and_aliases(raw, want):
+@pytest.mark.parametrize("raw,want", [("low", "low"), ("LOW", "low"), (" Medium ", "medium"),
+                                      ("high", "high"), ("auto", "auto"), (None, None), ("", None)])
+def test_effort_names(raw, want):
     assert E.canonical(raw) == want
 
 
-@pytest.mark.parametrize("raw", ["fast", "1", "on", "off"])
-def test_an_unknown_effort_is_refused(raw):
-    with pytest.raises(ValueError, match="effort must be one of"):
+@pytest.mark.parametrize("raw", ["fast", "1", "on", "off", "light", "balanced", "full", "max"])
+def test_an_unknown_effort_is_refused_with_the_valid_names(raw):
+    with pytest.raises(ValueError, match="effort must be one of low, medium, high, auto"):
         E.canonical(raw)
 
 
 def test_server_default_reads_the_environment(monkeypatch):
     monkeypatch.setenv("RSIJEV_EFFORT", "medium")
-    assert E.default_effort() == "balanced"
-    assert E.default_effort("light") == "light"           # the flag wins
+    assert E.default_effort() == "medium"
+    assert E.default_effort("low") == "low"               # the flag wins
     monkeypatch.delenv("RSIJEV_EFFORT")
     assert E.default_effort() is None
 
@@ -79,22 +78,22 @@ def test_server_default_reads_the_environment(monkeypatch):
 # -- each effort is bitwise its existing path --------------------------------------------
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_light_is_the_tau_minus_one_path_bitwise(models, path):
+def test_low_is_the_tau_minus_one_path_bitwise(models, path):
     ad = _ada(models, 0.9)
     ref = _ada(models, -1.0, mode="on")                    # the verified "tau -1, adaptive on" run
     for state in STATES[:4]:
-        p1, got = _run(ad, state, path, "light")
+        p1, got = _run(ad, state, path, "low")
         p2, want = _run(ref, state, path)
         assert got == want and p1["depth"] == p2["depth"] == [AUX] * len(QS)
 
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_full_is_the_fixed_exit_bitwise(models, path):
+def test_high_is_the_fixed_exit_bitwise(models, path):
     ad = _ada(models, 0.9)
     fx = _ada(models, 0.9)
     fx.adaptive_policy, fx.adaptive_mode = None, "off"     # --adaptive off
     for state in STATES[:4]:
-        p1, got = _run(ad, state, path, "full")
+        p1, got = _run(ad, state, path, "high")
         p2, want = _run(fx, state, path)
         assert got == want and p1["depth"] == p2["depth"] == [EXIT] * len(QS)
 
@@ -119,7 +118,7 @@ def test_no_effort_leaves_serving_unchanged(models):
     assert plan["depth"] == [AUX] * len(QS)                # multi-question: the cascade
 
 
-# -- balanced on a two-aux-exit model: exit 8 of (4, 8, 12) == a model with aux exits (8,) --
+# -- medium on a two-aux-exit model: exit 8 of (4, 8, 12) == a model with aux exits (8,) --
 
 @pytest.fixture(scope="module")
 def two_aux(models):
@@ -142,21 +141,21 @@ def two_aux(models):
 
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_balanced_is_the_deepest_aux_exit_model_bitwise(two_aux, path):
+def test_medium_is_the_deepest_aux_exit_model_bitwise(two_aux, path):
     m, only8 = two_aux
     for state in STATES[:4]:
-        p1, got = _run(m, state, path, "balanced")
+        p1, got = _run(m, state, path, "medium")
         p2, want = _run(only8, state, path)
         assert got == want and p1["depth"] == p2["depth"] == [8] * len(QS)
-    _, light = _run(m, STATES[0], path, "light")
-    assert _run(m, STATES[0], path, "light")[0]["depth"] == [4] * len(QS) and light
+    _, low = _run(m, STATES[0], path, "low")
+    assert _run(m, STATES[0], path, "low")[0]["depth"] == [4] * len(QS) and low
 
 
 # -- refusals, images, pooling -------------------------------------------------------------
 
 def test_a_single_exit_release_serves_full_only(models):
     fixed = models[1]
-    E.check_supported(fixed, "full")
+    E.check_supported(fixed, "high")
     E.check_supported(fixed, None)
     for e in E.NEEDS_EXITS:
         with pytest.raises(ValueError, match="aux exits"):
@@ -174,23 +173,23 @@ def test_the_runner_resolves_validates_and_does_not_pool(models):
     r = _runner(ad)
     assert "effort" not in r.plan(STATES[0], QS)           # unchanged when unset
     p = r.plan(STATES[0], QS, effort="medium")
-    assert p["effort"] == "balanced" and not r.poolable(p)
-    assert r.poolable(r.plan(STATES[0], QS, effort="full")) == r.poolable(r.plan(STATES[0], QS))
+    assert p["effort"] == "medium" and not r.poolable(p)
+    assert r.poolable(r.plan(STATES[0], QS, effort="high")) == r.poolable(r.plan(STATES[0], QS))
     with pytest.raises(RequestError, match="effort must be one of"):
         r.plan(STATES[0], QS, effort="fast")
     with pytest.raises(RequestError, match="aux exits"):
-        _runner(models[1]).plan(STATES[0], QS, effort="light")
+        _runner(models[1]).plan(STATES[0], QS, effort="low")
     rd = _runner(ad)
-    rd.default_effort = "light"
-    assert rd.plan(STATES[0], QS)["effort"] == "light"
-    assert rd.plan(STATES[0], QS, effort="high")["effort"] == "full"    # the request wins
+    rd.default_effort = "low"
+    assert rd.plan(STATES[0], QS)["effort"] == "low"
+    assert rd.plan(STATES[0], QS, effort="high")["effort"] == "high"    # the request wins
 
 
 def test_image_requests_run_at_full_depth(models, monkeypatch):
     ad = _ada(models, 0.9)
     r = _runner(ad)
     monkeypatch.setattr(r, "_plan_images", lambda s, q, i: {"path": "image", "encoded": []})
-    assert r.plan(STATES[0], QS, images=["x"], effort="light")["effort"] == "full"
+    assert r.plan(STATES[0], QS, images=["x"], effort="low")["effort"] == "high"
 
 
 def test_effort_survives_adaptive_off_at_load(stub_lm, tmp_path, models):
@@ -227,11 +226,12 @@ def test_the_route_passes_effort_and_reports_it():
     calls = []
     c = _client(calls)
     r = c.post("/v1/systemone", json=_body(effort="Medium"))
-    assert r.status_code == 200 and r.json()["usage"]["effort"] == "balanced" and calls == ["balanced"]
+    assert r.status_code == 200 and r.json()["usage"]["effort"] == "medium" and calls == ["medium"]
     r = c.post("/v1/systemone", json=_body())
     assert r.status_code == 200 and "effort" not in r.json()["usage"] and calls[-1] is None
-    r = c.post("/v1/systemone", json=_body(effort="turbo"))
-    assert r.status_code == 422 and "effort must be one of" in r.text
+    for bad in ("turbo", "full", "light"):
+        r = c.post("/v1/systemone", json=_body(effort=bad))
+        assert r.status_code == 422 and "effort must be one of low, medium, high, auto" in r.text
 
 
 # -- confidence_threshold and usage.confidence ----------------------------------------------
@@ -260,21 +260,21 @@ def test_the_release_tau_as_threshold_is_auto_bitwise(models, path):
 
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_threshold_one_is_full(models, path):
+def test_threshold_one_is_high(models, path):
     ad = _ada(models, 0.9)
     for state in STATES[:4]:
         for eff in ("auto", None):
             p1, got = _with_threshold(ad, state, path, eff, 1.0)
-            p2, want = _run(ad, state, path, "full")
-            assert got == want and p1["depth"] == [EXIT] * len(QS) and p1["effort"] == "full"
+            p2, want = _run(ad, state, path, "high")
+            assert got == want and p1["depth"] == [EXIT] * len(QS) and p1["effort"] == "high"
 
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_a_tiny_threshold_is_light(models, path):
+def test_a_tiny_threshold_is_low(models, path):
     ad = _ada(models, 0.9)
     for state in STATES[:4]:
         p1, got = _with_threshold(ad, state, path, "auto", 1e-6)
-        p2, want = _run(ad, state, path, "light")
+        p2, want = _run(ad, state, path, "low")
         assert got == want and p1["depth"] == p2["depth"] == [AUX] * len(QS)
 
 
@@ -285,17 +285,17 @@ def test_threshold_is_validated_and_scoped(models):
             threshold(bad)
     assert threshold(1) == 1.0 and threshold(None) is None
     ad = _ada(models, 0.9)
-    for eff in ("light", "balanced", "full"):
+    for eff in ("low", "medium", "high"):
         with pytest.raises(ValueError, match="applies to effort 'auto'"):
             resolve(ad, eff, 0.5, False)
     with pytest.raises(ValueError, match="multi-exit"):
         resolve(models[1], None, 0.5, False)
     assert resolve(ad, None, None, True) == (None, None)            # images, nothing asked
-    assert resolve(ad, "light", None, True) == ("full", None)       # images run at full depth
-    assert resolve(ad, "auto", 0.5, True) == ("full", None)
+    assert resolve(ad, "low", None, True) == ("high", None)       # images run at full depth
+    assert resolve(ad, "auto", 0.5, True) == ("high", None)
 
 
-@pytest.mark.parametrize("effort", [None, "light", "balanced", "full", "auto"])
+@pytest.mark.parametrize("effort", [None, "low", "medium", "high", "auto"])
 def test_confidence_is_the_calibrated_top1_at_the_exit_used(models, effort):
     ad = _ada(models, 0.9)
     sh = _temp(copy.deepcopy(models[3]), T_AUX)                      # the single-exit model at AUX
@@ -310,7 +310,7 @@ def test_confidence_is_the_calibrated_top1_at_the_exit_used(models, effort):
         for d, c, a, m in zip(plan["depth"], conf, at_aux, at_main):
             if d == AUX:
                 assert c == float(max(a))                           # softmax(z / e^logT).max at AUX
-            elif effort in ("full", None):
+            elif effort in ("high", None):
                 assert c == float(max(m))
 
 

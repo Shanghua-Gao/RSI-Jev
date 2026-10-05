@@ -163,7 +163,7 @@ def make_scorer(s: Served, batch_size: int = 16):
                     raise
                 raise err from None
             if effort is not None:
-                plan["effort"] = effort         # "full": the aux heads read text only
+                plan["effort"] = effort         # "high": the aux heads read text only
             preds, tokens = score_image_planned(s.model, s.tok, plan, max_options=mo,
                                                 device=s.device, batch_size=batch_size)
             record_confidence(s.model, plan, preds)
@@ -268,11 +268,11 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                     help="the same as --adaptive off. Also RSIJEV_FIXED_EXIT=1.")
     ap.add_argument("--effort", default=None,
                     help="default effort for a multi-exit release, used when a request gives "
-                         "none: light (shallowest aux exit), balanced (deepest aux exit), full "
-                         "(main exit), auto (the release's confidence cascade, every text "
-                         "request); aliases low, medium, high, max. A request's own \"effort\" "
-                         "wins. Unset: serving as before (--adaptive). Image requests always "
-                         "run at full depth. Also RSIJEV_EFFORT.")
+                         "none: low (shallowest aux exit), medium (deepest aux exit), high "
+                         "(main exit, all layers), auto (the release's confidence cascade, "
+                         "every text request). A request's own \"effort\" wins. Unset: "
+                         "serving as before (--adaptive). Image requests always run at full "
+                         "depth. Also RSIJEV_EFFORT.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -349,8 +349,8 @@ def serve(a: argparse.Namespace) -> int:
     elif sv.get("adaptive_off"):
         print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
     if getattr(s.model, "effort_base", None) is not None:
-        print(f"effort: default {effort or 'unset (as above)'}; requests may ask for light, "
-              f"balanced, full or auto (usage.effort reports it); images run at full depth",
+        print(f"effort: default {effort or 'unset (as above)'}; requests may ask for low, "
+              f"medium, high or auto (usage.effort reports it); images run at full depth",
               flush=True)
     print(f"input cap {s.enc.max_length} tokens; "
           + {"middle": "over-cap states cut in the middle (responses report `truncated`)",

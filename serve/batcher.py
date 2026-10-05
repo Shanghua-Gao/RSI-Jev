@@ -157,8 +157,8 @@ class ModelRunner:
         return self._tok_lock if _needs_option_tokens(self.model) else _Null()
 
     def poolable(self, plan) -> bool:
-        if plan.get("effort") not in (None, "full"):
-            return False          # light, balanced and auto run the staged path on their own
+        if plan.get("effort") not in (None, "high"):
+            return False          # low, medium and auto run the staged path on their own
         return plan["path"] == "plain" or (
             plan["path"] == "cached" and len(plan["prefix"]) < self.pool_prefix_tokens)
 

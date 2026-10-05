@@ -759,9 +759,9 @@ def adaptive_applies(model, plan: dict) -> bool:
     serve/batcher.ModelRunner._pooled and score_image_planned."""
     effort = plan.get("effort")
     if effort is not None:
-        # serve/effort.py: full is the fixed exit; light, balanced and auto run the staged
+        # serve/effort.py: high is the fixed exit; low, medium and auto run the staged
         # path on every text plan, one question included, with the effort's own policy
-        return effort != "full" and plan.get("path") in ("plain", "cached", "doc")
+        return effort != "high" and plan.get("path") in ("plain", "cached", "doc")
     if getattr(model, "adaptive_policy", None) is None:
         return False
     mode = getattr(model, "adaptive_mode", "auto")
