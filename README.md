@@ -34,7 +34,7 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
   <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
 </p>
 
-**Read the exploration:** of [PLACEHOLDER: 374 + the v6 line's count] experiments since v1.0, the ones that made a release are in
+**Read the exploration:** of 469 experiments since v1.0 (the latest 95 counted by a slightly different rule), the ones that made a release are in
 [**docs/history.md**](docs/history.md); all the others, with why each failed, are in
 [**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
 
@@ -66,7 +66,9 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
 | retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
-| [PLACEHOLDER: the experiments on the v6.0-VL line that moved it, one row each, from the training team's arm list] | | |
+| early-exit heads that read a detached copy of their layer, so no gradient from them reaches the trunk | MMLU-Pro 0.443 at layer 32 | retuning heads on a trunk trained with attached exits had not recovered depth: the trunk had lost it |
+| 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
+| one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
 | **v6.0-VL** | Decision Index 16k-sample read **45.7** (v5.0-VL 37.4), MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 </details>
@@ -133,7 +135,7 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | 0.036 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
+| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | 0.071¹ | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
 | v5.0-VL-3B | text, images | 0.764 | 0.689 | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
 | v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
@@ -142,7 +144,7 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 | v1.0-2B | text | 0.622 | 0.604 | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
-¹ From v6.0-VL the suite is reported without `open_jev_ood`, which overlapped training data (v5.0-VL's figure includes it; see its errata in [`versions/v6.0-vl.md`](versions/v6.0-vl.md#8-corrections-to-v50-vls-record)).
+¹ From v6.0-VL the suite and its ECE are reported without `open_jev_ood`; v6.0-VL's ECE is with `auto` (0.095 at layer 32), which overlapped training data (v5.0-VL's figure includes it; see its errata in [`versions/v6.0-vl.md`](versions/v6.0-vl.md#8-corrections-to-v50-vls-record)).
 
 All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers, and v6.0-VL answers at layer 16, 20 or 32 of it. Ten of the fifteen suite benchmarks contribute
 train-split data, so the held-out set is the zero-shot comparison; v1.0 never saw a train

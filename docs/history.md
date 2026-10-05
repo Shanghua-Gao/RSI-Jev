@@ -61,7 +61,7 @@ zero-shot and remain the reference every later release is compared against.
 reported, compare each bin with how often it was actually right, average the gaps. Lower is
 better, 0 is perfect.*
 
-Of the [PLACEHOLDER: 374 + the v6 line's count] arms run since v1.0, these are the ones that got from one release to the next, each
+Of the 469 arms run since v1.0 (the latest 95 counted by a slightly different rule), these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
@@ -90,7 +90,9 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
 | retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
-| [PLACEHOLDER: the experiments on the v6.0-VL line that moved it, one row each, from the training team's arm list] | | |
+| early-exit heads that read a detached copy of their layer, so no gradient from them reaches the trunk | MMLU-Pro 0.443 at layer 32 | retuning heads on a trunk trained with attached exits had not recovered depth: the trunk had lost it |
+| 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
+| one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
 | **v6.0-VL** | Decision Index 16k-sample read **45.7** (v5.0-VL 37.4), MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0

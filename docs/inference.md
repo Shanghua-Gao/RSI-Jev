@@ -107,7 +107,37 @@ From a clone, without installing, run
 
 ## Effort levels (v6.0-VL)
 
-[PLACEHOLDER: effort levels light / balanced / full / auto: flags, per-request field, latency and Decision Index per level — section coming from the serving work.]
+A multi-exit release answers at more than one depth. `effort` picks the depth per request
+(`"effort"` in the `POST /v1/systemone` body) or as the server default (`--effort`, or
+`RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
+weights:
+
+| effort | aliases | depth (v6.0-VL) | Decision Index 0.2.1 | median |
+|---|---|---|---:|---:|
+| `light` | `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
+| `balanced` | `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
+| `full` | `high`, `max` | the main exit: layer 32 | 45.9 | 40 ms |
+| `auto` | | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches tau 0.59), every text request | 44.9 | 30 ms |
+| unset | | the default below | 45.7 | 40 ms |
+
+Decision Index figures are reads of the kit's stratified 16,000-request sample (one H200, bf16,
+one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample.
+
+```bash
+rsi-jev serve v6.0-vl-5b --effort balanced          # server default
+curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"light", ...}'
+```
+
+With no effort anywhere, serving is what it was before `effort` existed: `--adaptive auto`
+(the cascade for multi-question requests, the main exit for a single question), or whatever
+`--adaptive` / `meta.json` `adaptive.serving` says. `--effort` sets that default itself, so it
+is refused together with `--adaptive` or `--fixed-exit`. Responses to a request that ran with an
+effort carry `usage.effort` (the effort it actually ran at) next to `usage.depth` (the layer
+each question was answered at).
+
+Image requests run at full depth whatever the effort, because the aux heads read text only;
+their `usage.effort` is `full`. A release with a single exit serves `full` (or no effort) as
+before and answers `light`, `balanced` and `auto` with a 422, as it does an unknown value.
 
 ### Images
 
