@@ -25,14 +25,15 @@ from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
+REPOS = {"v6.0-vl-5b": "shgao/rsi-jev-v6.0-vl-5b",
+         "v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
          "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
          "v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
          "v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
-LATEST = "v5.0-vl-3b"
+LATEST = "v6.0-vl-5b"
 
 _REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
 
@@ -194,15 +195,31 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
     about the policy is a code constant. Which requests use it is `adaptive_mode` (auto:
     multi-question requests only); mode off serves the fixed exit and loads no policy."""
     model.adaptive_mode = "off"
+    model.effort_base = None
     if not getattr(model.cfg, "aux_exits", ()):
         return None, None
     temps = exit_temperatures(ckpt, model.exit_indices())      # validated even when off
     mode, src = adaptive_mode(meta, adaptive, fixed_exit)
-    if mode == "off":
-        return None, f"fixed exit forced ({src})"
     block = adaptive_block(meta)
     if not block or block.get("tau") is None:
-        return None, "the release has aux exits but no tuned tau (meta.json adaptive.tau)"
+        return None, ("the release has aux exits but no tuned tau (meta.json adaptive.tau)"
+                      if mode != "off" else f"fixed exit forced ({src})")
+    if mode == "off":
+        # Not served by default, but per-request `effort` (serve/effort.py) can still ask
+        # for it; a policy that does not build leaves effort at full.
+        try:
+            model.effort_base = _build_policy(meta, ckpt, model, device, block, temps)
+        except RuntimeError:
+            model.effort_base = None
+        return None, f"fixed exit forced ({src})"
+    policy = _build_policy(meta, ckpt, model, device, block, temps)
+    model.effort_base = policy
+    model.adaptive_mode = mode
+    return policy, None
+
+
+def _build_policy(meta: dict, ckpt: Path, model, device, block: dict, temps):
+    """The release's adaptive Policy (exits, per-exit calibration, tau)."""
     from safetensors.torch import load_file
     from rsijev import adaptive as A
     exits = model.exit_indices()
@@ -231,8 +248,7 @@ def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | No
             if set(c) != {"mean", "W", "mu", "sd", "w", "b"}:
                 raise RuntimeError(f"{path.name}: exit {L} has {sorted(c)}, not a cal-4b")
             cal[L] = A.cal_to(c, device)
-    model.adaptive_mode = mode
-    return A.Policy(exits, cal, float(block["tau"])), None
+    return A.Policy(exits, cal, float(block["tau"]))
 
 
 CAL_JSON = "calibration.json"

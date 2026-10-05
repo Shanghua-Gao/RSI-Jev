@@ -567,3 +567,7 @@ belong to.
 | `exit12`, `exit13`, `exit28`, `exit32` | depth | context | 0.6809 · 0.7116 · 0.7584 · 0.7609 | 0.5905 · 0.6343 · 0.6774 · 0.6859 | 0.291 · 0.338 · 0.415 · 0.457 | the depth curve completed: 20 scores like 32 on suite and held-out |
 | `vis-v4k` + own-token readout | readout | kept (parent of the head stage) | 0.7621 | 0.6915 | 0.429 | same weights, each option pooled over its own tokens, calibrator refitted: CLINC150 0.383 → 0.753, short lists unchanged; final ECE 0.080 |
 | `headft-B` seed 1 | head | **kept = v5.0-VL** | 0.7637 | 0.6889 | 0.429 | the decision head retrained for the own-token readout, 600 steps, tower frozen: final ECE 0.042, Decision Index 38.38 (seed 0: 0.053, 38.18) |
+
+## jevtr_v1, continued — from v5.0-VL to v6.0-VL (2026-10-03/05)
+
+[PLACEHOLDER: arm count on this line, the takeaways, and the table of arms on the released line in the order they started — from the training team's arm list.]

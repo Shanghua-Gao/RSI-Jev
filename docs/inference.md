@@ -56,7 +56,7 @@ document cache had the same fault on every hit. Both are fixed now, and
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v5.0-vl-3b --port 8000
+rsi-jev serve shgao/rsi-jev-v6.0-vl-5b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -69,7 +69,7 @@ The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v5.0-vl-3b`;
-- an alias: `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v6.0-vl-5b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -104,6 +104,10 @@ the `answers` object of `POST /v1/systemone` (`tests/test_easy_infer.py`).
 
 From a clone, without installing, run
 `pip install -r requirements.txt pillow torchvision && python scripts/serve.py --ckpt shgao/rsi-jev-v4.0-vl-qwen3.5-2b`.
+
+## Effort levels (v6.0-VL)
+
+[PLACEHOLDER: effort levels light / balanced / full / auto: flags, per-request field, latency and Decision Index per level — section coming from the serving work.]
 
 ### Images
 

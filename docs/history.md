@@ -4,7 +4,17 @@
   <img src="../assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v5.0-VL 3B**, the current release, **stops at layer 20.** It runs the first 20 of
+**v6.0-VL 5B**, the current release, **picks its depth per question.** It reads a decision at
+layers 16, 20 and 32 of Qwen3.5-4B-Base and answers at the first one that is confident enough.
+Classification, intent and retrieval are done by layer 16; judgement tasks need about 20;
+knowledge and multi-step reasoning keep improving to 32. On a 16k-question sample of Decision Index
+0.2.1 it reads 45.7 as served (v5.0-VL 37.4 on the same sample), and four effort levels run from
+23 ms to 40 ms per request on one H200. [`versions/v6.0-vl.md`](../versions/v6.0-vl.md) is its record.
+
+<details>
+<summary>the six releases behind it</summary>
+
+**v5.0-VL 3B stopped at layer 20.** It runs the first 20 of
 Qwen3.5-4B-Base's 32 layers: for a model that decides rather than writes, the loop found that
 reading at layer 20 scores like reading at 32 on the decision suite and the held-out set (0.760
 vs 0.761, 0.688 vs 0.686); only knowledge-heavy MMLU-Pro keeps rising. On Decision Index 0.2.1
@@ -12,9 +22,6 @@ it scores 38.38, the best at 3B and under on the public board and ahead of eleve
 entries. It reads images as v4.0-VL does, reads each option from that option's own tokens, and
 ships as 3.25B parameters with nothing fetched from the base model.
 [`versions/v5.0-vl.md`](../versions/v5.0-vl.md) is its record.
-
-<details>
-<summary>the five releases behind it</summary>
 
 **v4.0-VL reads images.** It takes one to four pictures with a request —
 a photo, a screenshot, a scanned page — and answers the same typed questions about them. On five
@@ -54,7 +61,7 @@ zero-shot and remain the reference every later release is compared against.
 reported, compare each bin with how often it was actually right, average the gaps. Lower is
 better, 0 is perfect.*
 
-Of the 374 arms run since v1.0, these are the ones that got from one release to the next, each
+Of the [PLACEHOLDER: 374 + the v6 line's count] arms run since v1.0, these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
@@ -83,9 +90,11 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
 | retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
+| [PLACEHOLDER: the experiments on the v6.0-VL line that moved it, one row each, from the training team's arm list] | | |
+| **v6.0-VL** | Decision Index 16k-sample read **45.7** (v5.0-VL 37.4), MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
-and every arm on the v4.0-VL and v5.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
+and every arm on the v4.0-VL, v5.0-VL and v6.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## Human in the loop

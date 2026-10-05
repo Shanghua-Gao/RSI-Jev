@@ -16,12 +16,12 @@
   <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
   <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v5_vl_quickstart.ipynb">Colab</a> ·
   <a href="docs/inference.md">Docs</a> ·
-  <a href="versions/v5.0-vl.md">Release notes</a>
+  <a href="versions/v6.0-vl.md">Release notes</a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-black" alt="MIT"></a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
@@ -34,12 +34,12 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
   <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
 </p>
 
-**Read the exploration:** of 374 experiments since v1.0, the ones that made a release are in
+**Read the exploration:** of [PLACEHOLDER: 374 + the v6 line's count] experiments since v1.0, the ones that made a release are in
 [**docs/history.md**](docs/history.md); all the others, with why each failed, are in
 [**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
 
 <details>
-<summary><b>The path from v1.0 to v5.0-VL: each experiment that moved a release, and what it ruled out</b></summary>
+<summary><b>The path from v1.0 to v6.0-VL: each experiment that moved a release, and what it ruled out</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -66,6 +66,8 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | pool each option over its own tokens, not the separator that follows the previous one | CLINC150 0.383 → 0.753 | a readout bug found by an outside benchmark; the same weights read correctly once each option is pooled over its own tokens |
 | retrain only the decision head for that readout, tower frozen, 600 steps | final ECE after calibration 0.080 → 0.042, Decision Index 38.38 | the head had learned the old pooling; a short head-only stage recovers the calibration |
 | **v5.0-VL** | MMLU-Pro **0.429**, Decision Index **38.38**, KoBBQ unknown **0.932** | **3B: the first 20 of 32 layers** |
+| [PLACEHOLDER: the experiments on the v6.0-VL line that moved it, one row each, from the training team's arm list] | | |
+| **v6.0-VL** | Decision Index 16k-sample read **45.7** (v5.0-VL 37.4), MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 </details>
 
@@ -83,6 +85,9 @@ generated. A second question about a document already read takes about 10 ms.
 
 ### News
 
+- **2026-10-05 · v6.0-VL 5B** picks its depth per question: it answers at layer 16, 20 or 32 of
+  Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index 16k-sample read 45.7
+  (v5.0-VL 37.4 on the same sample); four effort levels from 23 to 40 ms. [Release notes](versions/v6.0-vl.md)
 - **2026-10-02 · v5.0-VL 3B** cuts the LLM to what a System One model needs: the first 20 of
   Qwen3.5-4B's 32 layers, 3.25B parameters. MMLU-Pro 0.385 → 0.429, held-out images 0.802 →
   0.829, Decision Index 38.38, and it says "unknown" when a question has no answer (KoBBQ 0.18 → 0.93).
@@ -128,7 +133,8 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v5.0-VL-3B** | text, images | **0.764** | **0.689** | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
+| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | 0.036 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
+| v5.0-VL-3B | text, images | 0.764 | 0.689 | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
 | v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
 | v2.1-2B | text | 0.736 | 0.633 | 0.059 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
@@ -136,7 +142,9 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 | v1.0-2B | text | 0.622 | 0.604 | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
-All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers. Ten of the fifteen suite benchmarks contribute
+¹ From v6.0-VL the suite is reported without `open_jev_ood`, which overlapped training data (v5.0-VL's figure includes it; see its errata in [`versions/v6.0-vl.md`](versions/v6.0-vl.md#8-corrections-to-v50-vls-record)).
+
+All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers, and v6.0-VL answers at layer 16, 20 or 32 of it. Ten of the fifteen suite benchmarks contribute
 train-split data, so the held-out set is the zero-shot comparison; v1.0 never saw a train
 split. Per-benchmark scores, image results and caveats are in each release's
 [record](versions/). ECE is expected calibration error (lower is better).
