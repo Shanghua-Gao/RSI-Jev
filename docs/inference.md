@@ -154,6 +154,25 @@ value below 1/K, the uniform probability, answers every question at the first au
 `light` does). `1.0` means never stop early: the request runs at full depth and reports
 effort `full`; this also covers a single-option question, whose confidence is exactly 1.
 
+Choosing a threshold on v6.0-VL (dev sets, descriptive, not used for any selection; quality is the
+suite-like score, held-out accuracy and Decision-Index-style skill):
+
+| setting | layers | stops at 16 / 20 / 32 | suite-like | held-out | Decision-Index-style |
+|---|---:|---|---:|---:|---:|
+| `light` (16) | 16.0 | 100 / 0 / 0 % | 0.752 | 0.697 | 0.521 |
+| `balanced` (20) | 20.0 | 0 / 100 / 0 % | 0.760 | 0.703 | 0.550 |
+| `full` (32) | 32.0 | 0 / 0 / 100 % | 0.765 | 0.697 | 0.555 |
+| threshold 0.50 | 19.4 | 76 / 4 / 20 % | 0.758 | 0.705 | 0.532 |
+| **threshold 0.59** (default) | 20.9 | 65 / 5 / 30 % | 0.765 | 0.705 | 0.535 |
+| threshold 0.70 | 22.9 | 52 / 6 / 42 % | 0.766 | 0.698 | 0.542 |
+| threshold 0.80 | 24.8 | 40 / 6 / 54 % | 0.765 | 0.697 | 0.544 |
+| threshold 0.90 | 26.9 | 29 / 5 / 67 % | 0.765 | 0.697 | 0.551 |
+| threshold 0.95 | 28.3 | 21 / 4 / 76 % | 0.765 | 0.697 | 0.555 |
+
+Layers and stop shares are on the suite-like set. From 0.59 up, suite-like and held-out text match
+`full`; on inputs unlike the training data a low threshold costs quality, which comes back only from
+about 0.9. If inputs may be unusual, use a threshold of 0.9 or more, or `balanced`.
+
 ### Images
 
 A release trained with images (v4.0-VL on) also answers questions about 1–4 images. It needs
