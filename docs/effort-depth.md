@@ -19,11 +19,12 @@ Skill × 100 by area (chance-corrected); latency is the median request.
 | `low` | 16 | 43.3 | 25.1 | 43.5 | 53.2 | 63.6 | 32.3 | 23 |
 | `medium` | 20 | 45.9 | 28.4 | 46.7 | 53.6 | 66.1 | 36.5 | 27 |
 | `high` | 32 | 45.9 | 29.2 | 45.7 | 53.2 | 67.1 | 36.1 | 40 |
-| `auto` | 18.5 on average | 44.9 | 28.8 | 44.8 | 52.9 | 64.5 | 34.9 | 30 |
+| `auto` (thresholds 0.95 at 16, 0.59 at 20) | [PLACEHOLDER: new auto DI gate] | | | | | | | |
+| earlier `auto` (one threshold, 0.59) | 18.5 on average | 44.9 | 28.8 | 44.8 | 52.9 | 64.5 | 34.9 | 30 |
 | unset (default) | mixed | 45.7 | 29.2 | 45.9 | 53.3 | 65.6 | 36.1 | 40 |
 | v5.0-VL | 20 | 37.4 | 25.8 | 42.4 | 41.8 | 51.7 | 19.5 | – |
 
-`auto` answers 78% of Decision Index questions at layer 16, 9% at 20 and 13% at 32. The unset
+The earlier `auto`, with one threshold of 0.59 at both exits, answered 78% of Decision Index questions at layer 16, 9% at 20 and 13% at 32; the section below shows what that cost and how the released thresholds fix it. The unset
 default runs a single question at all 32 layers and uses the cascade only for multi-question
 requests, so on this benchmark (mostly single questions) it scores close to `high`.
 
@@ -82,9 +83,11 @@ and right at 32; *harmed* is the reverse.
 Most of the gain happens between layers 16 and 20 (.652 → .686). From 20 to 32 the average moves
 by .004, which hides the knowledge and multi-step reasoning benchmarks above that keep gaining.
 
-## Why `auto` trails `medium` here
+## Why `auto` has a threshold per exit
 
-- The cascade answers at layer 16 when the calibrated top-option probability there is at least
+This section is about the earlier setting, one threshold of 0.59 at both exits.
+
+- That cascade answered at layer 16 when the calibrated top-option probability there was at least
   0.59. On Decision Index that is 78% of questions, and layer 16 alone scores 43.3.
 - Its threshold and per-exit temperatures were chosen on our dev sets, which resemble our own
   test suite. There layer 16 is nearly as good as 32: any threshold of 0.59 or more matches full
@@ -97,6 +100,13 @@ by .004, which hides the knowledge and multi-step reasoning benchmarks above tha
   check on fresh dev sets found it is not a better default in general: on suite-like questions it
   trails the cascade (.711 vs .756).
 
+**The fix.** `auto` now has its own threshold at each exit: 0.95 at layer 16 and 0.59 at layer 20.
+Layer 16 answers only when it is nearly sure; the questions it used to answer at 0.59–0.95 go on to
+layer 20, which is enough for most of them. The thresholds were chosen on our development sets,
+picked on one half and confirmed on the other, with average depth capped at 24 layers, then read
+once on test: suite 0.771 (`high` 0.770), held-out 0.696, MMLU-Pro 0.444, final ECE 0.024, with 20% of
+questions stopping at layer 16, 46% at 20 and 34% at 32 (23.3 layers on average). Decision Index: [PLACEHOLDER: new auto DI gate].
+
 ## Choosing an effort level
 
 - `low` for intent, routing, retrieval and sentiment, where layer 16 is already saturated
@@ -104,7 +114,8 @@ by .004, which hides the knowledge and multi-step reasoning benchmarks above tha
 - `medium` for classification and judgement workloads: the same Decision Index score as `high` at
   about 70% of the latency.
 - `high` for knowledge, multi-step reasoning, code and tool documentation.
-- `auto` with a higher `confidence_threshold` (around 0.8) for mixed workloads. Every response
+- `auto` for mixed workloads: its default thresholds (0.95 at 16, 0.59 at 20) match `high` on our
+  suite at about 23 layers. Every response
   reports each question's exit (`usage.depth`) and calibrated confidence (`usage.confidence`), so
   the routing can be checked.
 

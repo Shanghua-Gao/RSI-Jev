@@ -119,7 +119,7 @@ weights:
 | `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
 | `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
 | `high` | the main exit, all layers: layer 32 | 45.9 | 40 ms |
-| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches the threshold, tau 0.59 by default), every text request | 44.9 | 30 ms |
+| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.95 at 16 and 0.59 at 20 by default on v6.0-VL), every text request | [PLACEHOLDER: new auto DI gate] | [PLACEHOLDER: new auto DI gate] |
 | unset | the default below | 45.7 | 40 ms |
 
 Any other value is a 422 that lists these four.
@@ -163,7 +163,7 @@ With effort `auto` the threshold can also be set per aux exit, as an object:
 there; `1.0` at an exit means never stop at that exit; an exit the release does not have, or a
 value outside (0, 1], is a 422. The object form is refused without effort `auto`. Effort auto's
 default is the release's `meta.json` `adaptive.auto_thresholds` (`{"16": ..., "20": ...}`) when
-it has one, else the single tau; v6.0-VL ships without it, so its default is 0.59 at both exits.
+it has one, else the single tau; v6.0-VL ships `{"16": 0.95, "20": 0.59}`.
 The unset default (no effort) always uses the single tau and ignores `auto_thresholds`, so the
 numbers above hold.
 
