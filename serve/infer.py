@@ -750,6 +750,11 @@ def adaptive_applies(model, plan: dict) -> bool:
       off   none (load_release then loads no policy at all)
     Pooled (micro-batched) rows and image requests never come here: see
     serve/batcher.ModelRunner._pooled and score_image_planned."""
+    effort = plan.get("effort")
+    if effort is not None:
+        # serve/effort.py: full is the fixed exit; light, balanced and auto run the staged
+        # path on every text plan, one question included, with the effort's own policy
+        return effort != "full" and plan.get("path") in ("plain", "cached", "doc")
     if getattr(model, "adaptive_policy", None) is None:
         return False
     mode = getattr(model, "adaptive_mode", "auto")
@@ -795,7 +800,11 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
     (rsijev.adaptive.StageReplica, run by staged_scores); the prefix itself is never
     written."""
     from rsijev import adaptive as A
-    policy = model.adaptive_policy
+    if plan.get("effort") is not None:
+        from serve.effort import policy_for
+        policy = policy_for(model, plan["effort"])
+    else:
+        policy = model.adaptive_policy
     opt = speed_options(sort=sort, trim_options=trim_options)
     encoded, prefix = plan["encoded"], plan["prefix"]
     cache, npfx = None, 0

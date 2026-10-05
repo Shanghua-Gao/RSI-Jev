@@ -101,6 +101,10 @@ class SystemOneRequest(StrictModel):
     # base64 data URLs, referenced from the state by `<image>` markers
     # (serve/images.py). Omitted, null or empty, the request is a text request.
     images: list[str] | None = Field(default=None, max_length=MAX_IMAGES)
+    # An RSI-Jev extension for multi-exit releases (serve/effort.py): light, balanced,
+    # full or auto (aliases low, medium, high, max). Omitted, the server default applies;
+    # with none set anywhere, serving is what it was before `effort` existed.
+    effort: str | None = Field(default=None, max_length=16)
 
 
 def _wire_questions(req: SystemOneRequest) -> list[Question]:
@@ -124,6 +128,15 @@ def prepare(req: SystemOneRequest) -> tuple[list[Question], str, list]:
     return questions, state, parse_images(req.images, state) if req.images else []
 
 
+def _effort(req: SystemOneRequest) -> str | None:
+    """The request's effort, canonical (serve/effort.py), or a 422."""
+    from serve.effort import canonical
+    try:
+        return canonical(req.effort)
+    except ValueError as e:
+        raise RequestError(str(e)) from None
+
+
 def finish(questions: list[Question], probs, prompt_tokens: int):
     """Probabilities -> (answers, usage)."""
     # A non-finite probability used to fail inside the stdlib JSON encoder
@@ -138,7 +151,7 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-EXTRAS = ("truncated", "depth")
+EXTRAS = ("truncated", "depth", "effort")
 
 
 def _split(result, plan=None):
@@ -161,6 +174,8 @@ def _with_depth(usage: dict, questions, extras: dict) -> dict:
     """usage["depth"] = {question key: decoder layers run}, when the model reports it."""
     if extras.get("depth") is not None:
         usage["depth"] = {q.key: int(d) for q, d in zip(questions, extras["depth"])}
+    if extras.get("effort") is not None:
+        usage["effort"] = extras["effort"]       # the effort the request actually ran at
     return usage
 
 
@@ -177,14 +192,15 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
     args = (state, questions, images) if images else (state, questions)
+    kw = {"effort": _effort(req)} if req.effort is not None else {}
     prepared_ms = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
     if lock is None:
-        probs, prompt_tokens, extras = _split(scorer(*args))
+        probs, prompt_tokens, extras = _split(scorer(*args, **kw))
     else:
         with lock:
-            probs, prompt_tokens, extras = _split(scorer(*args))
+            probs, prompt_tokens, extras = _split(scorer(*args, **kw))
     infer_ms = (time.perf_counter() - t1) * 1000
     if report is not None:
         report["truncated"] = extras.get("truncated")
@@ -255,12 +271,14 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # Decoding up to four 20 MiB images is too slow for the event loop.
         questions, state, pics = (await run_in_threadpool(prepare, req) if req.images
                                   else prepare(req))
+        effort = _effort(req)
         prepared_ms = (time.perf_counter() - t0) * 1000
         t1 = time.perf_counter()
+        kw = {"effort": effort} if effort is not None else {}
         if plan_off_loop:
-            plan = await run_in_threadpool(worker.plan, state, questions, pics)
+            plan = await run_in_threadpool(lambda: worker.plan(state, questions, pics, **kw))
         else:
-            plan = worker.plan(state, questions, pics)
+            plan = worker.plan(state, questions, pics, **kw)
         probs, prompt_tokens, extras = _split(
             await asyncio.wrap_future(worker.enqueue(plan)), plan)
         infer_ms = (time.perf_counter() - t1) * 1000

@@ -136,11 +136,19 @@ def make_scorer(s: Served, batch_size: int = 16):
                              score_planned)
     spec = s.meta["spec"]
 
-    def scorer(state: str, questions, images=None):
+    def scorer(state: str, questions, images=None, effort=None):
         """score_questions_cached / score_image_questions_cached, split into plan and
         run so the plan's reports reach the response. A third element ({"truncated",
         "depth"}) is returned only for a model served with the long-context encoder or
         one with aux exits."""
+        from serve.effort import canonical, check_supported
+        from serve.wire import RequestError
+        try:
+            effort = canonical(effort)
+            if effort is not None and not images:
+                check_supported(s.model, effort)
+        except ValueError as e:
+            raise RequestError(str(e)) from None
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
         if images:
             if s.prep is None:
@@ -153,15 +161,19 @@ def make_scorer(s: Served, batch_size: int = 16):
                 if err is None:
                     raise
                 raise err from None
+            if effort is not None:
+                plan["effort"] = "full"         # the aux heads read text only
             preds, tokens = score_image_planned(s.model, s.tok, plan, max_options=mo,
                                                 device=s.device, batch_size=batch_size)
         else:
             s.model.eval()
             plan = plan_request(s.tok, state, questions, s.enc)
+            if effort is not None:
+                plan["effort"] = effort
             preds, tokens = score_planned(s.model, s.tok, plan, max_options=mo,
                                           device=s.device, batch_size=batch_size)
         out = [list(p.probs) for p in preds], tokens
-        extras = {k: plan[k] for k in ("truncated", "depth") if plan.get(k) is not None}
+        extras = {k: plan[k] for k in ("truncated", "depth", "effort") if plan.get(k) is not None}
         return (*out, extras) if extras else out
 
     return scorer
@@ -249,6 +261,13 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                     default=os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower()
                     not in ("", "0", "false", "no", "off"),
                     help="the same as --adaptive off. Also RSIJEV_FIXED_EXIT=1.")
+    ap.add_argument("--effort", default=None,
+                    help="default effort for a multi-exit release, used when a request gives "
+                         "none: light (shallowest aux exit), balanced (deepest aux exit), full "
+                         "(main exit), auto (the release's confidence cascade, every text "
+                         "request); aliases low, medium, high, max. A request's own \"effort\" "
+                         "wins. Unset: serving as before (--adaptive). Image requests always "
+                         "run at full depth. Also RSIJEV_EFFORT.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -271,13 +290,20 @@ def serve(a: argparse.Namespace) -> int:
                          truncate=getattr(a, "truncate", None),
                          fixed_exit=getattr(a, "fixed_exit", None) or None,
                          adaptive=getattr(a, "adaptive", None))
+    from serve.effort import default_effort
+    effort = default_effort(getattr(a, "effort", None))
+    explicit_mode = (getattr(a, "adaptive", None) is not None) or bool(getattr(a, "fixed_exit", False))
+    if effort is not None and explicit_mode:
+        raise SystemExit("--effort / RSIJEV_EFFORT sets the default depth itself; drop "
+                         "--adaptive / --fixed-exit (and RSIJEV_ADAPTIVE / RSIJEV_FIXED_EXIT)")
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
     from serve.batcher import model_worker
     from serve.infer import speed_options
     if a.batch_window_ms is None:
         a.batch_window_ms = _env_float("RSIJEV_BATCH_WINDOW_MS")   # set by --profile
-    scorer = model_worker(s, batch_size=a.batch_size, window_ms=a.batch_window_ms)
+    scorer = model_worker(s, batch_size=a.batch_size, window_ms=a.batch_window_ms,
+                          default_effort=effort)
     if not a.no_warmup:
         # The first call JIT-compiles fla's Triton kernels (~19 s measured on a GB10
         # after a fresh install; cached afterwards) and, with --profile server,
@@ -317,6 +343,10 @@ def serve(a: argparse.Namespace) -> int:
               f"({which}; usage.depth reports the layers run)", flush=True)
     elif sv.get("adaptive_off"):
         print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
+    if getattr(s.model, "effort_base", None) is not None:
+        print(f"effort: default {effort or 'unset (as above)'}; requests may ask for light, "
+              f"balanced, full or auto (usage.effort reports it); images run at full depth",
+              flush=True)
     print(f"input cap {s.enc.max_length} tokens; "
           + {"middle": "over-cap states cut in the middle (responses report `truncated`)",
              "left": "over-cap states cut from the start",
