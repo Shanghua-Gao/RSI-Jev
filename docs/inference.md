@@ -114,6 +114,8 @@ A multi-exit release answers at more than one depth. `effort` picks the depth pe
 `RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
 weights:
 
+v6.0-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
+
 | effort | depth (v6.0-VL) | Decision Index 0.2.1 | median |
 |---|---|---:|---:|
 | `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |

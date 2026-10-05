@@ -5,6 +5,8 @@ buy on [Decision Index 0.2.1](https://github.com/apolinario/decision-index): by 
 benchmark and by question. It is the evidence behind the `effort` setting described in
 [inference.md](inference.md#effort-levels-v60-vl) and in the [release record](../versions/v6.0-vl.md).
 
+v6.0-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
+
 All numbers come from the released package (bf16, one H200), on the same stratified 16,000-row
 sample of Decision Index, scored on a sample-only suite (coverage 1), one option order, with the
 57 rows that overlap our training data removed. Fixed exits were forced with variants that share
