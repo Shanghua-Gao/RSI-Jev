@@ -107,6 +107,8 @@ From a clone, without installing, run
 
 ## Effort levels (v6.0-VL)
 
+What each level buys, by benchmark and by question: [effort-depth.md](effort-depth.md).
+
 A multi-exit release answers at more than one depth. `effort` picks the depth per request
 (`"effort"` in the `POST /v1/systemone` body) or as the server default (`--effort`, or
 `RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
