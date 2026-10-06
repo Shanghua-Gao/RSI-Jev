@@ -21,7 +21,7 @@ Skill × 100 by area (chance-corrected); latency is the median request.
 | `low` | 16 | 43.3 | 25.1 | 43.5 | 53.2 | 63.6 | 32.3 | 23 |
 | `medium` | 20 | 45.9 | 28.4 | 46.7 | 53.6 | 66.1 | 36.5 | 27 |
 | `high` | 32 | 45.9 | 29.2 | 45.7 | 53.2 | 67.1 | 36.1 | 40 |
-| `auto` (thresholds 0.95 at 16, 0.59 at 20) | [PLACEHOLDER: new auto DI gate] | | | | | | | |
+| `auto` (thresholds 0.95 at 16, 0.59 at 20) | 22.1 on average | 45.8 | 29.0 | 45.7 | 53.3 | 66.5 | 36.6 | –¹ |
 | earlier `auto` (one threshold, 0.59) | 18.5 on average | 44.9 | 28.8 | 44.8 | 52.9 | 64.5 | 34.9 | 30 |
 | unset (default) | mixed | 45.7 | 29.2 | 45.9 | 53.3 | 65.6 | 36.1 | 40 |
 | v5.0-VL | 20 | 37.4 | 25.8 | 42.4 | 41.8 | 51.7 | 19.5 | – |
@@ -29,6 +29,8 @@ Skill × 100 by area (chance-corrected); latency is the median request.
 The earlier `auto`, with one threshold of 0.59 at both exits, answered 78% of Decision Index questions at layer 16, 9% at 20 and 13% at 32; the section below shows what that cost and how the released thresholds fix it. The unset
 default runs a single question at all 32 layers and uses the cascade only for multi-question
 requests, so on this benchmark (mostly single questions) it scores close to `high`.
+
+¹ `auto` was read on a different GPU; at 22 layers on average it sits between `medium` and `high`.
 
 ## Which benchmarks gain from depth
 
@@ -107,7 +109,7 @@ Layer 16 answers only when it is nearly sure; the questions it used to answer at
 layer 20, which is enough for most of them. The thresholds were chosen on our development sets,
 picked on one half and confirmed on the other, with average depth capped at 24 layers, then read
 once on test: suite 0.771 (`high` 0.770), held-out 0.696, MMLU-Pro 0.444, final ECE 0.024, with 20% of
-questions stopping at layer 16, 46% at 20 and 34% at 32 (23.3 layers on average). Decision Index: [PLACEHOLDER: new auto DI gate].
+questions stopping at layer 16, 46% at 20 and 34% at 32 (23.3 layers on average). On the Decision Index sample it reads 45.8 (the earlier `auto` 44.9, `medium` and `high` 45.9), with 15% of questions stopping at layer 16, 62% at 20 and 23% at 32 (22.1 layers on average).
 
 ## Choosing an effort level
 

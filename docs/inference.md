@@ -121,13 +121,14 @@ v6.0-VL is a System One model: one forward pass, no generated reasoning, a proba
 | `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
 | `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
 | `high` | the main exit, all layers: layer 32 | 45.9 | 40 ms |
-| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.95 at 16 and 0.59 at 20 by default on v6.0-VL), every text request | [PLACEHOLDER: new auto DI gate] | [PLACEHOLDER: new auto DI gate] |
+| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.95 at 16 and 0.59 at 20 by default on v6.0-VL), every text request | 45.8 | – |
 | unset | the default below | 45.7 | 40 ms |
 
 Any other value is a 422 that lists these four.
 
 Decision Index figures are reads of the kit's stratified 16,000-request sample (one H200, bf16,
 one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample.
+`auto` was read on a different GPU; at 22 layers on average it sits between `medium` and `high`.
 
 ```bash
 rsi-jev serve v6.0-vl-5b --effort medium            # server default

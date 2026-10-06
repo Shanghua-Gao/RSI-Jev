@@ -69,7 +69,7 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | early-exit heads that read a detached copy of their layer, so no gradient from them reaches the trunk | MMLU-Pro 0.443 at layer 32 | retuning heads on a trunk trained with attached exits had not recovered depth: the trunk had lost it |
 | 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
 | one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
-| **v6.0-VL** | Decision Index **[PLACEHOLDER: full index]**, MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
+| **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 </details>
 
@@ -88,8 +88,9 @@ generated. A second question about a document already read takes about 10 ms.
 ### News
 
 - **2026-10-05 · v6.0-VL 5B** picks its depth per question: it answers at layer 16, 20 or 32 of
-  Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index [PLACEHOLDER: full index]
-  ([PLACEHOLDER: rank claim]); four effort levels from 23 to 40 ms. [Release notes](versions/v6.0-vl.md)
+  Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index 46.24, the highest on the
+  public board among models of 5B parameters or fewer; four effort levels from 23 to 40 ms.
+  [Release notes](versions/v6.0-vl.md)
 - **2026-10-02 · v5.0-VL 3B** cuts the LLM to what a System One model needs: the first 20 of
   Qwen3.5-4B's 32 layers, 3.25B parameters. MMLU-Pro 0.385 → 0.429, held-out images 0.802 →
   0.829, Decision Index 38.38, and it says "unknown" when a question has no answer (KoBBQ 0.18 → 0.93).
