@@ -1,0 +1,127 @@
+{
+ "readout": "option_xattn",
+ "objective": "soft_ce",
+ "steps": 3000,
+ "batch_size": 16,
+ "eval_batch_size": 32,
+ "max_options": 160,
+ "lr_head": 5e-05,
+ "lr_base": 2e-06,
+ "diag_only": false,
+ "logit_cap": null,
+ "head_input_norm": false,
+ "label_smoothing": 0.0,
+ "head_weight_decay": 0.0,
+ "base_schedule": "cosine",
+ "head_schedule": "cosine",
+ "seed": 17,
+ "readout_layer": -1,
+ "option_pool": "mean",
+ "layout": "state_first",
+ "freeze_base": false,
+ "sources": "pf_kb__abst_ml_v2,pf_kb__kobbq2,rp_cov_ambigqa,rp_cov_condaqa,rp_cov_cuad,rp_cov_finqa,rp_cov_gsm8k,rp_cov_hotpotqa,rp_cov_massive_multi,rp_cov_musique,rp_cov_open_jev,rp_cov_privacyqa,rp_cov_tabfact,rp_cov_tasksource_jev,rp_ds2_open_jev,rp_ds2_tasksource_jev,rp_jsg_anli,rp_jsg_emotion,rp_jsg_sst5,rp_mc_replay,rp_mc_replay_extra,rp_pf_c3__docsplit2,rp_pf_c3__pubmedqa,rp_pf_c3__spam3,rp_pf_c3__vuln,rp_pf_p1__abst_ml,rp_pf_p1__ids_flow,rp_pf_p1__odds_report,rp_pf_p1__odds_uniform,rp_pf_p1__phish_flat,rp_pf_p1__stop_msg,rp_pf_p1__stop_traj,rp_pf_p1__turn_opus,rp_pf_p1__wide_intent,rp_st_aegis2,rp_st_boolq,rp_st_civil_comments,rp_st_helpsteer2,rp_st_kev_devtools_v1,rp_st_kev_documents_v1,rp_st_kev_hard_v1,rp_st_massive-de-DE,rp_st_massive-en-US,rp_st_multinli,rp_st_nimble_train,rp_st_paws,rp_st_procedural_train,rp_st_squad2,rp_st_vitaminc,rp_synth,rp_td_train,rp_v4_affect_low,rp_v4_chance_new,rp_v4_defs_gen,rp_v4_det_inject,rp_v4_det_phish,rp_v4_det_policy,rp_v4_det_stop,rp_v4_effort_score,rp_v4_expand_bitext,rp_v4_expand_massive,rp_v4_factory_candsel,rp_v4_hippo_rr6,rp_v4_ids_adult,rp_v4_ids_bank,rp_v4_ids_covertype,rp_v4_ids_credit,rp_v4_ids_logs,rp_v4_kobbq_repair_anticue,rp_v4_negation_pairs,rp_v4_nli_fever,rp_v4_own_choice,rp_v4_own_noul,rp_v4_rl_pkt,rp_v4_scope_massive,rp_v4_scope_yahoo,rp_v4_stated_odds,rp_v4_stated_odds_more,rp_v4_tier_gen,rp_v4_tier_meta,rp_v4_tier_uf,rp_v4_turn_gen,rp_v4_turn_massive,vis2_iconqa,vis2_ocrvqa,vis2_textvqa,vis2_visual7w,vis3_change_detect,vis3_grid_games,vis3_line_rule,vis3_receipt_math,vis3_severity,vis3_ui_state,vis4_fp_obstacle,vis4_grasp,vis5_abstain,vis5_pair,vis5_rc_colour,vis5_rc_count,vis5_record,vis6_sokoban,vis_ai2d,vis_aokvqa,vis_chartqa,vis_docvqa,vis_hateful_memes,vis_nlvr2,vis_rvlcdip,vis_scienceqa,vis_screen2words,vis_tallyqa,vis_tqa,vis_vqav2",
+ "keep_last_k": 3,
+ "residual": false,
+ "prior_kl": 0.0,
+ "freeze_embeddings": true,
+ "grad_checkpointing": true,
+ "eval_dtype": "native",
+ "repeat_eval": null,
+ "option_order": "shuffled",
+ "eval_option_orders": [
+  "canonical",
+  "reversed"
+ ],
+ "arch_extra": {
+  "aux_exits": [
+   12,
+   16,
+   20
+  ],
+  "exit_layer": 32,
+  "freeze_lower_n": 8,
+  "xattn_combine": "mlp"
+ },
+ "fit_extra": {
+  "adam_fused": true,
+  "aux_exit_weights": {
+   "12": 0.0,
+   "16": 0.0,
+   "20": 0.0
+  },
+  "aux_init_from": "trunk-refit/s17",
+  "aux_init_from_main": false,
+  "aux_save_dir": "images/s17",
+  "grad_accum": 8,
+  "grad_accum_min_tokens": 0,
+  "init_from": "trunk-refit/s17",
+  "length_bucket": 64,
+  "log_every": 25,
+  "lower_layers_lr_scale": 0.1,
+  "lower_layers_n": 8,
+  "lr_aux": 0.0001,
+  "retention_at_exit": true,
+  "retention_kl": 0.5,
+  "retention_max_tokens": 384,
+  "retention_pool": 2048,
+  "retention_rows": 4,
+  "retention_topk": 64,
+  "train_max_length": 2048,
+  "vision": {
+   "budget": 1024,
+   "model": "Qwen/Qwen3.5-4B-Base",
+   "roots": [
+    "vision_v1",
+    "vision_v2",
+    "vision_v3",
+    "vision_spatial",
+    "vision_joint",
+    "vision_recast",
+    "vision_sokoban"
+   ]
+  },
+  "warmup": 0.1
+ },
+ "rl_extra": {},
+ "min_trainable_tower": 100000000,
+ "eval_fast": "auto",
+ "eval_prefix_cache": false,
+ "eval_token_budget": 32768,
+ "eval_max_rows": null,
+ "eval_compile": false,
+ "eval_smoke": 0,
+ "control_cache": true,
+ "corpus_dir": "image-corpus",
+ "corpus_gate": {
+  "checked": false,
+  "override": "The image stage's mix of question modes shifts by design; the same corpus construction and gate report as v5.0-VL's image stage.",
+  "build": {
+   "budget_questions": 48000,
+   "new_questions": 23754,
+   "replay_questions": 24246,
+   "files_new": 32,
+   "files_replay": 81,
+   "protect": "v4_nli_fever,st_multinli,jsg_anli,st_vitaminc,v4_scope,pf_p1__abst_ml,v4_kobbq,v4_own_choice,v4_own_noul,v4_negation"
+  }
+ },
+ "init_parent": {
+  "path": "trunk-refit/s17",
+  "parent_code_dir": "trunk",
+  "parent_corpus_dir": "text-corpus",
+  "parent_steps": 10000,
+  "parent_seed": 17,
+  "arch_change": {
+   "added": {
+    "freeze_lower_n": 8
+   },
+   "reason": "freeze_lower_n 8: a training-only memory flag (decoder layers 0-7 frozen to fit one 96 GB GPU); the forward pass is unchanged"
+  },
+  "note": "the parent is the stage-2 checkpoint"
+ },
+ "specialist": true,
+ "code_dir": "images",
+ "why": "Stage 3, images: 3,000 steps from the stage-2 checkpoint on the image-stage corpus (48,000 questions: 23,754 new = image questions from 30 image sources over seven image roots + 2,000 text rows (KoBBQ-style, multilingual abstention); 24,246 text rows replayed from the earlier lineage corpus, NLI / scope / abstention / negation at their stage dose). The exit heads 12/16/20 are loaded from stage 2 with weight 0 (no exit-head gradient into the trunk; they are retrained in stage 4). Decoder layers 0-7 frozen to fit 96 GB (training-only flag). Own-token option pooling.",
+ "max_length": 32768,
+ "truncate": "middle",
+ "option_pool_own_tokens": true
+}

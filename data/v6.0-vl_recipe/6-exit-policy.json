@@ -1,0 +1,140 @@
+{
+ "what": "exit policy for effort=auto: (a) the cascade selection picks the cascade family and the per-exit temperatures; (b) per-exit thresholds",
+ "a_cascade": {
+  "script": "scripts/select_exit_policy.py policy (rsijev/exit_policy.py select_cascade); the evaluation sets are read once",
+  "policy_dev_v1": {
+   "text_questions": {
+    "A": 8498,
+    "B": 8632
+   },
+   "vision_questions": {
+    "A": 1043,
+    "B": 1098
+   },
+   "text_sources": "held-out non-test proxies: an MMLU-Pro-style knowledge proxy (798 q), hard multiple choice, CRUXEval / POP909 / chess / home-simulator Decision Index dev rows, HoVer / RAGTruth / iSarcasm / ESCI / Habermas / When2Call dev rows, hallucination and intent probes, held score (1,501 q) and no-unknown (1,000 q) rows of the lineage corpora, plus the checkpoint's own DEV dump",
+   "vision_sources": "held rows of the 30 image sources of the image-stage corpus; eval_vision_v1 images excluded",
+   "exclusions": "trained rows of every lineage corpus, label clashes, exact evaluation states, items matching the evaluation set at >= .97",
+   "halves": "sha256('policy3-half:' + case_id) % 2 (0 -> A fit, 1 -> B select)"
+  },
+  "families": {
+   "fixed": [
+    12,
+    16,
+    20,
+    32
+   ],
+   "C_t": "cascade 12/16/20 then 32 at one tau, t = .51 .. .99",
+   "C16_t": "cascade 16/20 then 32 (exit 12 off)",
+   "report_only": [
+    "R_lam learned router",
+    "M_all / M_deep mixtures",
+    "TT per-cell table"
+   ]
+  },
+  "selection": {
+   "feasible": "ECE_TXT <= .07 and TXT, KN, VIS each >= always-32 - .010",
+   "objective": "U = (TXT + KN + VIS) / 3",
+   "ties": "within .002 -> lowest compute, then name",
+   "binding": "best servable policy"
+  },
+  "result": {
+   "binding": "C16_t0.59",
+   "dev_B": {
+    "TXT": 0.7201,
+    "KN": 0.6827,
+    "VIS": 0.891,
+    "ECE_TXT": 0.0251,
+    "compute": 20.94,
+    "U": 0.7646
+   },
+   "always32_dev_B": {
+    "TXT": 0.7174,
+    "KN": 0.6803,
+    "VIS": 0.8985,
+    "ECE_TXT": 0.0256,
+    "U": 0.7654
+   },
+   "unrestricted_winner (not shipped)": "C16_t0.67",
+   "eval_read": {
+    "suite_wo_open_jev_ood": 0.769,
+    "final": 0.6955,
+    "mmlu_pro": 0.444,
+    "final_ece": 0.0319,
+    "vision": 0.8214,
+    "layers": 20.92
+   }
+  }
+ },
+ "b_thresholds": {
+  "script": "scripts/select_exit_policy.py thresholds (rsijev/exit_policy.py Thresholds): A selects, B confirms; then thresholds --eval (one evaluation read)",
+  "policy": "stop at 16 if conf16 >= tau16, else at 20 if conf20 >= tau20, else 32; images always 32; conf = T-scaled max probability",
+  "grid": {
+   "tau16": [
+    0.59,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95
+   ],
+   "tau20": [
+    0.5,
+    0.59,
+    0.7,
+    0.8
+   ]
+  },
+  "dev_sets": {
+   "suite_like": "policy development set v1 (as in a)",
+   "held_out": "policy development set v2 (8,890 q) + its fill (2,788 q)",
+   "shift_matched": "v2 + fill minus their home-simulator and API-Bank rows, plus Home simulator rendered by the Decision Index kit (1,358 q) and API-Bank train rendered with the kit's catalog (702 q)",
+   "n": {
+    "A": {
+     "v1_text": 8498,
+     "v1_vis": 1043,
+     "v2": 5790,
+     "sm": 6318
+    },
+    "B": {
+     "v1_text": 8632,
+     "v1_vis": 1098,
+     "v2": 5887,
+     "sm": 6382
+    }
+   }
+  },
+  "constraints": {
+   "C1": "suite_like depth <= 24 layers",
+   "C2": "suite_like U >= fixed32 - .003",
+   "C3": "held_out acc >= fixed32 - .003"
+  },
+  "objective": "max shift-matched DI-metric U; ties within .002 -> lower depth, then lower tau16, tau20",
+  "confirmation": "A-winner satisfies C1-C3 on B and its B shift-matched U > C16_t0.59's",
+  "result": {
+   "tau": {
+    "16": 0.95,
+    "20": 0.59
+   },
+   "feasible_A": 24,
+   "B_sm_U": 0.5378,
+   "B_sm_U_C16_t0.59": 0.5179,
+   "B_sm_U_fixed32": 0.5376,
+   "CONFIRMED": true,
+   "eval_read": {
+    "suite_wo_open_jev_ood": 0.7707,
+    "final": 0.6958,
+    "mmlu_pro": 0.444,
+    "final_ece": 0.0236,
+    "vision_exit32": 0.8249,
+    "layers_all": 23.31,
+    "kobbq_amb_unknown": 0.941,
+    "kobbq_acc": 0.925,
+    "clinc_gold_plus1": 0.0033
+   }
+  },
+  "where_it_lives": "meta.json adaptive.auto_thresholds of the published package, read by serve/release.py auto_thresholds(); adaptive.tau 0.59 stays the single-number default",
+  "benchmark_weights": "each Decision Index benchmark's share of the index per unit of skill at exit 32, from a per-benchmark diagnostic of the checkpoint (exit_policy.bench_weights); chance skill from the kit's index file"
+ }
+}
