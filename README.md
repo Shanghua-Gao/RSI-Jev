@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-black" alt="MIT"></a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
@@ -69,7 +69,7 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 | early-exit heads that read a detached copy of their layer, so no gradient from them reaches the trunk | MMLU-Pro 0.443 at layer 32 | retuning heads on a trunk trained with attached exits had not recovered depth: the trunk had lost it |
 | 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
 | one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
-| **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
+| **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **4B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 </details>
 
@@ -87,9 +87,9 @@ generated. A second question about a document already read takes about 10 ms.
 
 ### News
 
-- **2026-10-06 · v6.0-VL 5B** picks its depth per question: it answers at layer 16, 20 or 32 of
+- **2026-10-06 · v6.0-VL 4B** picks its depth per question: it answers at layer 16, 20 or 32 of
   Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index 46.24, the highest on the
-  public board among models of 5B parameters or fewer; four effort levels from 23 to 40 ms.
+  public board among 4B models and anything smaller; four effort levels from 23 to 40 ms.
   [Release notes](versions/v6.0-vl.md)
 - **2026-10-02 · v5.0-VL 3B** cuts the LLM to what a System One model needs: the first 20 of
   Qwen3.5-4B's 32 layers, 3.25B parameters. MMLU-Pro 0.385 → 0.429, held-out images 0.802 →
@@ -106,7 +106,7 @@ generated. A second question about a document already read takes about 10 ms.
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v6.0-vl-5b --port 8000
+rsi-jev serve v6.0-vl-4b --port 8000
 ```
 
 ```bash
@@ -122,7 +122,7 @@ Or in Python, with no server:
 ```python
 from rsijev import Decider
 
-d = Decider("v6.0-vl-5b")
+d = Decider("v6.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])
@@ -136,7 +136,7 @@ what each costs: [`docs/inference.md`](docs/inference.md).
 
 | Model | Input | 15-benchmark suite | Held-out set | ECE | |
 |---|---|---|---|---|---|
-| **v6.0-VL-5B** | text, images | **0.770**¹ | **0.698** | –² | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b) |
+| **v6.0-VL-4B** | text, images | **0.770**¹ | **0.698** | –² | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
 | v5.0-VL-3B | text, images | 0.764 | 0.689 | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
 | v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
 | v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |

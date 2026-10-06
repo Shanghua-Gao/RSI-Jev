@@ -4,11 +4,11 @@
   <img src="../assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v6.0-VL 5B**, the current release, **picks its depth per question.** It reads a decision at
+**v6.0-VL 4B**, the current release, **picks its depth per question.** It reads a decision at
 layers 16, 20 and 32 of Qwen3.5-4B-Base and answers at the first one that is confident enough.
 Classification, intent and retrieval are done by layer 16; judgement tasks need about 20;
 knowledge and multi-step reasoning keep improving to 32. On Decision Index 0.2.1 it scores 46.24 as served,
-the highest on the public board among models of 5B parameters or fewer, and four effort levels run from
+the highest on the public board among 4B models and anything smaller, and four effort levels run from
 23 ms to 40 ms per request on one H200. [`versions/v6.0-vl.md`](../versions/v6.0-vl.md) is its record.
 
 <details>
@@ -93,7 +93,7 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | early-exit heads that read a detached copy of their layer, so no gradient from them reaches the trunk | MMLU-Pro 0.443 at layer 32 | retuning heads on a trunk trained with attached exits had not recovered depth: the trunk had lost it |
 | 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
 | one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
-| **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **5B: answers at layer 16, 20 or 32, whichever is confident first** |
+| **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **4B: answers at layer 16, 20 or 32, whichever is confident first** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
 and every arm on the v4.0-VL, v5.0-VL and v6.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before

@@ -56,7 +56,7 @@ document cache had the same fault on every hit. Both are fixed now, and
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v6.0-vl-5b --port 8000
+rsi-jev serve shgao/rsi-jev-v6.0-vl-4b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -68,8 +68,8 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v6.0-vl-5b`;
-- an alias: `v6.0-vl-5b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v6.0-vl-4b`;
+- an alias: `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -93,7 +93,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.0-vl-5b")
+d = Decider("shgao/rsi-jev-v6.0-vl-4b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -131,7 +131,7 @@ one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample.
 `auto` was read on a different GPU; at 22 layers on average it sits between `medium` and `high`.
 
 ```bash
-rsi-jev serve v6.0-vl-5b --effort medium            # server default
+rsi-jev serve v6.0-vl-4b --effort medium            # server default
 curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"low", ...}'
 ```
 
@@ -197,7 +197,7 @@ as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.0-vl-5b")
+d = Decider("shgao/rsi-jev-v6.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL
@@ -249,12 +249,12 @@ Measured on the GB10 (bf16 tower, fla; p50 over warm requests):
 That is about 1.45× v4.0-VL on the GB10, which is compute-bound; on an H100 with CUDA graphs a
 4B model cut at layer 20 runs within 0–13% of the 2B.
 
-### v6.0-VL 5B: a multi-exit checkpoint
+### v6.0-VL 4B: a multi-exit checkpoint
 
 v6.0-VL reads a decision at layers 16, 20 and 32 of Qwen3.5-4B-Base: the main head at layer 32
 (`scorer.safetensors`) and two early-exit heads at 16 and 20 (`aux_scorers.safetensors`,
 `spec.arch_extra.aux_exits` in `meta.json`). It is 4.69B parameters and self-contained:
-`rsi-jev serve v6.0-vl-5b` downloads 9.7 GB and nothing from the base model.
+`rsi-jev serve v6.0-vl-4b` downloads 9.7 GB and nothing from the base model.
 
 Each exit has its own scalar temperature. `calibration.json` holds the early exits' under
 `"exits"`; the main head's is `cal_logT` in `calibration.safetensors`:
