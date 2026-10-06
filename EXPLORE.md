@@ -570,9 +570,9 @@ belong to.
 
 ## jevtr_v1, continued — from v5.0-VL to v6.0-VL (2026-10-03/05)
 
-Same loop and evaluator, one Qwen3.5-4B trunk with decision heads at several depths. **95 arms** ran on this
-line, counted as one per distinct experiment id with a run record first recorded on or after 2026-10-03, a rerun
-once (91 without the four data audits). That is a different counting window from the earlier sections. The ones
+Same loop and evaluator, one Qwen3.5-4B trunk with decision heads at several depths. **97 arms** ran on this
+line, counted as one per distinct experiment id with a run record first recorded from 2026-10-03 through the run
+that chose `auto`'s thresholds, a rerun once (93 without the four data audits). That is a different counting window from the earlier sections. The ones
 below are on the released line, in the order they started. From this release the suite is the fifteen-benchmark
 weighted mean **without `open_jev_ood`**, which overlapped training data; rows marked "all 15" include it.
 
@@ -604,6 +604,8 @@ weighted mean **without `open_jev_ood`**, which overlapped training data; rows m
 | `lad6-adaptive` | policy | fail | 0.7715 | 0.6969 | 0.408 | exit policies tuned on in-distribution held-out rows over-stop on test (final ECE 0.089, images 0.800) |
 | `lad2v3` | data | not releasable (MMLU-Pro) | 0.7857 | 0.7164 | 0.418 | a rival through the same exit-policy step; every other bar passed |
 | `lad7-policy3` | policy | **kept** (selection step) | 0.769 | 0.6955 | 0.444 | the exit policy fitted on held-out proxies of the test mix: cascade 16 → 20 → 32 at τ 0.59, 20.9 layers on the suite |
+| `lad10-policy6b` | policy | not supported (the default stays) | – | – | – | layer 20 as the default, read once on a fresh held-out set rendered like the Decision Index: ahead of the 0.59 cascade (+0.107), level with layer 32 (−0.018, within noise) |
+| `lad11-auto` | policy | **kept** (`auto`'s thresholds) | 0.7707 | 0.6958 | 0.444 | one threshold per exit, 0.95 at layer 16 and 0.59 at 20, picked on one half of the development sets and confirmed on the other; 23.3 layers on the suite, final ECE 0.024 |
 
 The rows measured on the in-distribution suite (`lenx`, `dietx`, `keyv1`) use a 13-benchmark set without
 `open_jev_ood`, values around 0.80–0.83, not comparable with the 15-benchmark rows.

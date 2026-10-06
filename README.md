@@ -34,7 +34,7 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
   <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
 </p>
 
-**Read the exploration:** of 469 experiments since v1.0 (the latest 95 counted by a slightly different rule), the ones that made a release are in
+**Read the exploration:** of 471 experiments since v1.0 (the latest 97 counted by a slightly different rule), the ones that made a release are in
 [**docs/history.md**](docs/history.md); all the others, with why each failed, are in
 [**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
 

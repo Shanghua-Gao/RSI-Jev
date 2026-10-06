@@ -61,7 +61,7 @@ zero-shot and remain the reference every later release is compared against.
 reported, compare each bin with how often it was actually right, average the gaps. Lower is
 better, 0 is perfect.*
 
-Of the 469 arms run since v1.0 (the latest 95 counted by a slightly different rule), these are the ones that got from one release to the next, each
+Of the 471 arms run since v1.0 (the latest 97 counted by a slightly different rule), these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
