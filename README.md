@@ -6,8 +6,11 @@
 </p>
 
 <p align="center">
+  <b><a href="https://shanghua-gao.github.io/RSI-Jev/">🌐 shanghua-gao.github.io/RSI-Jev</a></b>
+</p>
+
+<p align="center">
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
-  <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
   <a href="docs/inference.md">Docs</a> ·
   <a href="EXPLORE.md">Every experiment</a> ·
   <a href="versions/v6.0-vl.md">Release notes</a>
