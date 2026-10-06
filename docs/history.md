@@ -14,13 +14,13 @@ the highest on the public board among models of 5B parameters or fewer, and four
 <details>
 <summary>the six releases behind it</summary>
 
-**v5.0-VL 3B stopped at layer 20.** It runs the first 20 of
+**v5.0-VL 3B stopped at layer 20.** It ran the first 20 of
 Qwen3.5-4B-Base's 32 layers: for a model that decides rather than writes, the loop found that
-reading at layer 20 scores like reading at 32 on the decision suite and the held-out set (0.760
-vs 0.761, 0.688 vs 0.686); only knowledge-heavy MMLU-Pro keeps rising. On Decision Index 0.2.1
-it scores 38.38, the best at 3B and under on the public board and ahead of eleven 4B-class
-entries. It reads images as v4.0-VL does, reads each option from that option's own tokens, and
-ships as 3.25B parameters with nothing fetched from the base model.
+reading at layer 20 scored like reading at 32 on the decision suite and the held-out set (0.760
+vs 0.761, 0.688 vs 0.686); only knowledge-heavy MMLU-Pro kept rising. On Decision Index 0.2.1
+it scored 38.38, the best at 3B and under on the public board at the time and ahead of eleven
+4B-class entries. It read images as v4.0-VL does, read each option from that option's own tokens,
+and shipped as 3.25B parameters with nothing fetched from the base model.
 [`versions/v5.0-vl.md`](../versions/v5.0-vl.md) is its record.
 
 **v4.0-VL reads images.** It takes one to four pictures with a request —

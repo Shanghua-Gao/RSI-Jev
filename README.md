@@ -87,7 +87,7 @@ generated. A second question about a document already read takes about 10 ms.
 
 ### News
 
-- **2026-10-05 · v6.0-VL 5B** picks its depth per question: it answers at layer 16, 20 or 32 of
+- **2026-10-06 · v6.0-VL 5B** picks its depth per question: it answers at layer 16, 20 or 32 of
   Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index 46.24, the highest on the
   public board among models of 5B parameters or fewer; four effort levels from 23 to 40 ms.
   [Release notes](versions/v6.0-vl.md)
@@ -106,7 +106,7 @@ generated. A second question about a document already read takes about 10 ms.
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v5.0-vl-3b --port 8000
+rsi-jev serve v6.0-vl-5b --port 8000
 ```
 
 ```bash
@@ -122,7 +122,7 @@ Or in Python, with no server:
 ```python
 from rsijev import Decider
 
-d = Decider("v5.0-vl-3b")
+d = Decider("v6.0-vl-5b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])

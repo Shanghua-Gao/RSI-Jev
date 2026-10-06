@@ -68,7 +68,7 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v5.0-vl-3b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v6.0-vl-5b`;
 - an alias: `v6.0-vl-5b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
@@ -93,7 +93,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v5.0-vl-3b")
+d = Decider("shgao/rsi-jev-v6.0-vl-5b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -197,7 +197,7 @@ as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v5.0-vl-3b")
+d = Decider("shgao/rsi-jev-v6.0-vl-5b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL
@@ -249,27 +249,31 @@ Measured on the GB10 (bf16 tower, fla; p50 over warm requests):
 That is about 1.45× v4.0-VL on the GB10, which is compute-bound; on an H100 with CUDA graphs a
 4B model cut at layer 20 runs within 0–13% of the 2B.
 
-### Multi-exit checkpoints: adaptive exit
+### v6.0-VL 5B: a multi-exit checkpoint
 
-A checkpoint with readout heads at several depths (`spec.arch_extra.aux_exits`, e.g. 12 and
-16 next to `exit_layer` 20; the extra heads in `aux_scorers.safetensors`) can stop each
-question at the first exit whose calibrated top-1 probability reaches a threshold tuned on
-DEV (`meta.json` `adaptive.tau`); the last exit always answers. Each exit has its own
-calibration. With scalar temperatures, `calibration.json` holds the main head's and one per
-aux exit:
+v6.0-VL reads a decision at layers 16, 20 and 32 of Qwen3.5-4B-Base: the main head at layer 32
+(`scorer.safetensors`) and two early-exit heads at 16 and 20 (`aux_scorers.safetensors`,
+`spec.arch_extra.aux_exits` in `meta.json`). It is 4.69B parameters and self-contained:
+`rsi-jev serve v6.0-vl-5b` downloads 9.7 GB and nothing from the base model.
+
+Each exit has its own scalar temperature. `calibration.json` holds the early exits' under
+`"exits"`; the main head's is `cal_logT` in `calibration.safetensors`:
 
 ```json
 {"cal_mode": "temp",
- "exits": {"12": {"cal_mode": "temp", "logT": 0.83},
-           "16": {"cal_mode": "temp", "logT": 0.88}}}
+ "exits": {"16": {"cal_mode": "temp", "logT": 0.63},
+           "20": {"cal_mode": "temp", "logT": 0.68}},
+ "main_exit": 32}
 ```
 
-(`cal_logT` for the main head in `calibration.safetensors`.) A per-exit cal-4b in
-`adaptive_calibration.safetensors` also loads; a checkpoint carries one or the other.
-`--adaptive auto` (the default) uses adaptive exit for multi-question requests,
-`--adaptive on` for every text request, `--fixed-exit` never; responses report the depth each
-question used in `usage.depth`. A question answered at a shallow exit gets exactly what a
-model built at that exit would return.
+`meta.json` `adaptive` holds the exit policy: `exits` (`[16, 20, 32]`), the single threshold
+`tau` (0.59) and the per-exit `auto_thresholds` (`{"16": 0.95, "20": 0.59}`). A question stops
+at the first exit whose calibrated top-1 probability reaches the threshold; layer 32 always
+answers. Without an effort, `--adaptive auto` (the default) runs the cascade with `tau` for
+multi-question requests and layer 32 for a single question, `--adaptive on` runs it for every
+text request, and `--fixed-exit` never stops early. The effort levels above override this per
+request. Responses report the layer each question used in `usage.depth`. A question answered at
+an early exit gets exactly what the model would return if it were read only at that exit.
 
 ## A local, drop-in Jev replacement
 
