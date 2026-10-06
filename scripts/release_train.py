@@ -8,9 +8,11 @@ tree, so a release never depends on any other working copy.
         --spec spec.json --save-dir CKPT --out OUTDIR --name NAME --corpus DIR [--root DIR]
 
 A published meta.json names its parent checkpoint (fit_extra.init_from), its image
-corpora (fit_extra.vision.roots) and where an RL stage saves its calibration
-(fit_extra.rl2.cal_save_dir) by relative names such as "calA-ce/s17" or "vision_v1".
---root DIR resolves those against DIR; without it they are used as given.
+corpora (fit_extra.vision.roots), where an RL stage saves its calibration
+(fit_extra.rl2.cal_save_dir) and, for a multi-exit model, where the early-exit heads
+are loaded from and saved to (fit_extra.aux_init_from, aux_save_dir) by relative names
+such as "calA-ce/s17" or "vision_v1". --root DIR resolves those against DIR; without it
+they are used as given.
 """
 from __future__ import annotations
 
@@ -41,8 +43,9 @@ def resolve_paths(spec: dict, root: Path) -> dict:
 
     def at(p):
         return str(p) if not p or Path(p).is_absolute() else str(root / p)
-    if fe.get("init_from"):
-        fe["init_from"] = at(fe["init_from"])
+    for k in ("init_from", "aux_init_from", "aux_save_dir"):
+        if fe.get(k):
+            fe[k] = at(fe[k])
     vis = fe.get("vision") or {}
     if vis.get("root"):
         vis["root"] = at(vis["root"])

@@ -188,6 +188,11 @@ class ArchConfig:
     # Checkpoint layout: the aux heads go to aux_scorers.safetensors, keyed "<L>.<name>".
     # Needs exit_layer, exit_norm, head_design "none". () = off.
     aux_exits: tuple = ()
+    # Training only: decoder layers 0..freeze_lower_n-1 get requires_grad=False when the
+    # model is built (no gradients, no optimiser state), so a 32-layer 4B tower with four
+    # heads trains on one 96 GB GPU (v6.0-VL's image stage). The forward pass is unchanged.
+    # serve/release.py drops the key (TRAINING_ONLY_ARCH_KEYS). 0 = off.
+    freeze_lower_n: int = 0
 
 
 class _RowGradScale(torch.autograd.Function):
@@ -524,6 +529,16 @@ class DecisionModel(nn.Module):
             self.frozen_lower_layers = n_freeze
             print(f"    freeze_lower_frac={cfg.freeze_lower_frac}: froze decoder layers "
                   f"0-{n_freeze - 1} of {len(layers)}", flush=True)
+        if int(cfg.freeze_lower_n or 0) > 0:
+            import re as _re
+            _pat = _re.compile(r"(?:^|\.)layers\.(\d+)\.")
+            _n = 0
+            for _name, _p in tower.named_parameters():
+                _m = _pat.search(_name)
+                if _m and "visual" not in _name and int(_m.group(1)) < int(cfg.freeze_lower_n):
+                    _p.requires_grad_(False)
+                    _n += _p.numel()
+            print(f"    freeze_lower_n={cfg.freeze_lower_n}: {_n:,} tower params frozen", flush=True)
         if cfg.embedding in ("frozen", "sliced", "replaced"):
             emb = getattr(self.tower, "get_input_embeddings", lambda: None)()
             if emb is not None:
@@ -839,16 +854,27 @@ class DecisionModel(nn.Module):
                       option_mask: torch.Tensor | None = None,
                       mode_id: torch.Tensor | None = None,
                       option_perm: torch.Tensor | None = None,
-                      row_grad_scale: torch.Tensor | None = None, **_) -> dict:
+                      row_grad_scale: torch.Tensor | None = None,
+                      position_ids: torch.Tensor | None = None,
+                      inputs_embeds: torch.Tensor | None = None,
+                      aux_detach: bool = False, **_) -> dict:
         """{exit index: logits} for every exit, from ONE pass of the exit tower.
 
         The main exit's entry is computed exactly as forward() computes it (same
         state, same readout, same scorer); each aux exit reads norm(hidden_states[L])
         through its own scorer. Presented option order, -inf where masked. The
-        model's calibration (cal_mode) applies to every entry, as in forward()."""
+        model's calibration (cal_mode) applies to every entry, as in forward().
+
+        Image states (rsijev/vision_fit.py) arrive as inputs_embeds + M-RoPE
+        position_ids, exactly as _compute passes them; text batches set neither.
+        aux_detach (training, fit_extra.aux_detach_tower): each aux exit reads
+        norm(hidden_states[L]).detach(), so the aux losses train only their own heads
+        and the tower (including the shared final norm) gets the main exit's gradient
+        only. The values returned are the same either way."""
         if self.aux_scorers is None:
             raise ValueError("forward_exits needs arch aux_exits")
-        hs, final = self._run_tower(input_ids, attention_mask, all_states=True)
+        hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
+                                    position_ids=position_ids, inputs_embeds=inputs_embeds)
         b = torch.arange(final.shape[0], device=final.device)
         norm = self._exit_text.norm
 
@@ -861,7 +887,8 @@ class DecisionModel(nn.Module):
                                  scorer=sc)[0]
         out = {int(self.cfg.exit_layer): read(final, None)}
         for k, sc in self.aux_scorers.items():
-            out[int(k)] = read(norm(hs[int(k)]), sc)
+            h_k = norm(hs[int(k)])
+            out[int(k)] = read(h_k.detach() if aux_detach else h_k, sc)
         return dict(sorted(out.items()))
 
     def forward_with_base(self, **kw):

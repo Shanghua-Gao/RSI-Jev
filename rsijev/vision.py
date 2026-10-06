@@ -285,3 +285,13 @@ class VisionDecisionModel(DecisionModel):
             return super()._compute(input_ids=input_ids, **kw)
         img = image_embeds if image_embeds is not None else self.image_embeds(pixel_values, image_grid_thw)
         return super()._compute(input_ids=input_ids, inputs_embeds=self.embed(input_ids, img), **kw)
+
+    def forward_exits(self, *, input_ids, pixel_values=None, image_grid_thw=None,
+                      image_embeds=None, **kw) -> dict:
+        """Every exit's logits (arch aux_exits) for a state that may hold images: the
+        image features go in exactly as in _compute. Used by the per-exit dumps of the
+        exit-policy selection (scripts/dump_exits.py); serving does not call it."""
+        if pixel_values is None and image_embeds is None:
+            return super().forward_exits(input_ids=input_ids, **kw)
+        img = image_embeds if image_embeds is not None else self.image_embeds(pixel_values, image_grid_thw)
+        return super().forward_exits(input_ids=input_ids, inputs_embeds=self.embed(input_ids, img), **kw)

@@ -86,7 +86,26 @@ DEFAULTS = dict(readout="option_xattn", objective="soft_ce", steps=1500,
                 # A label, not a switch: true marks an arm that trains on benchmark
                 # TRAIN splits (the "specialist" track, v2.0 on), so its numbers are
                 # read as such. It changes no computation.
-                specialist=False)
+                specialist=False,
+                # The encoder used for training, the in-run evaluation and the controls.
+                # None / False keep EncodeConfig's defaults (2048 tokens, "left"
+                # truncation, whole-block option pooling), as every spec before v6.0-VL.
+                # v6.0-VL trained at max_length 32768, truncate "middle", own-token
+                # pooling; serve/release.py reads the same keys from meta.json.
+                max_length=None, truncate=None, option_pool_own_tokens=False)
+
+
+def encode_config(cfg: dict, option_order: str) -> EncodeConfig:
+    """The EncodeConfig a resolved spec trains / evaluates with, in `option_order`."""
+    extra = {}
+    if cfg.get("max_length"):
+        extra["max_length"] = int(cfg["max_length"])
+    if cfg.get("truncate"):
+        extra["truncate"] = cfg["truncate"]
+    if cfg.get("option_pool_own_tokens"):
+        extra["option_pool_own_tokens"] = True
+    return EncodeConfig(layout=cfg["layout"], option_pool=cfg["option_pool"],
+                        option_order=option_order, **extra)
 
 
 # "bfloat16" means the model's NATIVE precision, not a cast: Qwen3.5 loads its
@@ -366,11 +385,9 @@ def run_arm(*, lm, tok, targets, corpus, device, spec, name, items_path=None):
     # trained head under several presentations. The diagnostic that matters: a
     # head trained canonical and scored reversed tells position from content,
     # read in canonical space after unpermute_logits.
-    enc = EncodeConfig(layout=cfg["layout"], option_pool=cfg["option_pool"],
-                       option_order=cfg["option_order"])
+    enc = encode_config(cfg, cfg["option_order"])
     eval_orders = list(cfg["eval_option_orders"] or ["canonical"])
-    encs = {o: EncodeConfig(layout=cfg["layout"], option_pool=cfg["option_pool"],
-                            option_order=o) for o in eval_orders}
+    encs = {o: encode_config(cfg, o) for o in eval_orders}
 
     # An RL objective may not be read before it reproduces a known truth.
     rl_cfg = RLConfig(**dict(cfg["rl_extra"] or {}))
