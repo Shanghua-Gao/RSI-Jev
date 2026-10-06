@@ -160,14 +160,14 @@ class ArchConfig:
     # (embeddings are frozen separately by the runner). 0 = train every layer,
     # which is the champion's behaviour. 1/3 at 2B freezes layers 0-7 of 24.
     freeze_lower_frac: float = 0.0
-    # EARLY EXIT. The scorer reads hidden-state index exit_layer
+    # Early exit. The scorer reads hidden-state index exit_layer
     # (the un-normalised output of decoder layer exit_layer-1, what
     # readout_layer=exit_layer would tap) and decoder layers exit_layer.. are NOT
     # RUN in the scoring pass: the text model runs its first exit_layer layers
     # (then its final norm, or the identity without exit_norm). The weights stay in the module,
     # so checkpoints keep the full layout, and a direct `tower(...)` call (fit.py's
     # LM-retention term) still runs full depth. Parity with the full tower read at
-    # readout_layer=exit_layer: tests/test_big4b_exit.py. On the 24-layer 2B,
+    # readout_layer=exit_layer: tests/test_early_exit_serving.py. On the 24-layer 2B,
     # 16 = output of layer 15 and 12 = output of layer 11 (both full attention).
     # Requires readout_layer=-1, residual=False, no layer_mix. None = off.
     exit_layer: int | None = None
@@ -586,12 +586,11 @@ class DecisionModel(nn.Module):
             tm.layers, tm.norm = full_layers, full_norm
 
     def exit_cache(self, cache):
-        """A cache the exit model built, cut to the layers it runs (big4b serve-exit
-        patch). HF builds a new cache for every layer
+        """A cache the exit model built, cut to the layers it runs. HF builds a new cache for every layer
         of the config, so only the first exit_layer were filled, and it asks the LAST
         linear-attention cache layer whether a previous state exists
         (has_previous_state()), which the exit model never filled: the cached
-        continuation then fails (internal big4b f2e27c5). A no-op when exit_layer is off."""
+        continuation then fails. A no-op when exit_layer is off."""
         L = self.cfg.exit_layer
         if not L or cache is None:
             return cache
@@ -659,7 +658,7 @@ class DecisionModel(nn.Module):
         else:
             extra["inputs_embeds"] = inputs_embeds
         if self.cfg.exit_layer:
-            # rt5 (big4b exit patch): early exit. Run only the first exit_layer decoder
+            # Early exit: run only the first exit_layer decoder
             # layers (+ final norm under exit_norm); the swap is undone before returning.
             with self.exit_tower():
                 out = self.tower(attention_mask=attention_mask, output_hidden_states=True, **extra)

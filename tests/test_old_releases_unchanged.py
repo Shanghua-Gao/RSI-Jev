@@ -1,5 +1,5 @@
 """Releases without an early exit, a recorded cap or a truncation policy (v1.0 through
-v4.0-VL) are served exactly as before the 4B exit work, and fixed-exit releases without
+v4.0-VL) are served exactly as before the early-exit work, and fixed-exit releases without
 aux exits exactly as before adaptive exit.
 
 The same tiny random Qwen3.5 (text + vision, no exit) is run through the serving
@@ -28,8 +28,8 @@ pytest.importorskip("PIL")
 pytest.importorskip("torchvision")
 
 ROOT = Path(__file__).resolve().parent.parent
-BASE_REV = "0af7fe0"            # v4-vision-serve: the serving code of v4.0-VL
-EXIT_REV = "6362d36"            # big4b-serve: the exit port, before adaptive exit
+BASE_REV = "0af7fe0"            # the serving code of v4.0-VL
+EXIT_REV = "6362d36"            # the early-exit port, before adaptive exit
 
 SCRIPT = r'''
 import json, sys

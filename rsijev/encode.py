@@ -74,7 +74,7 @@ class EncodeConfig:
     # Either way the encoded row reports `state_cut` = state tokens dropped
     # (0 when the row fits, which is then encoded exactly as before).
     # "left" is the default: every release so far was trained and gated with it.
-    # "middle" is the long-context encoder (private branch longctx e1069bf); a
+    # "middle" is the long-context encoder; a
     # release trained with it says so in meta.json (`spec.truncate`), and
     # serve/release.py then serves it that way. In "left" mode a row is encoded
     # byte for byte as by the v1.0 - v4.0-VL encoder, structured option

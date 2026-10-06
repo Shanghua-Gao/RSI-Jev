@@ -336,7 +336,7 @@ def test_the_route_validates_the_threshold():
     assert c.post("/v1/systemone", json=_body(confidence_threshold=0)).status_code == 422
 
 
-# -- per-exit thresholds for effort auto (owner option A) -----------------------------------
+# -- per-exit thresholds for effort auto -------------------------------------------------
 
 @pytest.mark.parametrize("path", list(PATHS))
 def test_an_object_threshold_equal_to_the_number_is_bitwise_the_number(models, path):
