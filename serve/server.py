@@ -58,7 +58,8 @@ class Served:
 
 def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None,
                      revision: str | None = None, max_length: int | None = None,
-                     truncate: str | None = None) -> Served:
+                     truncate: str | None = None, fixed_exit: bool | None = None,
+                     adaptive: str | None = None) -> Served:
     """Resolve `ref`, load it the way the server does, and apply the opt-in speed
     paths the environment asks for (RSIJEV_COMPILE; the document cache needs
     nothing here).
@@ -66,7 +67,9 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     `max_length` and `truncate` override the input cap and the over-cap policy the
     checkpoint's meta.json gives (serve.release.load_release; RSIJEV_MAX_LENGTH and
     RSIJEV_TRUNCATE do the same). Left unset, every release is served as it was
-    trained."""
+    trained. `adaptive` (auto / on / off, RSIJEV_ADAPTIVE) picks which requests of a
+    release with aux exits use adaptive exit; `fixed_exit` (RSIJEV_FIXED_EXIT) is an alias
+    for off (serve.release.adaptive_mode)."""
     import torch
     from serve.accel import apply_env
     from serve.runtime import keep_fused_kernels_off
@@ -76,7 +79,8 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     dtype_name = dtype or default_dtype_name(device)
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype,
-                                         max_length=max_length, truncate=truncate)
+                                         max_length=max_length, truncate=truncate,
+                                         fixed_exit=fixed_exit, adaptive=adaptive)
     # Serve whole inputs: unless a cap or a cut policy was asked for explicitly
     # (--max-length / --truncate, RSIJEV_MAX_LENGTH / RSIJEV_TRUNCATE), nothing is cut
     # and a question past RSIJEV_MAX_INPUT_TOKENS gets a 422. load_release itself keeps
@@ -132,10 +136,20 @@ def make_scorer(s: Served, batch_size: int = 16):
                              score_planned)
     spec = s.meta["spec"]
 
-    def scorer(state: str, questions, images=None):
+    def scorer(state: str, questions, images=None, effort=None, threshold=None):
         """score_questions_cached / score_image_questions_cached, split into plan and
-        run so the plan's reports reach the response. A third element ({"truncated"}) is
-        returned only for a model served with the long-context encoder."""
+        run so the plan's reports reach the response. A third element ({"truncated",
+        "depth"}) is returned only for a model served with the long-context encoder or
+        one with aux exits."""
+        from serve.effort import canonical, resolve
+        from serve.effort import threshold as check_threshold
+        from serve.infer import record_confidence
+        from serve.wire import RequestError
+        try:
+            effort, threshold = resolve(s.model, canonical(effort), check_threshold(threshold),
+                                        bool(images))
+        except ValueError as e:
+            raise RequestError(str(e)) from None
         mo = max(spec["max_options"], max(len(q.options) for q in questions))
         if images:
             if s.prep is None:
@@ -148,15 +162,23 @@ def make_scorer(s: Served, batch_size: int = 16):
                 if err is None:
                     raise
                 raise err from None
+            if effort is not None:
+                plan["effort"] = effort         # "high": the aux heads read text only
             preds, tokens = score_image_planned(s.model, s.tok, plan, max_options=mo,
                                                 device=s.device, batch_size=batch_size)
+            record_confidence(s.model, plan, preds)
         else:
             s.model.eval()
             plan = plan_request(s.tok, state, questions, s.enc)
+            if effort is not None:
+                plan["effort"] = effort
+            if threshold is not None:
+                plan["threshold"] = threshold
             preds, tokens = score_planned(s.model, s.tok, plan, max_options=mo,
                                           device=s.device, batch_size=batch_size)
         out = [list(p.probs) for p in preds], tokens
-        extras = {k: plan[k] for k in ("truncated",) if plan.get(k) is not None}
+        extras = {k: plan[k] for k in ("truncated", "depth", "effort", "confidence")
+                  if plan.get(k) is not None}
         return (*out, extras) if extras else out
 
     return scorer
@@ -233,6 +255,24 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
                          "v4.0-VL); 'middle' keeps its first line, head and tail around a "
                          "marker, and responses then carry a `truncated` field. Default: "
                          "nothing is cut. Also RSIJEV_TRUNCATE.")
+    ap.add_argument("--adaptive", default=os.environ.get("RSIJEV_ADAPTIVE", "").strip().lower() or None,
+                    choices=["auto", "on", "off"],
+                    help="adaptive exit, for a release with aux exits and a tuned tau: "
+                         "'auto' for multi-question requests only (single questions take "
+                         "the fixed exit), 'on' for every request, 'off' never. Image "
+                         "requests and micro-batched rows always take the fixed exit. "
+                         "Default: meta.json adaptive.serving, else auto. Also RSIJEV_ADAPTIVE.")
+    ap.add_argument("--fixed-exit", action="store_true",
+                    default=os.environ.get("RSIJEV_FIXED_EXIT", "").strip().lower()
+                    not in ("", "0", "false", "no", "off"),
+                    help="the same as --adaptive off. Also RSIJEV_FIXED_EXIT=1.")
+    ap.add_argument("--effort", default=None,
+                    help="default effort for a multi-exit release, used when a request gives "
+                         "none: low (shallowest aux exit), medium (deepest aux exit), high "
+                         "(main exit, all layers), auto (the release's confidence cascade, "
+                         "every text request). A request's own \"effort\" wins. Unset: "
+                         "serving as before (--adaptive). Image requests always run at full "
+                         "depth. Also RSIJEV_EFFORT.")
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
@@ -252,14 +292,23 @@ def serve(a: argparse.Namespace) -> int:
 
     s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision,
                          max_length=getattr(a, "max_length", None),
-                         truncate=getattr(a, "truncate", None))
+                         truncate=getattr(a, "truncate", None),
+                         fixed_exit=getattr(a, "fixed_exit", None) or None,
+                         adaptive=getattr(a, "adaptive", None))
+    from serve.effort import default_effort
+    effort = default_effort(getattr(a, "effort", None))
+    explicit_mode = (getattr(a, "adaptive", None) is not None) or bool(getattr(a, "fixed_exit", False))
+    if effort is not None and explicit_mode:
+        raise SystemExit("--effort / RSIJEV_EFFORT sets the default depth itself; drop "
+                         "--adaptive / --fixed-exit (and RSIJEV_ADAPTIVE / RSIJEV_FIXED_EXIT)")
     for applied in s.applied:
         print(f"speed path: {applied}", flush=True)
     from serve.batcher import model_worker
     from serve.infer import speed_options
     if a.batch_window_ms is None:
         a.batch_window_ms = _env_float("RSIJEV_BATCH_WINDOW_MS")   # set by --profile
-    scorer = model_worker(s, batch_size=a.batch_size, window_ms=a.batch_window_ms)
+    scorer = model_worker(s, batch_size=a.batch_size, window_ms=a.batch_window_ms,
+                          default_effort=effort)
     if not a.no_warmup:
         # The first call JIT-compiles fla's Triton kernels (~19 s measured on a GB10
         # after a fresh install; cached afterwards) and, with --profile server,
@@ -291,6 +340,18 @@ def serve(a: argparse.Namespace) -> int:
     elif il.get("reason"):
         print(f"images: off ({il['reason']})", flush=True)
     sv = s.meta.get("serving") or {}
+    if sv.get("adaptive"):
+        ad = sv["adaptive"]
+        which = {"auto": "multi-question requests; one question takes the fixed exit",
+                 "on": "every text request"}.get(ad.get("mode"), ad.get("mode"))
+        print(f"adaptive exit {ad.get('mode')}: exits {ad['exits']}, tau {ad['tau']} "
+              f"({which}; usage.depth reports the layers run)", flush=True)
+    elif sv.get("adaptive_off"):
+        print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
+    if getattr(s.model, "effort_base", None) is not None:
+        print(f"effort: default {effort or 'unset (as above)'}; requests may ask for low, "
+              f"medium, high or auto (usage.effort reports it); images run at full depth",
+              flush=True)
     print(f"input cap {s.enc.max_length} tokens; "
           + {"middle": "over-cap states cut in the middle (responses report `truncated`)",
              "left": "over-cap states cut from the start",

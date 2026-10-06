@@ -567,3 +567,45 @@ belong to.
 | `exit12`, `exit13`, `exit28`, `exit32` | depth | context | 0.6809 · 0.7116 · 0.7584 · 0.7609 | 0.5905 · 0.6343 · 0.6774 · 0.6859 | 0.291 · 0.338 · 0.415 · 0.457 | the depth curve completed: 20 scores like 32 on suite and held-out |
 | `vis-v4k` + own-token readout | readout | kept (parent of the head stage) | 0.7621 | 0.6915 | 0.429 | same weights, each option pooled over its own tokens, calibrator refitted: CLINC150 0.383 → 0.753, short lists unchanged; final ECE 0.080 |
 | `headft-B` seed 1 | head | **kept = v5.0-VL** | 0.7637 | 0.6889 | 0.429 | the decision head retrained for the own-token readout, 600 steps, tower frozen: final ECE 0.042, Decision Index 38.38 (seed 0: 0.053, 38.18) |
+
+## jevtr_v1, continued — from v5.0-VL to v6.0-VL (2026-10-03/05)
+
+Same loop and evaluator, one Qwen3.5-4B trunk with decision heads at several depths. **97 arms** ran on this
+line, counted as one per distinct experiment id with a run record first recorded from 2026-10-03 through the run
+that chose `auto`'s thresholds, a rerun once (93 without the four data audits). That is a different counting window from the earlier sections. The ones
+below are on the released line, in the order they started. From this release the suite is the fifteen-benchmark
+weighted mean **without `open_jev_ood`**, which overlapped training data; rows marked "all 15" include it.
+
+- **Depth was lost in training, not in the head.** On the first multi-exit model, retuned heads on the frozen trunk
+  still left layer 32 below layer 20 on MMLU-Pro (−0.016 ± 0.008). Detaching the early-exit heads from the trunk
+  gave a model no worse at 20 and better at 32.
+- **Shorter, cleaner training beat longer training on held-out data.** 10,000 steps on the cleaned corpus beat
+  40,000 on the older one on the held-out set (+0.026) and MMLU-Pro (+0.043), and lost only on the in-distribution
+  suite. Dropping rows because they were easy lost at equal steps.
+- **The exit policy has to be fitted on data that looks like the test mix.** Cascades tuned on in-distribution
+  held-out rows stopped too early on hard questions; a development set of held-out proxies weighted like the
+  evaluation mix, with one temperature per exit, passed every release bar.
+
+| arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
+|---|---|---|---|---|---|---|
+| `rt9-x20` | data | control | 0.7782 (all 15) | 0.6635 | 0.375 | the 4B base read at layer 20, the older corpus, 40,398 steps: the long-training control |
+| `ax6-s1` | arch | invalid (a clause missing) | 0.7891 (all 15) | 0.6824 | 0.402 | the first multi-exit model: main head at 32 plus exits at 12/16/20; layer 32 beat a layer-20 model on the held-out set by +0.022 |
+| `ladder-t1probe` | arch | finding | – | – | 0.418 at 20 vs 0.403 at 32 | retuning only the heads on the frozen multi-exit trunk does not recover depth: the trunk lost it |
+| `ladv1` | arch | not releasable (final ECE, MMLU-Pro) | 0.7818 (all 15) | 0.687 | 0.398 | the multi-exit model plus images and a head stage; the reference later multi-exit reads compare with |
+| `rt9-ladder-detach` | arch | failed (non-finite gradients at step 17,338) | – | – | – | early exits detached from the trunk on the older corpus at 40k steps; its fixed code is what the released model trains with |
+| `lenx` | method | discard as a lever | in-distribution 0.806 (10k) vs 0.829 (40k) | 0.685 vs 0.665 | 0.406 vs 0.375 | 3k/10k/20k/40k steps, same recipe: 10k wins held out at a quarter of the compute |
+| `dietx` | data | discard | −0.009 / −0.128 | −0.008 / −0.022 | −0.017 / −0.051 | dropping easy rows (keep 50% / 25%) at equal steps loses: keep every source, remove only bad rows |
+| `idea3-skew` | data | defect found | – | – | – | class skews in the data mix (a 0.8% yes-rate source, positional gold skew, a source that was all one class); led to the minority-share check and two exclusions |
+| `keyv1` | data | **kept** (stage-1 corpus) | in-distribution 0.803 vs 0.827 | 0.692 vs 0.665 | 0.418 vs 0.375 | the cleaned 148-source corpus at 10k steps vs the older corpus at 40k |
+| `lad2` | data | not releasable (images, MMLU-Pro) | 0.7852 | 0.7113 | 0.414 | the multi-exit model plus 3,000 steps of benchmark-domain data; its reads gave the per-exit temperature (final ECE 0.081 vs 0.127) |
+| `idea3-ctxcal` | method | discard | – | – | – | a serving-side prior correction loses to a fitted temperature: priors belong in the data |
+| `lad4-calproxy` | method | fail (suite ECE) | suite ECE 0.062 → 0.100 | final ECE 0.081 → 0.059 | – | a temperature fitted on development proxies fixes final ECE but breaks the suite's: miscalibration is per task |
+| `rt9d-short` | arch / data | **kept = v6.0-VL** | 0.7701 at 32; 0.769 with `auto` | 0.6953 (0.6955) | 0.443 (0.444) | detached early exits, the cleaned corpus, 10k steps, head refit, images, head stage seed 1; seed 0 0.7707 / 0.6953 / 0.441 |
+| `lad6-adaptive` | policy | fail | 0.7715 | 0.6969 | 0.408 | exit policies tuned on in-distribution held-out rows over-stop on test (final ECE 0.089, images 0.800) |
+| `lad2v3` | data | not releasable (MMLU-Pro) | 0.7857 | 0.7164 | 0.418 | a rival through the same exit-policy step; every other bar passed |
+| `lad7-policy3` | policy | **kept** (selection step) | 0.769 | 0.6955 | 0.444 | the exit policy fitted on held-out proxies of the test mix: cascade 16 → 20 → 32 at τ 0.59, 20.9 layers on the suite |
+| `lad10-policy6b` | policy | not supported (the default stays) | – | – | – | layer 20 as the default, read once on a fresh held-out set rendered like the Decision Index: ahead of the 0.59 cascade (+0.107), level with layer 32 (−0.018, within noise) |
+| `lad11-auto` | policy | **kept** (`auto`'s thresholds) | 0.7707 | 0.6958 | 0.444 | one threshold per exit, 0.95 at layer 16 and 0.59 at 20, picked on one half of the development sets and confirmed on the other; 23.3 layers on the suite, final ECE 0.024 |
+
+The rows measured on the in-distribution suite (`lenx`, `dietx`, `keyv1`) use a 13-benchmark set without
+`open_jev_ood`, values around 0.80–0.83, not comparable with the 15-benchmark rows.

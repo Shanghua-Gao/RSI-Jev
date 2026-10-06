@@ -25,14 +25,15 @@ from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
+REPOS = {"v6.0-vl-4b": "shgao/rsi-jev-v6.0-vl-4b",
+         "v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
          "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
          "v3.0-2b": "shgao/rsi-jev-v3.0-qwen3.5-2b",
          "v2.1-2b": "shgao/rsi-jev-v2.1-qwen3.5-2b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
-LATEST = "v5.0-vl-3b"
+LATEST = "v6.0-vl-4b"
 
 _REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
 
@@ -111,7 +112,8 @@ def serving_encoder(spec: dict, max_length: int | None = None,
     serving time, not what the model was gated with.
 
     TODO (not in this release): order averaging (score each question in 2 or 5
-    option orders and average; 2x/5x cost) is a kept result that is not served yet."""
+    option orders and average; 2x/5x cost) is a kept result that is not served yet.
+    Adaptive exit is served for multi-question requests (see `adaptive_mode`)."""
     if max_length is None:
         env = os.environ.get("RSIJEV_MAX_LENGTH", "").strip()
         max_length = int(env) if env else None
@@ -125,6 +127,186 @@ def serving_encoder(spec: dict, max_length: int | None = None,
     if cap < 64:
         raise ValueError(f"max_length {cap} is too small to hold a question")
     return cap, policy
+
+
+ADAPTIVE_CAL_FILE = "adaptive_calibration.safetensors"
+
+
+def adaptive_block(meta: dict) -> dict | None:
+    """The adaptive-exit policy block of a release's meta.json, or None."""
+    return meta.get("adaptive") or (meta.get("release") or {}).get("adaptive")
+
+
+ADAPTIVE_MODES = ("auto", "on", "off")
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def adaptive_mode(meta: dict, adaptive: str | None = None,
+                  fixed_exit: bool | None = None) -> tuple[str, str]:
+    """(mode, where it came from) for a release with aux exits.
+
+      auto  adaptive exit for multi-question requests, the fixed exit for one question
+            (the default; GB10 five-repeat check: adaptive 6-9% faster on 8- and
+            32-question batches, 1-7% slower on single questions)
+      on    adaptive exit for every text request the model runs on its own
+      off   the fixed exit for every request
+
+    `adaptive` (--adaptive, else RSIJEV_ADAPTIVE) wins, then `fixed_exit` (--fixed-exit,
+    else RSIJEV_FIXED_EXIT=1, an alias for off), then meta.json `adaptive.serving`, then
+    auto. Asking for on or auto together with the fixed exit is an error."""
+    if adaptive is None:
+        adaptive = os.environ.get("RSIJEV_ADAPTIVE", "").strip().lower() or None
+    if fixed_exit is None:
+        fixed_exit = _env_flag("RSIJEV_FIXED_EXIT")
+    if adaptive is not None:
+        adaptive = str(adaptive).strip().lower()
+        if adaptive not in ADAPTIVE_MODES:
+            raise ValueError(f"adaptive must be one of {ADAPTIVE_MODES}, got {adaptive!r}")
+        if fixed_exit and adaptive != "off":
+            raise ValueError(f"--adaptive {adaptive} contradicts --fixed-exit / RSIJEV_FIXED_EXIT")
+        return adaptive, "--adaptive / RSIJEV_ADAPTIVE"
+    if fixed_exit:
+        return "off", "--fixed-exit / RSIJEV_FIXED_EXIT"
+    block = adaptive_block(meta) or {}
+    if block.get("serving") is not None:
+        mode = str(block["serving"]).strip().lower()
+        if mode not in ADAPTIVE_MODES:
+            raise ValueError(f"meta.json adaptive.serving must be one of {ADAPTIVE_MODES}, got {mode!r}")
+        return mode, "meta.json adaptive.serving"
+    return "auto", "default"
+
+
+def adaptive_policy(meta: dict, ckpt: Path, model, device, fixed_exit: bool | None = None,
+                    adaptive: str | None = None):
+    """(rsijev.adaptive.Policy or None, why it is off or None). Sets model.adaptive_mode.
+
+    A release serves adaptive exit when it has aux exits (spec.arch_extra.aux_exits,
+    heads in aux_scorers.safetensors) AND a policy: meta.json `adaptive` with the tau
+    tuned on DEV, and one calibrator per aux exit, either
+      - a scalar temperature per exit in calibration.json, next to the main head's own
+        calibration: "exits": {"12": {"cal_mode": "temp", "logT": x}, ...}
+        (`exit_temperatures`), or
+      - one cal-4b per aux exit in adaptive_calibration.safetensors (keys
+        "<exit>.<mean|W|mu|sd|w|b>").
+    scripts/pack_adaptive_policy.py writes either from the tuning run's policy. Nothing
+    about the policy is a code constant. Which requests use it is `adaptive_mode` (auto:
+    multi-question requests only); mode off serves the fixed exit and loads no policy."""
+    model.adaptive_mode = "off"
+    model.effort_base = None
+    model.effort_auto_taus = None
+    if not getattr(model.cfg, "aux_exits", ()):
+        return None, None
+    temps = exit_temperatures(ckpt, model.exit_indices())      # validated even when off
+    mode, src = adaptive_mode(meta, adaptive, fixed_exit)
+    block = adaptive_block(meta)
+    if not block or block.get("tau") is None:
+        return None, ("the release has aux exits but no tuned tau (meta.json adaptive.tau)"
+                      if mode != "off" else f"fixed exit forced ({src})")
+    if mode == "off":
+        # Not served by default, but per-request `effort` (serve/effort.py) can still ask
+        # for it; a policy that does not build leaves effort at full.
+        try:
+            model.effort_base = _build_policy(meta, ckpt, model, device, block, temps)
+        except RuntimeError:
+            model.effort_base = None
+        if model.effort_base is not None:
+            model.effort_auto_taus = auto_thresholds(block, model.effort_base.exits)
+        return None, f"fixed exit forced ({src})"
+    policy = _build_policy(meta, ckpt, model, device, block, temps)
+    model.effort_base = policy
+    model.effort_auto_taus = auto_thresholds(block, policy.exits)
+    model.adaptive_mode = mode
+    return policy, None
+
+
+def auto_thresholds(block: dict, exits: list) -> dict | None:
+    """meta.json adaptive.auto_thresholds {"<aux exit>": tau in (0, 1]}: per-exit thresholds
+    for effort auto only (serve/effort.py); the default (unset effort) keeps the single tau.
+    A partial block is filled from that tau. Absent: None."""
+    raw = block.get("auto_thresholds")
+    if raw is None:
+        return None
+    aux = [str(L) for L in exits[:-1]]
+    if not isinstance(raw, dict) or not set(map(str, raw)) <= set(aux):
+        raise RuntimeError(f"meta.json adaptive.auto_thresholds must map aux exits {aux} to "
+                           f"thresholds in (0, 1]; got {raw!r}")
+    out = {}
+    for k, v in raw.items():
+        t = float(v)
+        if not (0.0 < t <= 1.0):
+            raise RuntimeError(f"meta.json adaptive.auto_thresholds[{k!r}] = {v!r} is not in (0, 1]")
+        out[int(k)] = 2.0 if t >= 1.0 else t
+    return out
+
+
+def _build_policy(meta: dict, ckpt: Path, model, device, block: dict, temps):
+    """The release's adaptive Policy (exits, per-exit calibration, tau)."""
+    from safetensors.torch import load_file
+    from rsijev import adaptive as A
+    exits = model.exit_indices()
+    if block.get("exits") is not None and [int(x) for x in block["exits"]] != exits:
+        raise RuntimeError(f"adaptive.exits {block['exits']} do not match the model's exits {exits}")
+    cal_file = block.get("calibration")
+    if temps is not None:
+        if cal_file not in (None, CAL_JSON):
+            raise RuntimeError(f"calibration.json has per-exit temperatures and meta.json "
+                               f"adaptive.calibration names {cal_file}: one source only")
+        if (ckpt / ADAPTIVE_CAL_FILE).exists():
+            raise RuntimeError(f"both calibration.json \"exits\" and {ADAPTIVE_CAL_FILE}: one source only")
+        if getattr(model, "cal_mode", "none") == "none":
+            raise RuntimeError("per-exit temperatures need the main head calibrated too "
+                               "(calibration.json cal_mode)")
+        cal = {L: A.cal_to(t, device) for L, t in temps.items()}
+    else:
+        path = ckpt / (cal_file or ADAPTIVE_CAL_FILE)
+        if not path.exists():
+            raise RuntimeError(f"adaptive exit needs {path.name} (one cal-4b per aux exit) or "
+                               f"per-exit temperatures in calibration.json")
+        flat = load_file(str(path))
+        cal = {}
+        for L in exits[:-1]:
+            c = {k.split(".", 1)[1]: v for k, v in flat.items() if k.split(".", 1)[0] == str(L)}
+            if set(c) != {"mean", "W", "mu", "sd", "w", "b"}:
+                raise RuntimeError(f"{path.name}: exit {L} has {sorted(c)}, not a cal-4b")
+            cal[L] = A.cal_to(c, device)
+    return A.Policy(exits, cal, float(block["tau"]))
+
+
+CAL_JSON = "calibration.json"
+
+
+def exit_temperatures(ckpt: Path, exits: list[int]) -> dict | None:
+    """The per-exit scalar temperatures in calibration.json, or None when it has none.
+
+    Format: "exits": {"<aux exit>": {"cal_mode": "temp", "logT": <finite number>}, ...},
+    one entry for every aux exit (the main exit's calibration is the file's own cal_mode
+    and calibration.safetensors). Returns {exit: {"logT": float32 scalar}} (the
+    rsijev.adaptive temp_cal form); any other shape is refused."""
+    import math
+    from rsijev import adaptive as A
+    p = Path(ckpt) / CAL_JSON
+    if not p.exists():
+        return None
+    block = json.loads(p.read_text()).get("exits")
+    if block is None:
+        return None
+    want = [str(L) for L in exits[:-1]]
+    if not isinstance(block, dict) or sorted(block, key=int) != want:
+        got = sorted(block) if isinstance(block, dict) else type(block).__name__
+        raise RuntimeError(f"calibration.json exits: need one entry per aux exit {want}, got {got}")
+    out = {}
+    for k in want:
+        e = block[k]
+        if not isinstance(e, dict) or e.get("cal_mode") != "temp" or set(e) != {"cal_mode", "logT"}:
+            raise RuntimeError(f"calibration.json exits[{k}]: need {{\"cal_mode\": \"temp\", \"logT\": x}}, got {e!r}")
+        v = e["logT"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            raise RuntimeError(f"calibration.json exits[{k}].logT must be a finite number, got {v!r}")
+        out[int(k)] = A.temp_cal(v)
+    return out
 
 
 def _layer_at_or_above(key: str, n: int) -> bool:
@@ -153,9 +335,26 @@ def own_token_pool(spec: dict, meta: dict) -> bool:
     return bool(spec.get("option_pool_own_tokens") or meta.get("option_pool_own_tokens"))
 
 
+# spec.arch_extra keys that only shape training (which layers train, at what rate); serving ignores them.
+TRAINING_ONLY_ARCH_KEYS = ("freeze_lower_n", "lower_lr_mult", "retention_at_exit")
+
+
+def serving_arch_extra(spec: dict) -> dict:
+    """spec.arch_extra minus the training-only keys. Any other key ArchConfig doesn't know is an
+    error: it may change what the model computes."""
+    import dataclasses
+    extra = {k: v for k, v in dict(spec.get("arch_extra") or {}).items() if k not in TRAINING_ONLY_ARCH_KEYS}
+    known = {f.name for f in dataclasses.fields(ArchConfig)}
+    unknown = sorted(set(extra) - known)
+    if unknown:
+        raise RuntimeError(f"spec.arch_extra has keys this server does not know: {unknown}")
+    return extra
+
+
 def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                  vision: bool | None = None, max_length: int | None = None,
-                 truncate: str | None = None):
+                 truncate: str | None = None, fixed_exit: bool | None = None,
+                 adaptive: str | None = None):
     """`infer_dtype` casts the TOWER for inference only: bf16 is 3-6x faster and
     moved pooled top-1 by at most 0.003 over the full test set. The scorer always
     stays fp32 -- running it in reduced precision is the bug that cost this
@@ -175,6 +374,12 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
 
     `max_length` / `truncate`: see `serving_encoder`. `meta["serving"]` records what
     was used.
+
+    Adaptive exit (aux exits plus a tuned policy, see `adaptive_policy`): the aux heads
+    load from aux_scorers.safetensors, `model.adaptive_policy` holds the policy and
+    `model.adaptive_mode` which requests use it (`adaptive_mode`; auto: multi-question
+    requests, each question stopping at the first exit confident enough,
+    serve/infer.score_adaptive). Every other model gets `adaptive_policy = None`.
     """
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -233,7 +438,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                       option_pool=spec["option_pool"], residual=spec["residual"],
                       logit_cap=spec.get("logit_cap"),
                       head_input_norm=spec.get("head_input_norm", False),
-                      **dict(spec.get("arch_extra") or {}))
+                      **serving_arch_extra(spec))
     vb = vision_block(meta) if vision is not False else None
     if vb:
         from rsijev.vision import (IMAGE_PAD, VisionConfig, VisionDecisionModel, load_visual,
@@ -258,6 +463,12 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     else:
         model = DecisionModel(tower, cfg.hidden_size, arch).to(device)
     model.scorer.load_state_dict(load_file(str(ckpt / "scorer.safetensors")))
+    if arch.aux_exits:
+        aux = ckpt / "aux_scorers.safetensors"
+        if not aux.exists():
+            raise RuntimeError(f"spec.arch_extra.aux_exits {list(arch.aux_exits)} needs {aux.name}")
+        model.aux_scorers.load_state_dict(load_file(str(aux)))
+        model.aux_scorers.to(device=device, dtype=torch.float32)
     # v2.0 onward a checkpoint may ship a fitted calibration (calibration.safetensors
     # + calibration.json, rsijev/calibrate.py). It is part of the released model, not
     # an extra: the forward pass divides each question's logits by one positive
@@ -274,8 +485,14 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
                        option_order="canonical", max_length=cap, truncate=policy,
                        option_pool_own_tokens=own_token_pool(spec, meta))
-    meta["serving"] = {"max_length": cap, "truncate": policy, "exit_layer": arch.exit_layer,
+    ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
+    model.adaptive_policy = ada
+    served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
+    meta["serving"] = {"max_length": cap, "truncate": policy,
+                       "exit_layer": arch.exit_layer, "adaptive": served_ada,
                        "option_pool_own_tokens": enc.option_pool_own_tokens}
+    if why:
+        meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta
 
 

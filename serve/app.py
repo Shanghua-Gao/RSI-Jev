@@ -101,6 +101,13 @@ class SystemOneRequest(StrictModel):
     # base64 data URLs, referenced from the state by `<image>` markers
     # (serve/images.py). Omitted, null or empty, the request is a text request.
     images: list[str] | None = Field(default=None, max_length=MAX_IMAGES)
+    # An RSI-Jev extension for multi-exit releases (serve/effort.py): low, medium, high
+    # or auto. Omitted, the server default applies;
+    # with none set anywhere, serving is what it was before `effort` existed.
+    effort: str | None = Field(default=None, max_length=16)
+    # For the cascade (effort auto, or the default adaptive path): the calibrated top-1
+    # probability a question must reach to stop at an aux exit. Default: the release's tau.
+    confidence_threshold: float | dict[str, float] | None = None
 
 
 def _wire_questions(req: SystemOneRequest) -> list[Question]:
@@ -124,6 +131,24 @@ def prepare(req: SystemOneRequest) -> tuple[list[Question], str, list]:
     return questions, state, parse_images(req.images, state) if req.images else []
 
 
+def _effort(req: SystemOneRequest) -> str | None:
+    """The request's effort, canonical (serve/effort.py), or a 422."""
+    from serve.effort import canonical
+    try:
+        return canonical(req.effort)
+    except ValueError as e:
+        raise RequestError(str(e)) from None
+
+
+def _threshold(req: SystemOneRequest) -> float | None:
+    """The request's confidence_threshold, checked to lie in (0, 1], or a 422."""
+    from serve.effort import threshold
+    try:
+        return threshold(req.confidence_threshold)
+    except ValueError as e:
+        raise RequestError(str(e)) from None
+
+
 def finish(questions: list[Question], probs, prompt_tokens: int):
     """Probabilities -> (answers, usage)."""
     # A non-finite probability used to fail inside the stdlib JSON encoder
@@ -138,15 +163,16 @@ def finish(questions: list[Question], probs, prompt_tokens: int):
     return answers, usage
 
 
-EXTRAS = ("truncated",)
+EXTRAS = ("truncated", "depth", "effort", "confidence")
 
 
 def _split(result, plan=None):
     """A scorer's or worker's result -> (probs, prompt_tokens, extras).
 
     A scorer returns (probs, tokens), or (probs, tokens, extras) where extras may hold
-    "truncated" (the long-context encoder's report, serve.infer.truncation_report). A
-    worker's plan carries the same key. extras is {} for every other model."""
+    "truncated" (the long-context encoder's report, serve.infer.truncation_report) and
+    "depth" (the exit each question used, for models with aux exits). A worker's plan
+    carries the same keys. extras is {} for every other model."""
     probs, tokens = result[0], result[1]
     extras = dict(result[2]) if len(result) > 2 and result[2] else {}
     if isinstance(plan, dict):
@@ -156,6 +182,18 @@ def _split(result, plan=None):
     return probs, tokens, {k: v for k, v in extras.items() if v is not None}
 
 
+def _with_depth(usage: dict, questions, extras: dict) -> dict:
+    """usage["depth"] = {question key: decoder layers run}, when the model reports it."""
+    if extras.get("depth") is not None:
+        usage["depth"] = {q.key: int(d) for q, d in zip(questions, extras["depth"])}
+    if extras.get("confidence") is not None:
+        # each question's calibrated top-1 probability at the exit that answered it
+        usage["confidence"] = {q.key: float(c) for q, c in zip(questions, extras["confidence"])}
+    if extras.get("effort") is not None:
+        usage["effort"] = extras["effort"]       # the effort the request actually ran at
+    return usage
+
+
 def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
                    report: dict | None = None):
     """One validated request -> (answers, usage, prepare_ms, infer_ms).
@@ -163,24 +201,28 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
     `serve.decider.Decider` calls this, and the route runs the same `prepare` and
     `finish` around the same scorer, so the Python API and the HTTP API cannot give
     different answers to the same request. `report`, if given, receives
-    "truncated" (what the long-context encoder cut, or None)."""
+    "truncated" (what the long-context encoder cut, or None). usage carries "depth"
+    for a model with aux exits."""
     t0 = time.perf_counter()
     questions, state, images = prepare(req)
     # A text request calls the scorer exactly as before images existed.
     args = (state, questions, images) if images else (state, questions)
+    kw = {k: v for k, v in (("effort", _effort(req)), ("threshold", _threshold(req)))
+          if v is not None}
     prepared_ms = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
     if lock is None:
-        probs, prompt_tokens, extras = _split(scorer(*args))
+        probs, prompt_tokens, extras = _split(scorer(*args, **kw))
     else:
         with lock:
-            probs, prompt_tokens, extras = _split(scorer(*args))
+            probs, prompt_tokens, extras = _split(scorer(*args, **kw))
     infer_ms = (time.perf_counter() - t1) * 1000
     if report is not None:
         report["truncated"] = extras.get("truncated")
 
     answers, usage = finish(questions, probs, prompt_tokens)
+    _with_depth(usage, questions, extras)
     return answers, usage, prepared_ms, infer_ms
 
 
@@ -245,16 +287,19 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # Decoding up to four 20 MiB images is too slow for the event loop.
         questions, state, pics = (await run_in_threadpool(prepare, req) if req.images
                                   else prepare(req))
+        effort, thr = _effort(req), _threshold(req)
         prepared_ms = (time.perf_counter() - t0) * 1000
         t1 = time.perf_counter()
+        kw = {k: v for k, v in (("effort", effort), ("threshold", thr)) if v is not None}
         if plan_off_loop:
-            plan = await run_in_threadpool(worker.plan, state, questions, pics)
+            plan = await run_in_threadpool(lambda: worker.plan(state, questions, pics, **kw))
         else:
-            plan = worker.plan(state, questions, pics)
+            plan = worker.plan(state, questions, pics, **kw)
         probs, prompt_tokens, extras = _split(
             await asyncio.wrap_future(worker.enqueue(plan)), plan)
         infer_ms = (time.perf_counter() - t1) * 1000
         answers, usage = finish(questions, probs, prompt_tokens)
+        _with_depth(usage, questions, extras)
         truncated = extras.get("truncated")
         body = {"model": served_model_name if req.model in borrowed else req.model,
                 "answers": answers, "usage": usage}

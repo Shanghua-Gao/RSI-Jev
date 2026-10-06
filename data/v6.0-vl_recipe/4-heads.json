@@ -1,0 +1,36 @@
+{
+ "what": "decision-head fine-tune of all four heads (exits 12/16/20 and main 32) on the frozen stage-3 tower, own-token pooling (readout B)",
+ "ckpt": "images/s17",
+ "out": "heads-s1 (tower linked to stage 3; scorer and aux_scorers new)",
+ "script": "scripts/fit_head.py --heads all --sdpa-math --max-length 4096 --skip-prefix vis",
+ "heads": [
+  12,
+  16,
+  20,
+  32
+ ],
+ "steps": 600,
+ "batch": 8,
+ "lr": 1e-05,
+ "optimizer": "AdamW, weight_decay 0, no schedule, no clipping (norm logged only)",
+ "loss": "sum over heads of soft-CE to gold",
+ "seed": 1,
+ "max_length": 4096,
+ "truncation": "middle cut",
+ "option_order": "canonical",
+ "attention_backend": "the MATH SDPA backend on every exit's scorer (--sdpa-math): in trained option_xattn heads the attention saturates and the efficient backend's backward returned wrong, huge gradients",
+ "env": {
+  "RSIJEV_OPTION_POOL_OWN_TOKENS": "1"
+ },
+ "data": {
+  "corpus": "image-corpus",
+  "sources": "the stage-3 spec's text sources (vis* skipped): 83",
+  "excluded": "held-out cases of the image-stage corpus (sha256(case_id) % 10 == 0) and every state of a held-out case of the stage-1 corpus",
+  "cases_usable": 20008,
+  "held_states_excluded": 26706,
+  "rows_available": 23431,
+  "rows_used": 4800,
+  "rows_skipped": 0
+ },
+ "seed_choice": "seed 1 of seeds {0, 1}: the lower main-exit DEV ECE on the candidate's own DEV dump (0.0300 vs 0.0342; select_exit_policy.py seed)"
+}

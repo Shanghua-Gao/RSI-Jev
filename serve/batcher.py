@@ -39,16 +39,19 @@ class CallRunner:
     def __init__(self, scorer: Callable):
         self.scorer = scorer
 
-    def plan(self, state, questions, images=None):
-        return (state, questions, images) if images else (state, questions)
+    def plan(self, state, questions, images=None, effort=None, threshold=None):
+        args = (state, questions, images) if images else (state, questions)
+        # A scorer written before `effort` existed is still called exactly as before.
+        kw = {k: v for k, v in (("effort", effort), ("threshold", threshold)) if v is not None}
+        return args, kw
 
     def run(self, plans: list) -> list:
-        return [_capture(self.scorer, *p) for p in plans]
+        return [_capture(self.scorer, *a, **kw) for a, kw in plans]
 
 
-def _capture(fn, *a):
+def _capture(fn, *a, **kw):
     try:
-        return fn(*a)
+        return fn(*a, **kw)
     except BaseException as e:            # delivered to the waiting request, not the worker
         return _Failed(e)
 
@@ -71,8 +74,13 @@ class ModelRunner:
     def __init__(self, model, tok, enc, *, spec_max_options: int, device, batch_size: int = 16,
                  max_rows: int | None = None, max_tokens: int | None = None,
                  pool_prefix_tokens: int | None = None, prep=None, venc=None,
-                 name: str = "this model", image_error: str | None = None):
+                 name: str = "this model", image_error: str | None = None,
+                 default_effort: str | None = None):
         env = os.environ.get
+        # serve/effort.py: the server's default effort (None = serving as before effort)
+        from serve.effort import canonical, check_supported
+        self.default_effort = canonical(default_effort)
+        check_supported(model, self.default_effort)
         self.prep, self.venc, self.name, self.image_error = prep, venc, name, image_error
         self.model, self.tok, self.enc, self.device = model, tok, enc, device
         self.spec_max_options = spec_max_options
@@ -94,13 +102,26 @@ class ModelRunner:
     def max_options(self, questions) -> int:
         return max(self.spec_max_options, max(len(q.options) for q in questions))
 
-    def plan(self, state, questions, images=None) -> dict:
+    def plan(self, state, questions, images=None, effort=None, threshold=None) -> dict:
+        from serve.effort import canonical, resolve
+        from serve.effort import threshold as check_threshold
         from serve.infer import plan_request
+        from serve.wire import RequestError
+        try:
+            effort = canonical(effort) if effort is not None else self.default_effort
+            # the aux heads read text only: an image request runs at full depth
+            effort, threshold = resolve(self.model, effort, check_threshold(threshold), bool(images))
+        except ValueError as e:
+            raise RequestError(str(e)) from None
         if images:
             p = self._plan_images(state, questions, images)
         else:
             with self._tok_lock:
                 p = plan_request(self.tok, state, questions, self.enc)
+        if effort is not None:
+            p["effort"] = effort
+        if threshold is not None:
+            p["threshold"] = threshold
         p["max_options"] = self.max_options(questions)
         return p
 
@@ -126,6 +147,9 @@ class ModelRunner:
         with self._maybe_tok_lock():
             preds, tokens = run(self.model, self.tok, plan, max_options=plan["max_options"],
                                 device=self.device, batch_size=self.batch_size)
+        if plan["path"] == "image":
+            from serve.infer import record_confidence
+            record_confidence(self.model, plan, preds)
         return [list(p.probs) for p in preds], tokens
 
     def _maybe_tok_lock(self):
@@ -133,6 +157,8 @@ class ModelRunner:
         return self._tok_lock if _needs_option_tokens(self.model) else _Null()
 
     def poolable(self, plan) -> bool:
+        if plan.get("effort") not in (None, "high"):
+            return False          # low, medium and auto run the staged path on their own
         return plan["path"] == "plain" or (
             plan["path"] == "cached" and len(plan["prefix"]) < self.pool_prefix_tokens)
 
@@ -169,9 +195,17 @@ class ModelRunner:
                              device=self.device, batch_size=self.max_rows,
                              max_tokens=self.max_tokens, sort=opt["sort"],
                              trim_options=opt["trim_options"])
+        # TODO(adaptive exit): pooled rows take the fixed exit whatever --adaptive says.
+        # The aux heads are text-only, and adaptive exit was benchmarked on one
+        # request's own rows, not on rows pooled across requests.
+        from serve.infer import fixed_depth, record_confidence
+        for p in plans:
+            fixed_depth(self.model, p)
         out = [([], 0) for _ in plans]
         for j, r, pr in zip(owner, rows, probs):
             out[j][0].append(list(Prediction(tuple(pr)).probs))
+        for (ps, _), p in zip(out, plans):
+            record_confidence(self.model, p, [Prediction(tuple(x)) for x in ps])
         return [(ps, sum(len(e["input_ids"]) for e in p["encoded"]))
                 for (ps, _), p in zip(out, plans)]
 
@@ -200,22 +234,23 @@ class GpuWorker:
         self._thread.start()
 
     # -- caller side
-    def plan(self, state, questions, images=None):
+    def plan(self, state, questions, images=None, effort=None, threshold=None):
         """Tokenize and choose a path, in the caller's thread. `images` (validated
-        PIL images) is passed on only when there are some, so a runner written for
-        text alone keeps working."""
+        PIL images), `effort` and `threshold` are passed on only when given, so a runner
+        written for text alone keeps working."""
+        kw = {k: v for k, v in (("effort", effort), ("threshold", threshold)) if v is not None}
         if images:
-            return self.runner.plan(state, questions, images)
-        return self.runner.plan(state, questions)
+            return self.runner.plan(state, questions, images, **kw)
+        return self.runner.plan(state, questions, **kw)
 
     def enqueue(self, plan) -> Future:
         f: Future = Future()
         self._q.put((time.perf_counter(), plan, f))
         return f
 
-    def __call__(self, state, questions, images=None):
+    def __call__(self, state, questions, images=None, effort=None, threshold=None):
         """Synchronous use, as a scorer: plan here, run on the worker, wait."""
-        return self.enqueue(self.plan(state, questions, images)).result()
+        return self.enqueue(self.plan(state, questions, images, effort, threshold)).result()
 
     def close(self) -> None:
         self._q.put(None)
@@ -270,13 +305,13 @@ class GpuWorker:
 
 
 def model_worker(served, *, batch_size: int = 16, window_ms: float | None = None,
-                 **runner_kw) -> GpuWorker:
+                 default_effort: str | None = None, **runner_kw) -> GpuWorker:
     """The server's worker for a loaded release (serve.server.Served)."""
     runner = ModelRunner(served.model, served.tok, served.enc,
                          spec_max_options=served.meta["spec"]["max_options"],
                          device=served.device, batch_size=batch_size,
                          prep=getattr(served, "prep", None), venc=getattr(served, "venc", None),
                          name=served.name, image_error=getattr(served, "vision_error", None),
-                         **runner_kw)
+                         default_effort=default_effort, **runner_kw)
     return GpuWorker(runner, window_ms=window_ms)
 

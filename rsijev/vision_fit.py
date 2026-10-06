@@ -98,7 +98,14 @@ class VisionFeed:
         raise err
 
     def batch(self, chunk, enc, rng, max_options, rl: bool = False):
-        ex = [self._encode(c, q, enc, rng, self.rl_preps if rl else None) for c, q in chunk]
+        return self.collate(self.encode(chunk, enc, rng, rl), max_options)
+
+    # encode / collate are split so fit() can encode a whole step and run it as
+    # grad_accum micro-batches (fit_extra.grad_accum). batch() == collate(encode()).
+    def encode(self, chunk, enc, rng, rl: bool = False):
+        return [self._encode(c, q, enc, rng, self.rl_preps if rl else None) for c, q in chunk]
+
+    def collate(self, ex, max_options):
         b = vision_collate(self.tok, ex, max_options, device=self.device)
         if "pixel_values" in b:
             pv, grid = b.pop("pixel_values"), b.pop("image_grid_thw")

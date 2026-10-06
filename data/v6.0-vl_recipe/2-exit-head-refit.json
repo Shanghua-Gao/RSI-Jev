@@ -1,0 +1,37 @@
+{
+ "what": "refit of the exit heads 12/16/20 on the frozen stage-1 trunk; trunk and main head are not trained (sha checked before/after)",
+ "ckpt": "trunk/s17",
+ "out": "trunk-refit/s17 (tower and scorer = stage 1's files, aux_scorers = the refit heads)",
+ "script": "scripts/refit_exit_heads.py --link-into trunk-refit/s17",
+ "exits": [
+  12,
+  16,
+  20
+ ],
+ "steps": 3000,
+ "lr": 0.0001,
+ "warmup_steps": 50,
+ "schedule": "linear warmup over 50 steps, then cosine to 0 (scripts/refit_exit_heads.py warmup_cosine)",
+ "optimizer": "AdamW, weight_decay = spec head_weight_decay (0.0)",
+ "grad_clip": 1.0,
+ "loss": "per exit: soft-CE to gold + aux_distill x KL(p_main || p_exit), T 1, summed over exits",
+ "aux_distill": 0.5,
+ "aux_distill_note": "--distill -1 takes the stage-1 spec's fit_extra.aux_distill (0.5)",
+ "readout": "forward_exits(aux_detach=True), own-token option pooling, encoder max_length 32768",
+ "seed": 17,
+ "target_questions": 96000,
+ "token_budget": 32768,
+ "max_batch": 32,
+ "data": {
+  "corpus": "text-corpus",
+  "sources": "the stage-1 spec's 148 sources",
+  "drops": {
+   "held_out_cases (sha256(case_id) % 10 == 0)": 27427,
+   "states shared with an evaluation set (eval_suite_v2, eval_final_v2, MMLU-Pro 1k, typed-decisions test)": 17122
+  },
+  "train_questions": 95931,
+  "batches": 4811,
+  "epochs": 0.62,
+  "order": "shuffled options except canonical_order_sources (pf_rt9__manyopt_seq)"
+ }
+}

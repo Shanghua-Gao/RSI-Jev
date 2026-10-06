@@ -83,7 +83,7 @@ same bytes we did rather than a copy of ours.
 
 ```bash
 python scripts/suite.py --list                     # every benchmark, its pin and its licence
-python scripts/suite.py --ckpt DIR                 # the fifteen (--suite v3), as v3.0, v4.0-VL and v5.0-VL report
+python scripts/suite.py --ckpt DIR                 # the fifteen (--suite v3), as v3.0, v4.0-VL, v5.0-VL and v6.0-VL report
 python scripts/suite.py --ckpt DIR --suite v2      # the twelve, as v2.0 and v2.1 report
 python scripts/suite.py --ckpt DIR --only kev_hard_v1
 ```
@@ -140,7 +140,7 @@ numbers should be compared before trusting either.
 | `python scripts/routing.py --cases 400` | accuracy against coverage when you act only on the top slice by confidence, and whether a small-model-first cascade earns its place. Runs v1.0's two sizes, the only release with two |
 | `python scripts/load_release.py --ckpt DIR --verify` | re-scores a checkpoint against the run that produced it |
 
-`--model` takes `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
+`--model` takes `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`.
 
 Speed moves with GPU load — up to ±20% between runs — so measure on your own
 hardware before depending on a figure. Each release's record names the machine its

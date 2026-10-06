@@ -56,7 +56,7 @@ document cache had the same fault on every hit. Both are fixed now, and
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v5.0-vl-3b --port 8000
+rsi-jev serve shgao/rsi-jev-v6.0-vl-4b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -68,8 +68,8 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v5.0-vl-3b`;
-- an alias: `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v6.0-vl-4b`;
+- an alias: `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -93,7 +93,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v5.0-vl-3b")
+d = Decider("shgao/rsi-jev-v6.0-vl-4b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -105,6 +105,90 @@ the `answers` object of `POST /v1/systemone` (`tests/test_easy_infer.py`).
 From a clone, without installing, run
 `pip install -r requirements.txt pillow torchvision && python scripts/serve.py --ckpt shgao/rsi-jev-v4.0-vl-qwen3.5-2b`.
 
+## Effort levels (v6.0-VL)
+
+How deep a decision needs to go, in plain words: [effort-depth.md](effort-depth.md). The per-benchmark and per-question tables are in the [release record](../versions/v6.0-vl.md#44-which-tasks-and-questions-need-depth).
+
+A multi-exit release answers at more than one depth. `effort` picks the depth per request
+(`"effort"` in the `POST /v1/systemone` body) or as the server default (`--effort`, or
+`RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
+weights:
+
+v6.0-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
+
+| effort | depth (v6.0-VL) | Decision Index 0.2.1 | median |
+|---|---|---:|---:|
+| `low` | the shallowest aux exit: layer 16 | 43.3 | 23 ms |
+| `medium` | the deepest aux exit: layer 20 | 45.9 | 27 ms |
+| `high` | the main exit, all layers: layer 32 | 45.9 | 40 ms |
+| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.95 at 16 and 0.59 at 20 by default on v6.0-VL), every text request | 45.8 | – |
+| unset | the default below | 45.7 | 40 ms |
+
+Any other value is a 422 that lists these four.
+
+Decision Index figures are reads of the kit's stratified 16,000-request sample (one H200, bf16,
+one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample.
+`auto` was read on a different GPU; at 22 layers on average it sits between `medium` and `high`.
+
+```bash
+rsi-jev serve v6.0-vl-4b --effort medium            # server default
+curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"low", ...}'
+```
+
+With no effort anywhere, serving is what it was before `effort` existed: `--adaptive auto`
+(the cascade for multi-question requests, the main exit for a single question), or whatever
+`--adaptive` / `meta.json` `adaptive.serving` says. `--effort` sets that default itself, so it
+is refused together with `--adaptive` or `--fixed-exit`. Responses to a request that ran with an
+effort carry `usage.effort` (the effort it actually ran at) next to `usage.depth` (the layer
+each question was answered at).
+
+Image requests run at full depth whatever the effort, because the aux heads read text only;
+their `usage.effort` is `high`. A release with a single exit serves `high` (or no effort) as
+before and answers `low`, `medium` and `auto` with a 422, as it does an unknown value.
+
+**Confidence.** Every response from a multi-exit release carries `usage.confidence`: for each
+question, the calibrated probability of its top option at the exit that answered it (the
+value the cascade compares with the threshold), next to `usage.depth`, at every effort and on
+image requests (layer 32, the main head's calibration). A single-exit release's responses keep
+their shape.
+
+**Threshold.** `"confidence_threshold"` (a number in (0, 1]) replaces the release's tau (0.59 on
+v6.0-VL) for one request: a question stops at the first aux exit where its calibrated top-1
+probability is at least the threshold, the same threshold at every aux exit. It applies to
+effort `auto` and to the default adaptive path (multi-question requests); with `low`,
+`medium` or `high`, or outside the range, it is a 422. Lower thresholds stop earlier (any
+value below 1/K, the uniform probability, answers every question at the first aux exit, as
+`low` does). `1.0` means never stop early: the request runs at full depth and reports
+effort `high`; this also covers a single-option question, whose confidence is exactly 1.
+
+With effort `auto` the threshold can also be set per aux exit, as an object:
+`"confidence_threshold": {"16": 0.8, "20": 0.6}`. An exit left out keeps effort auto's default
+there; `1.0` at an exit means never stop at that exit; an exit the release does not have, or a
+value outside (0, 1], is a 422. The object form is refused without effort `auto`. Effort auto's
+default is the release's `meta.json` `adaptive.auto_thresholds` (`{"16": ..., "20": ...}`) when
+it has one, else the single tau; v6.0-VL ships `{"16": 0.95, "20": 0.59}`.
+The unset default (no effort) always uses the single tau and ignores `auto_thresholds`, so the
+numbers above hold.
+
+Choosing a threshold on v6.0-VL (dev sets, descriptive, not used for any selection; quality is the
+suite-like score, held-out accuracy and Decision-Index-style skill):
+
+| setting | layers | stops at 16 / 20 / 32 | suite-like | held-out | Decision-Index-style |
+|---|---:|---|---:|---:|---:|
+| `low` (16) | 16.0 | 100 / 0 / 0 % | 0.752 | 0.697 | 0.521 |
+| `medium` (20) | 20.0 | 0 / 100 / 0 % | 0.760 | 0.703 | 0.550 |
+| `high` (32) | 32.0 | 0 / 0 / 100 % | 0.765 | 0.697 | 0.555 |
+| threshold 0.50 | 19.4 | 76 / 4 / 20 % | 0.758 | 0.705 | 0.532 |
+| **threshold 0.59** (default) | 20.9 | 65 / 5 / 30 % | 0.765 | 0.705 | 0.535 |
+| threshold 0.70 | 22.9 | 52 / 6 / 42 % | 0.766 | 0.698 | 0.542 |
+| threshold 0.80 | 24.8 | 40 / 6 / 54 % | 0.765 | 0.697 | 0.544 |
+| threshold 0.90 | 26.9 | 29 / 5 / 67 % | 0.765 | 0.697 | 0.551 |
+| threshold 0.95 | 28.3 | 21 / 4 / 76 % | 0.765 | 0.697 | 0.555 |
+
+Layers and stop shares are on the suite-like set. From 0.59 up, suite-like and held-out text match
+`high`; on inputs unlike the training data a low threshold costs quality, which comes back only from
+about 0.9. If inputs may be unusual, use a threshold of 0.9 or more, or `medium`.
+
 ### Images
 
 A release trained with images (v4.0-VL on) also answers questions about 1–4 images. It needs
@@ -113,7 +197,7 @@ as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v5.0-vl-3b")
+d = Decider("shgao/rsi-jev-v6.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL
@@ -164,6 +248,32 @@ Measured on the GB10 (bf16 tower, fla; p50 over warm requests):
 
 That is about 1.45× v4.0-VL on the GB10, which is compute-bound; on an H100 with CUDA graphs a
 4B model cut at layer 20 runs within 0–13% of the 2B.
+
+### v6.0-VL 4B: a multi-exit checkpoint
+
+v6.0-VL reads a decision at layers 16, 20 and 32 of Qwen3.5-4B-Base: the main head at layer 32
+(`scorer.safetensors`) and two early-exit heads at 16 and 20 (`aux_scorers.safetensors`,
+`spec.arch_extra.aux_exits` in `meta.json`). It is 4.69B parameters and self-contained:
+`rsi-jev serve v6.0-vl-4b` downloads 9.7 GB and nothing from the base model.
+
+Each exit has its own scalar temperature. `calibration.json` holds the early exits' under
+`"exits"`; the main head's is `cal_logT` in `calibration.safetensors`:
+
+```json
+{"cal_mode": "temp",
+ "exits": {"16": {"cal_mode": "temp", "logT": 0.63},
+           "20": {"cal_mode": "temp", "logT": 0.68}},
+ "main_exit": 32}
+```
+
+`meta.json` `adaptive` holds the exit policy: `exits` (`[16, 20, 32]`), the single threshold
+`tau` (0.59) and the per-exit `auto_thresholds` (`{"16": 0.95, "20": 0.59}`). A question stops
+at the first exit whose calibrated top-1 probability reaches the threshold; layer 32 always
+answers. Without an effort, `--adaptive auto` (the default) runs the cascade with `tau` for
+multi-question requests and layer 32 for a single question, `--adaptive on` runs it for every
+text request, and `--fixed-exit` never stops early. The effort levels above override this per
+request. Responses report the layer each question used in `usage.depth`. A question answered at
+an early exit gets exactly what the model would return if it were read only at that exit.
 
 ## A local, drop-in Jev replacement
 

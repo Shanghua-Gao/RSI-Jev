@@ -1,0 +1,40 @@
+{
+ "what": "one temperature per exit, fitted on the released weights; no cal-4b head is used (cal_mode temp)",
+ "ckpt": "heads-s1",
+ "method": "temp",
+ "option_pool_own_tokens": true,
+ "fit": "per exit L: logT_L = argmin over the grid -2..3 step .01 of the question-type-weighted NLL on half A of the policy development set v1 (rsijev/exit_policy.py fit_temperatures)",
+ "weights": "w = p_EVAL(cell) / n_half(cell), cell = (mode, option-count bucket <=2 | 3-4 | 5-9 | >=10); the evaluation set's cell counts use mode and option count only, no labels (exit_policy.EVAL_CELLS)",
+ "dev_pool": {
+  "name": "policy development set v1",
+  "half": "A (sha256('policy3-half:' + case_id) % 2 == 0)",
+  "text_questions_A": 8498
+ },
+ "fitted": {
+  "logT": {
+   "12": 0.43,
+   "16": 0.63,
+   "20": 0.68,
+   "32": 0.8
+  },
+  "T": {
+   "16": 1.8776,
+   "20": 1.9739,
+   "32": 2.2255
+  }
+ },
+ "exit_12": "fitted (logT .43); the binding cascade skips it (logT 10 in the policy step) and its head is removed from the package (package_multiexit.py --drop-exit 12)",
+ "package_chain": [
+  "temperatures: calibration.json cal_mode temp, calibration.safetensors cal_logT = the main exit's DEV temperature",
+  "policy: the cascade selection's per-exit logT, meta.adaptive and the serving fields (own-token pooling, max_length 32768, train_max_length 4096)",
+  "exit 12 dropped: head removed from aux_scorers, aux_exits [16, 20]",
+  "effort=auto: meta.adaptive.auto_thresholds {16: 0.95, 20: 0.59}"
+ ],
+ "main_exit_served": {
+  "buffer": "calibration.safetensors cal_logT",
+  "logT": 0.5,
+  "T": 1.6487,
+  "fit": "NLL on the checkpoint's own DEV 'cal' half (select_exit_policy.py seed), as the package chain wrote it",
+  "note": "serving reads the main exit's temperature from this buffer (rsijev.calibrate.load_calibration); calibration.json main_logT (0.80, the cascade selection's fit) is recorded but not read"
+ }
+}

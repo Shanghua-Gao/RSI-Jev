@@ -369,7 +369,17 @@ def load_calibration(model, ckpt_dir) -> str:
     from safetensors.torch import load_file
     ck = Path(ckpt_dir)
     t = load_file(str(ck / "calibration.safetensors"))
+    mode = json.loads((ck / "calibration.json").read_text())["cal_mode"]
+    # a temperature calibration may ship only the buffer it reads; anything else needs all
+    need = CAL_MODE_BUFFERS.get(mode, CAL_BUFFERS)
+    missing = [k for k in need if k not in t]
+    if missing:
+        raise RuntimeError(f"calibration.safetensors lacks {missing} for cal_mode {mode!r}")
     for k in CAL_BUFFERS:
-        getattr(model, k).copy_(t[k].to(getattr(model, k).device))
-    model.cal_mode = json.loads((ck / "calibration.json").read_text())["cal_mode"]
+        if k in t:
+            getattr(model, k).copy_(t[k].to(getattr(model, k).device))
+    model.cal_mode = mode
     return model.cal_mode
+
+
+CAL_MODE_BUFFERS = {"temp": ("cal_logT",), "temp_mode": ("cal_logT_mode",)}
