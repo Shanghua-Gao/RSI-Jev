@@ -1,132 +1,123 @@
-# Which questions need more layers? (v6.0-VL)
+# How deep does a decision need to go?
 
-v6.0-VL answers from layer 16, 20 or 32 of its tower. This page measures what the deeper layers
-buy on [Decision Index 0.2.1](https://github.com/apolinario/decision-index): by effort level, by
-benchmark and by question. It is the evidence behind the `effort` setting described in
-[inference.md](inference.md#effort-levels-v60-vl) and in the [release record](../versions/v6.0-vl.md).
+A System One model reads a document, looks at a few fixed options, and returns a probability for
+each one. It never writes. In v5.0-VL we found that a model built this way doesn't need the whole
+LLM: cut at layer 20 of 32, it decided as well as the full tower.
 
-v6.0-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
+v6.0-VL takes the next step. It is still a System One model: one forward pass, no generated
+reasoning, a probability for every option. But it has answer heads at layers 16, 20 and 32, and
+`effort` sets how many layers that one pass uses, not how many tokens it writes; it writes none:
 
-All numbers come from the released package (bf16, one H200), on the same stratified 16,000-row
-sample of Decision Index, scored on a sample-only suite (coverage 1), one option order, with the
-57 rows that overlap our training data removed. Fixed exits were forced with variants that share
-the released weights.
+```bash
+rsi-jev serve v6.0-vl-4b --effort medium     # or "effort": "low" | "medium" | "high" | "auto" per request
+```
 
-## Effort levels
+`low`, `medium` and `high` stop at 16, 20 and 32. `auto` answers at the first layer that is
+confident enough and goes deeper otherwise. Each layer has its own bar: layer 16 answers only when
+its calibrated top-option probability is at least 0.95, layer 20 at 0.59. Every response says which layer answered and how confident it was.
 
-Skill × 100 by area (chance-corrected); latency is the median request.
+So the obvious question: which decisions actually need the deep layers? We measured it on
+Decision Index 0.2.1, a public benchmark of 38 decision tasks.
 
-| effort | layers | index | knowledge & reasoning | language | retrieval | tools | arts | median ms |
-|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `low` | 16 | 43.3 | 25.1 | 43.5 | 53.2 | 63.6 | 32.3 | 23 |
-| `medium` | 20 | 45.9 | 28.4 | 46.7 | 53.6 | 66.1 | 36.5 | 27 |
-| `high` | 32 | 45.9 | 29.2 | 45.7 | 53.2 | 67.1 | 36.1 | 40 |
-| `auto` (thresholds 0.95 at 16, 0.59 at 20) | 22.1 on average | 45.8 | 29.0 | 45.7 | 53.3 | 66.5 | 36.6 | –¹ |
-| earlier `auto` (one threshold, 0.59) | 18.5 on average | 44.9 | 28.8 | 44.8 | 52.9 | 64.5 | 34.9 | 30 |
-| unset (default) | mixed | 45.7 | 29.2 | 45.9 | 53.3 | 65.6 | 36.1 | 40 |
-| v5.0-VL | 20 | 37.4 | 25.8 | 42.4 | 41.8 | 51.7 | 19.5 | – |
+## The short answer: 20 layers, mostly
 
-The earlier `auto`, with one threshold of 0.59 at both exits, answered 78% of Decision Index questions at layer 16, 9% at 20 and 13% at 32; the section below shows what that cost and how the released thresholds fix it. The unset
-default runs a single question at all 32 layers and uses the cascade only for multi-question
-requests, so on this benchmark (mostly single questions) it scores close to `high`.
+| effort | layers | Decision Index | median latency |
+|---|---|---:|---:|
+| `low` | 16 | 43.3 | 23 ms |
+| `medium` | 20 | **45.9** | 27 ms |
+| `high` | 32 | **45.9** | 40 ms |
+| `auto` | 22 on average | 45.8 | – |
+| v5.0-VL | 20 | 37.4 | – |
 
-¹ `auto` was read on a different GPU; at 22 layers on average it sits between `medium` and `high`.
+*16,000-row sample of Decision Index, one H200, bf16; rows that overlap our training data removed. `auto` was read on a different GPU, so it has no latency here; at 22 layers on average it sits between `medium` and `high`.*
 
-## Which benchmarks gain from depth
+This table compares effort levels on the same sample rows. The full benchmark, run as served by default,
+scores 46.24: on the 2026-09-28 board, the highest among 4B models and anything smaller (14th of 71 overall).
 
-Skill at layer 16 / 20 / 32. About 315 questions per benchmark in the sample (standard error
-about 0.03), so only gaps of 0.03 or more count.
+On this benchmark the last 12 layers add nothing on average. Layer 20 matches all 32 at about
+two thirds of the latency. Layer 16 gives up 2.6 points for the lowest latency.
 
-- **Done at layer 16:** BFCL function calling (.93 / .94 / .93), CLINC150 and BANKING77 intent,
-  When2Call, FinEntity, PhishNChips, BRIGHT and Amazon ESCI retrieval, New Yorker caption
-  matching.
-- **Needs layer 20:** HellaSwag, ANLI, NLI4CT, BBH fixed-option (.39 / .48 / .47), HoVer claim
-  verification (.21 / .32 / .32), CLadder, VAST, BPoMP (.53 / .75 / .76), ToolRet, the home
-  appliance simulator.
-- **Keeps gaining to layer 32:** API-Bank tool documentation (.60 / .62 / .66), GPQA Diamond
-  (.14 / .18 / .22), MuSR (.34 / .36 / .39), CRUXEval (.07 / .10 / .13), POP909 (.52 / .59 / .62).
+## Which tasks need depth
 
-Smaller gains from 20 to 32 show on GSM8K, WinoGrande and Habermas. BANKING77 (−.035), New Yorker
-(−.060) and ESCI (−.037) get worse with depth. HLE, RAGTruth and iSarcasm score zero at every exit.
+The average hides a clear split by task:
 
-## Which questions gain from depth
+- **Done at layer 16:** intent detection, classification, retrieval, sentiment, function calling.
+  BFCL scores .93 at layer 16 and .93 at 32.
+- **Needs about 20 layers:** judgement. Natural-language inference, commonsense, claim
+  verification, causal questions. HoVer goes from .21 at layer 16 to .32 at 20, BBH from .39 to .48.
+- **Keeps improving to 32:** knowledge and multi-step reasoning. GPQA Diamond .14 → .18 → .22,
+  MuSR .34 → .39, code execution (CRUXEval) .07 → .13, tool documentation (API-Bank) .60 → .66.
 
-Per-question correctness at layers 16, 20 and 32, on the 27 benchmarks that Decision Index
-scores by per-question accuracy (10,232 questions; our per-question accuracy matches the kit's
-own score within 0.02 at every exit). Ranking, F1 and case-level benchmarks are covered only in
-the section above, because per-question accuracy does not measure them. *Rescued* is wrong at 16
-and right at 32; *harmed* is the reverse.
+And a few tasks get *worse* with depth: BANKING77 intents, ESCI product search and New Yorker
+caption matching all lose a few points from 16 to 32. Deeper is not always better.
 
-**By layer 16's own confidence** (calibrated top-option probability):
+## Which questions need depth
 
-| layer-16 confidence | questions | acc 16 | acc 20 | acc 32 | rescued | harmed | net |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| below 0.50 | 2,323 | .331 | .354 | .363 | 11.5% | 8.4% | +3.1 |
-| 0.50–0.59 | 1,546 | .537 | .673 | .671 | 22.5% | 9.1% | +13.5 |
-| 0.59–0.70 | 1,717 | .643 | .690 | .695 | 12.1% | 6.9% | +5.2 |
-| 0.70–0.80 | 1,529 | .767 | .763 | .774 | 2.9% | 2.2% | +0.7 |
-| 0.80–0.90 | 1,520 | .872 | .876 | .877 | 1.1% | 0.6% | +0.5 |
-| 0.90–0.97 | 1,067 | .906 | .907 | .909 | 0.3% | 0.0% | +0.3 |
-| 0.97 and above | 530 | .949 | .949 | .949 | 0.0% | 0.0% | 0.0 |
+Inside a task, the best predictor is the shallow layer's own confidence. We took the 27 Decision
+Index benchmarks scored by per-question accuracy (10,232 questions) and checked each question at
+layers 16 and 32:
 
-**By question shape:**
+| layer 16's confidence | right at 16 | right at 32 | gain |
+|---|---:|---:|---:|
+| below 0.50 | 33% | 36% | +3 |
+| 0.50–0.59 | 54% | 67% | **+13.5** |
+| 0.59–0.70 | 64% | 70% | **+5** |
+| 0.70–0.80 | 77% | 77% | +1 |
+| 0.80 and above | 90% | 90% | 0 |
 
-| slice | questions | benchmarks | acc 16 | acc 20 | acc 32 | net 16→32 |
-|---|---:|---:|---:|---:|---:|---:|
-| 2 options | 3,797 | 11 | .694 | .759 | .762 | +6.8 |
-| 3–4 options | 4,083 | 16 | .735 | .752 | .760 | +2.4 |
-| 5–10 options | 1,404 | 10 | .462 | .467 | .449 | −1.4 |
-| 11–50 options | 314 | 3 | .080 | .080 | .089 | +1.0 |
-| more than 50 options | 634 | 3 | .568 | .607 | .645 | +7.7 |
-| input under 256 tokens | 7,096 | 23 | .673 | .714 | .718 | +4.5 |
-| input 256–1k | 1,980 | 18 | .607 | .620 | .619 | +1.2 |
-| input 1k–4k | 839 | 7 | .601 | .628 | .638 | +3.7 |
-| input 4k–16k | 317 | 3 | .606 | .621 | .666 | +6.0 |
-| all accuracy-scored | 10,232 | 27 | .652 | .686 | .690 | +3.8 |
+When layer 16 is sure, it is right as often as layer 32, so going deeper buys nothing. When it
+is torn between two or three options, the deeper layers fix a lot of answers. Two-option
+judgement questions and very long option lists (more than 50 options) gain the most; questions
+with 5–10 options don't gain at all. Depth also breaks some answers: 4.8% of questions that layer
+16 gets right are wrong at layer 32, against 8.7% that depth rescues.
 
-Most of the gain happens between layers 16 and 20 (.652 → .686). From 20 to 32 the average moves
-by .004, which hides the knowledge and multi-step reasoning benchmarks above that keep gaining.
+## How we fixed `auto`
 
-## Why `auto` has a threshold per exit
+Our first `auto` used one bar for both early layers: answer at 0.59. On our own test suite that was
+fine; it matched the full model at about 21 layers. On Decision Index it answered 78% of questions
+at layer 16 and scored 44.9, a point below both `medium` and `high`.
 
-This section is about the earlier setting, one threshold of 0.59 at both exits.
+The table above shows why. Questions where layer 16 was 0.59–0.70 sure still gained 5 points from
+going deeper, but they stopped at layer 16. The bar was chosen on data that looks like our suite,
+where layer 16 is rarely confidently wrong; Decision Index has more two-option judgement questions
+and unfamiliar formats, and there layer 16 is overconfident more often.
 
-- That cascade answered at layer 16 when the calibrated top-option probability there was at least
-  0.59. On Decision Index that is 78% of questions, and layer 16 alone scores 43.3.
-- Its threshold and per-exit temperatures were chosen on our dev sets, which resemble our own
-  test suite. There layer 16 is nearly as good as 32: any threshold of 0.59 or more matches full
-  depth at about 21 layers on average.
-- Decision Index has more two-option judgement questions, more knowledge and reasoning, and
-  formats the model has not seen. Layer 16 is confident and wrong there more often: the 0.59–0.70
-  band still gains 5.2 points from depth but stops at layer 16. About three quarters of the loss
-  comes from two-option judgement tasks, where 0.59 is barely above chance.
-- `medium` wins on Decision Index because 20 layers happen to be enough there. A pre-registered
-  check on fresh dev sets found it is not a better default in general: on suite-like questions it
-  trails the cascade (.711 vs .756).
+So `auto` now has a bar per layer: 0.95 at layer 16 and 0.59 at layer 20. Layer 16 answers only when
+it is nearly sure, and the questions it used to take go on to layer 20, which is enough for most of
+them. We chose the two bars on our development sets (picked on one half, confirmed on the other,
+average depth capped at 24 layers) and then read the test suite once:
 
-**The fix.** `auto` now has its own threshold at each exit: 0.95 at layer 16 and 0.59 at layer 20.
-Layer 16 answers only when it is nearly sure; the questions it used to answer at 0.59–0.95 go on to
-layer 20, which is enough for most of them. The thresholds were chosen on our development sets,
-picked on one half and confirmed on the other, with average depth capped at 24 layers, then read
-once on test: suite 0.771 (`high` 0.770), held-out 0.696, MMLU-Pro 0.444, final ECE 0.024, with 20% of
-questions stopping at layer 16, 46% at 20 and 34% at 32 (23.3 layers on average). On the Decision Index sample it reads 45.8 (the earlier `auto` 44.9, `medium` and `high` 45.9), with 15% of questions stopping at layer 16, 62% at 20 and 23% at 32 (22.1 layers on average).
+| | suite | held-out | MMLU-Pro | calibration error | layers |
+|---|---:|---:|---:|---:|---:|
+| `high` | 0.770 | 0.695 | 0.443 | 0.033 | 32 |
+| `auto`, one bar at 0.59 | 0.769 | 0.696 | 0.444 | 0.032 | 20.9 |
+| `auto`, 0.95 at 16 and 0.59 at 20 | **0.771** | 0.696 | **0.444** | **0.024** | 23.3 |
 
-## Choosing an effort level
+On Decision Index the new `auto` reads 45.8, up from 44.9 and within 0.1 of `medium` and `high`. It averages 22 layers there: 15% of questions stop at layer 16, 62% at 20 and 23% at 32.
 
-- `low` for intent, routing, retrieval and sentiment, where layer 16 is already saturated
-  (57% of full latency).
-- `medium` for classification and judgement workloads: the same Decision Index score as `high` at
-  about 70% of the latency.
+`medium` still wins Decision Index on its own, because 20 layers are enough there, but it is not a
+better default everywhere: on suite-like questions it falls behind the cascade. No single effort
+level wins every workload, which is why it is a setting and not a constant.
+
+## What we'd use
+
+- `low` for routing, intent and retrieval, where layer 16 is already as good as it gets.
+- `medium` for classification and judgement: Decision Index quality at about 70% of the latency.
 - `high` for knowledge, multi-step reasoning, code and tool documentation.
-- `auto` for mixed workloads: its default thresholds (0.95 at 16, 0.59 at 20) match `high` on our
-  suite at about 23 layers. Every response
-  reports each question's exit (`usage.depth`) and calibrated confidence (`usage.confidence`), so
-  the routing can be checked.
+- `auto` for mixed traffic: its default bars match `high` on our suite at about 23 layers. Read
+  `usage.depth` and `usage.confidence` in the response to see where answers came from, and pass
+  your own `confidence_threshold` (one number, or one per layer) if your traffic differs.
 
-## Limits
+## How it was made
 
-- 16,000-row sample reads, not full runs. This page compares exits with each other on the same
-  rows, which a sample-to-full offset does not change.
-- The per-question section uses the Decision Index test sample. It explains the released
-  behaviour; it was not used to choose any setting.
-- One seed, one read. Per-benchmark differences under 0.03 are within noise.
+Like every RSI-Jev release, v6.0-VL was trained, evaluated and documented by a loop of AI
+research agents, with every experiment that didn't make it written up next to the ones that did.
+The per-layer measurements above came out of the release checks: the same benchmark rows, the same
+weights, only the exit changed.
+
+- Model: [shgao/rsi-jev-v6.0-vl-4b](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b)
+- The full per-benchmark and per-question tables: [the release record, section 4.4](../versions/v6.0-vl.md#44-which-tasks-and-questions-need-depth)
+- How to set `effort` and `confidence_threshold`: [inference.md](inference.md#effort-levels-v60-vl)
+
+*Apart from the full-run score of 46.24, Decision Index numbers are 16,000-row sample reads of version 0.2.1 with one seed. Per-benchmark
+differences under 0.03 are within noise.*

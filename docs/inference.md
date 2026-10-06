@@ -107,7 +107,7 @@ From a clone, without installing, run
 
 ## Effort levels (v6.0-VL)
 
-What each level buys, by benchmark and by question: [effort-depth.md](effort-depth.md).
+How deep a decision needs to go, in plain words: [effort-depth.md](effort-depth.md). The per-benchmark and per-question tables are in the [release record](../versions/v6.0-vl.md#44-which-tasks-and-questions-need-depth).
 
 A multi-exit release answers at more than one depth. `effort` picks the depth per request
 (`"effort"` in the `POST /v1/systemone` body) or as the server default (`--effort`, or
