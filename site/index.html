@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="RSI-Jev: an open Jev built by AI agents. Jev-compatible typed decisions about text and images, run on your own GPU. v6.0-VL 5B lets you choose how many layers each decision uses: 16, 20 or 32.">
+<meta name="description" content="RSI-Jev: an open Jev built by AI agents. Jev-compatible typed decisions about text and images, run on your own GPU. v6.0-VL 4B lets you choose how many layers each decision uses: 16, 20 or 32.">
 <title>RSI-Jev</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -626,13 +626,13 @@ footer { padding-block: 36px 64px; font-size: 13px; }
 <div class="wrap">
 
 <section class="hero center" id="top">
-  <p class="eyebrow">RSI-Jev v6.0-VL 5B</p>
+  <p class="eyebrow">RSI-Jev v6.0-VL 4B</p>
   <h1>A System One model.</h1>
   <p class="idea">Fast, intuitive decisions: <b>one pass</b>, <b>no text generated</b>, a <b>calibrated probability</b> for every answer.</p>
   <div class="cta">
     <a class="btn primary" href="#start">Get started</a>
     <a class="btn" href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
-    <a class="btn" href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b">Hugging Face</a>
+    <a class="btn" href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b">Hugging Face</a>
   </div>
   <div class="onepass" role="group" aria-label="One pass: an image and a question go in, a probability for every answer comes out in 61 ms">
     <div class="pcard op-in"><img src="assets/v4/ex-speed-80.webp" alt="A round road sign showing a speed limit of 80." width="148" height="148" decoding="async"><div><span class="lab">image + question</span><p class="op-q">Which speed limit number is written on the object in the image?</p></div></div>
@@ -672,8 +672,8 @@ footer { padding-block: 36px 64px; font-size: 13px; }
   <p class="small">Real outputs of the released model on Decision Index items. BANKING77 is CC BY 4.0; WinoGrande is CC BY.</p>
   <div class="visa">
     <h3>Decision Index 0.2.1</h3>
-    <div class="vbars" id="di6"><div class="vr us"><span class="vn">RSI-Jev v6.0-VL, 5B</span><span class="vt"><i style="width:92.5%"></i></span><b>46.24</b></div><div class="vr"><span class="vn">JPT-4B, 4.7B</span><span class="vt"><i style="width:86.1%"></i></span><b>43.04</b></div><div class="vr"><span class="vn">Jet v6.2, 4.7B</span><span class="vt"><i style="width:85.2%"></i></span><b>42.60</b></div><div class="vr"><span class="vn">Decider 4B, 4.7B</span><span class="vt"><i style="width:81.4%"></i></span><b>40.70</b></div><div class="vr"><span class="vn">RSI-Jev v5.0-VL, 3B</span><span class="vt"><i style="width:76.8%"></i></span><b>38.38</b></div><div class="vaxis" aria-hidden="true"><span class="vn"></span><span class="vticks"><span style="left:0%">0</span><span style="left:20%">10</span><span style="left:40%">20</span><span style="left:60%">30</span><span style="left:80%">40</span><span style="left:100%">50</span></span><b></b></div></div>
-    <p class="small">The best decision model at its size.</p>
+    <div class="vbars" id="di6"><div class="vr us"><span class="vn">RSI-Jev v6.0-VL, 4B</span><span class="vt"><i style="width:92.5%"></i></span><b>46.24</b></div><div class="vr"><span class="vn">JPT-4B, 4.7B</span><span class="vt"><i style="width:86.1%"></i></span><b>43.04</b></div><div class="vr"><span class="vn">Jet v6.2, 4.7B</span><span class="vt"><i style="width:85.2%"></i></span><b>42.60</b></div><div class="vr"><span class="vn">Decider 4B, 4.7B</span><span class="vt"><i style="width:81.4%"></i></span><b>40.70</b></div><div class="vr"><span class="vn">RSI-Jev v5.0-VL, 3B</span><span class="vt"><i style="width:76.8%"></i></span><b>38.38</b></div><div class="vaxis" aria-hidden="true"><span class="vn"></span><span class="vticks"><span style="left:0%">0</span><span style="left:20%">10</span><span style="left:40%">20</span><span style="left:60%">30</span><span style="left:80%">40</span><span style="left:100%">50</span></span><b></b></div></div>
+    <p class="small">The best 4B model on the board.</p>
     <p class="small">Decision Index 0.2.1 public board 2026-09-28; v6.0-VL full run. Sizes are served parameters.</p>
   </div>
 </section>
@@ -863,7 +863,7 @@ footer { padding-block: 36px 64px; font-size: 13px; }
   <h2>Three commands</h2>
   <div class="steps">
     <div class="cmd"><span class="k">1</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"</code></pre></div></div>
-    <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v6.0-vl-5b --effort auto</code></pre></div></div>
+    <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v6.0-vl-4b --effort auto</code></pre></div></div>
     <div class="cmd"><span class="k">3</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
   "questions": {"refund": {"type": "noul",
@@ -907,7 +907,7 @@ footer { padding-block: 36px 64px; font-size: 13px; }
 <footer>
   <span>RSI-Jev · code MIT · weights Apache-2.0</span>
   <a href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-5b">Hugging Face</a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b">Hugging Face</a>
   <a href="https://shgao.site">Shanghua Gao</a>
 </footer>
 </div>
