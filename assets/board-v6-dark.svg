@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" width="880" height="330" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="880" height="330" rx="14" fill="#0d0f14"/>
+<text x="32" y="40" font-size="20" font-weight="600" fill="#eef0f6">Decision Index 0.2.1 · public board · 4B models and smaller</text>
+<text x="32" y="95" font-size="16" font-weight="600" fill="#eef0f6">RSI-Jev v6.0-VL</text>
+<text x="218" y="95" font-size="13" text-anchor="end" fill="#8d93a5">4.7B</text>
+<rect x="230" y="82" width="490.1" height="16" rx="8" fill="#8f9cff"/>
+<text x="730.1" y="95" font-size="16" font-weight="600" fill="#eef0f6">46.24</text>
+<text x="32" y="141" font-size="16" font-weight="400" fill="#eef0f6">JPT-4B</text>
+<text x="218" y="141" font-size="13" text-anchor="end" fill="#8d93a5">4.7B</text>
+<rect x="230" y="128" width="456.2" height="16" rx="8" fill="#3a3f4d"/>
+<text x="696.2" y="141" font-size="16" font-weight="400" fill="#eef0f6">43.04</text>
+<text x="32" y="187" font-size="16" font-weight="400" fill="#eef0f6">Jet v6.2</text>
+<text x="218" y="187" font-size="13" text-anchor="end" fill="#8d93a5">4.7B</text>
+<rect x="230" y="174" width="451.6" height="16" rx="8" fill="#3a3f4d"/>
+<text x="691.6" y="187" font-size="16" font-weight="400" fill="#eef0f6">42.60</text>
+<text x="32" y="233" font-size="16" font-weight="400" fill="#eef0f6">Decider 4B</text>
+<text x="218" y="233" font-size="13" text-anchor="end" fill="#8d93a5">4.7B</text>
+<rect x="230" y="220" width="431.4" height="16" rx="8" fill="#3a3f4d"/>
+<text x="671.4" y="233" font-size="16" font-weight="400" fill="#eef0f6">40.70</text>
+<text x="32" y="279" font-size="16" font-weight="400" fill="#eef0f6">RSI-Jev v5.0-VL</text>
+<text x="218" y="279" font-size="13" text-anchor="end" fill="#8d93a5">3.25B</text>
+<rect x="230" y="266" width="406.8" height="16" rx="8" fill="#3a3f4d"/>
+<text x="646.8" y="279" font-size="16" font-weight="400" fill="#eef0f6">38.38</text>
+<text x="32" y="308" font-size="13" fill="#8d93a5">Board of 2026-09-28; v6.0-VL scored on the full run, rows overlapping its training data removed. 14th of 71 overall.</text>
+</svg>

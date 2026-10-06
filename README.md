@@ -1,21 +1,15 @@
 <h1 align="center">RSI-Jev</h1>
 
 <p align="center">
-<b>A recursively self-improving research system that builds
-<a href="https://docs.typesafe.ai/api">Jev</a>-style <i>System One</i> models.</b>
-</p>
-
-<p align="center">
-  <b><a href="docs/history.md">How each release was found</a> ·
-  <a href="EXPLORE.md">Every experiment, failures included</a> ·
-  <a href="docs/rl.md">Where RL helped and didn't</a></b>
+<b>A recursively self-improving research loop that builds
+<a href="https://docs.typesafe.ai/api">Jev</a>-style <i>System One</i> decision models.</b>
 </p>
 
 <p align="center">
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="https://shanghua-gao.github.io/RSI-Jev/">Demos</a> ·
-  <a href="https://colab.research.google.com/github/Shanghua-Gao/RSI-Jev/blob/main/notebooks/rsi_jev_v5_vl_quickstart.ipynb">Colab</a> ·
   <a href="docs/inference.md">Docs</a> ·
+  <a href="EXPLORE.md">Every experiment</a> ·
   <a href="versions/v6.0-vl.md">Release notes</a>
 </p>
 
@@ -25,21 +19,113 @@
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
-AI agents propose the hypotheses, register their predictions before spending GPU time, run
-the experiments, and retire their own champions when the evidence says to. Every release, and
-every experiment that failed on the way, is published with its numbers. The loop running the
-research is the next version of [AutoScientists](https://github.com/mims-harvard/AutoScientists).
+AI agents propose the hypotheses, register their predictions before spending GPU time, run the
+experiments, and retire their own champions when the evidence says to. Every release, and every
+experiment that failed on the way, is published with its numbers. The loop is the next version of
+[AutoScientists](https://github.com/mims-harvard/AutoScientists).
+
+- **7 releases in 12 days**, from v1.0 to v6.0-VL, each trained, evaluated and documented by the loop.
+- **471 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
+- **v6.0-VL 4B scores 46.24 on the public Decision Index**, the best 4B model on the board.
 
 <p align="center">
-  <img src="assets/loop-social.gif" width="720" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/board-v6-dark.svg">
+    <img src="assets/board-v6-light.svg" width="760" alt="Decision Index public board, 4B models and smaller: RSI-Jev v6.0-VL 46.24, JPT-4B 43.04, Jet v6.2 42.60, Decider 4B 40.70, RSI-Jev v5.0-VL 38.38">
+  </picture>
 </p>
 
-**Read the exploration:** of 471 experiments since v1.0 (the latest 97 counted by a slightly different rule), the ones that made a release are in
-[**docs/history.md**](docs/history.md); all the others, with why each failed, are in
-[**EXPLORE.md**](EXPLORE.md); the reinforcement-learning arms are in [**docs/rl.md**](docs/rl.md).
+## What it builds
+
+Models that answer a yes/no, pick-one-of-*k* or rate-on-a-rubric question about a document, a chat
+or an image. One forward pass returns a calibrated probability for every option. Nothing is
+generated, so there are no reasoning tokens to spend.
+
+What v6.0-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
+how many layers a request uses:
+
+| effort | layers | median latency | use it for |
+|---|---|---|---|
+| `low` | 16 | 23 ms | intent, routing, retrieval: layer 16 is already as good as 32 |
+| `medium` | 20 | 27 ms | classification and judgement |
+| `high` | 32 | 40 ms | knowledge, multi-step reasoning, code |
+| `auto` | 16, 20 or 32 | – | mixed traffic: stops at the first layer that is confident enough |
+
+Fast when it's easy, deep when it's hard. Which tasks need which depth:
+[docs/effort-depth.md](docs/effort-depth.md).
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
+  <br><sub>Capsules photo from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
+</p>
+
+## Quickstart
+
+```bash
+pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve v6.0-vl-4b --effort auto --port 8000
+```
+
+```bash
+curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "model": "jev-latest",
+  "state": "I was charged twice. Please refund.",
+  "questions": {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}}
+}'
+```
+
+Or in Python, with no server:
+
+```python
+from rsijev import Decider
+
+d = Decider("v6.0-vl-4b")
+d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
+         {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
+         images=["photo.jpg"])
+```
+
+The server speaks Jev's API, so an existing Jev client works once its base URL points here. Every
+response reports which layer answered and how confident it was. Options and limits:
+[`serve/README.md`](serve/README.md); setups and what each costs: [`docs/inference.md`](docs/inference.md).
+
+## Releases
+
+| Model | Input | Decision Index | Held-out set | |
+|---|---|---|---|---|
+| **v6.0-VL-4B** | text, images | **46.24** | **0.698** | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
+| v5.0-VL-3B | text, images | 38.38 | 0.689 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
+| v4.0-VL-2B | text, images | – | 0.653 | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
+| v3.0-2B | text | – | 0.649 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
+| v2.1-2B | text | – | 0.633 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
+| v2.0-2B | text | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) |
+| v1.0-2B | text | – | 0.604 | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
+| v1.0-0.8B | text | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
+
+Decision Index 0.2.1 is the public benchmark, full run. The held-out set is our zero-shot check: no
+release trained on it. All are fine-tuned from Qwen3.5 Base; v6.0-VL runs the whole Qwen3.5-4B-Base
+and can answer at layer 16, 20 or 32 of it. Every number, caveat and per-benchmark score is in the
+[release records](versions/).
+
+- **2026-10-06 · v6.0-VL 4B** chooses its depth per question. Decision Index 38.38 → 46.24.
+- **2026-10-02 · v5.0-VL 3B** cuts the model to the first 20 of 32 layers and says "unknown" when a question has no answer.
+- **2026-10-01 · v4.0-VL** reads images, with text held at v3.0's level.
+- **2026-09-28 · v3.0** is the first release where reinforcement learning helps.
+
+## How it got here
+
+<p align="center">
+  <img src="assets/loop-social.gif" width="680" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite; grey dots are the experiments that did not clear it">
+  <br><sub>The loop's first three releases: each grey dot is an experiment that did not beat the champion.</sub>
+</p>
+
+The experiments that made a release are in [docs/history.md](docs/history.md); all the others,
+with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learning arms are in
+[docs/rl.md](docs/rl.md).
 
 <details>
-<summary><b>The path from v1.0 to v6.0-VL: each experiment that moved a release, and what it ruled out</b></summary>
+<summary><b>Each experiment that moved a release, from v1.0 to v6.0-VL</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -73,92 +159,12 @@ research is the next version of [AutoScientists](https://github.com/mims-harvard
 
 </details>
 
-## What it builds
-
-Models that answer a yes/no, pick-one-of-*k* or rate-on-a-rubric question about a document, a
-chat or an image. One forward pass returns a calibrated probability for every option; nothing is
-generated. A second question about a document already read takes about 10 ms.
-
-<p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/capsules-dark.webp"><img src="site/assets/v4/capsules-light.webp" width="49%" alt="A tray of gel capsules, one leaking: defective, 68% sure"></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="site/assets/v4/keep-file-dark.webp"><img src="site/assets/v4/keep-file-light.webp" width="49%" alt="A delete-file dialog; the user said keep the file: Cancel, 99% sure"></picture>
-  <br><sub>Capsules photo from VisA (Zou et al. 2022, CC BY 4.0, resized).</sub>
-</p>
-
-### News
-
-- **2026-10-06 · v6.0-VL 4B** picks its depth per question: it answers at layer 16, 20 or 32 of
-  Qwen3.5-4B-Base, whichever is the first to be confident. Decision Index 46.24, the highest on the
-  public board among 4B models and anything smaller; four effort levels from 23 to 40 ms.
-  [Release notes](versions/v6.0-vl.md)
-- **2026-10-02 · v5.0-VL 3B** cuts the LLM to what a System One model needs: the first 20 of
-  Qwen3.5-4B's 32 layers, 3.25B parameters. MMLU-Pro 0.385 → 0.429, held-out images 0.802 →
-  0.829, Decision Index 38.38, and it says "unknown" when a question has no answer (KoBBQ 0.18 → 0.93).
-  [Release notes](versions/v5.0-vl.md)
-- **2026-10-01 · v4.0-VL** reads images: 80.3% on five held-out image benchmarks, text held
-  at v3.0's level, calibration error 0.066 → 0.043. On VisA defect photos it scores 86.6
-  AUROC with no defect examples, against 82.9 for Gemma 4 12B.
-  [Release notes](versions/v4.0-vl.md)
-- **2026-09-28 · v3.0** is the first release where reinforcement learning helps: +60%
-  reranking R@1 over its supervised parent. [Release notes](versions/v3.0.md)
-
-## Quickstart
-
-```bash
-pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v6.0-vl-4b --port 8000
-```
-
-```bash
-curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
-  "model": "jev-latest",
-  "state": "I was charged twice. Please refund.",
-  "questions": {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}}
-}'
-```
-
-Or in Python, with no server:
-
-```python
-from rsijev import Decider
-
-d = Decider("v6.0-vl-4b")
-d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
-         {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
-         images=["photo.jpg"])
-```
-
-The server speaks Jev's API, so an existing Jev client works once its base URL points here.
-Images, limits and every option: [`serve/README.md`](serve/README.md). Choosing a setup and
-what each costs: [`docs/inference.md`](docs/inference.md).
-
-## Models
-
-| Model | Input | 15-benchmark suite | Held-out set | ECE | |
-|---|---|---|---|---|---|
-| **v6.0-VL-4B** | text, images | **0.770**¹ | **0.698** | –² | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
-| v5.0-VL-3B | text, images | 0.764 | 0.689 | 0.050 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
-| v4.0-VL-2B | text, images | 0.756 | 0.653 | **0.043** | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
-| v3.0-2B | text | 0.756 | 0.649 | 0.066 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
-| v2.1-2B | text | 0.736 | 0.633 | 0.059 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
-| v2.0-2B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) |
-| v1.0-2B | text | 0.622 | 0.604 | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
-| v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
-
-¹ From v6.0-VL the suite and its ECE are reported without `open_jev_ood`, which overlapped training data (v5.0-VL's figures include it; see its errata in [`versions/v6.0-vl.md`](versions/v6.0-vl.md#8-corrections-to-v50-vls-record)). v6.0-VL's figures are as served by default.
-
-² v6.0-VL's suite calibration is not compared with earlier releases'; its held-out (final-set) ECE is 0.036 as served, against 0.042 for v5.0-VL.
-
-All are fine-tuned from Qwen3.5 Base; v5.0-VL runs the first 20 of Qwen3.5-4B-Base's 32 layers, and v6.0-VL answers at layer 16, 20 or 32 of it. Ten of the fifteen suite benchmarks contribute
-train-split data, so the held-out set is the zero-shot comparison; v1.0 never saw a train
-split. Per-benchmark scores, image results and caveats are in each release's
-[record](versions/). ECE is expected calibration error (lower is better).
-
 ## Documentation
 
 | | |
 |---|---|
 | [Inference guide](docs/inference.md) | setups, measured latency, speed-ups |
+| [Effort and depth](docs/effort-depth.md) | which tasks and questions need the deep layers |
 | [HTTP API](serve/README.md) | the Jev-compatible server |
 | [Benchmarks](BENCHMARKS.md) | what each number means and how to reproduce it |
 | [Release records](versions/) | how each release was built, what it scores, its limitations |
@@ -168,8 +174,8 @@ split. Per-benchmark scores, image results and caveats are in each release's
 
 ## Contributing
 
-A case where the model is confidently wrong, or a variant you tried that failed, is the most
-useful thing you can send: [report a wrong answer](https://github.com/Shanghua-Gao/RSI-Jev/issues/new?template=wrong-answer.yml)
+A case where the model is confidently wrong, or a variant you tried that failed, is the most useful
+thing you can send: [report a wrong answer](https://github.com/Shanghua-Gao/RSI-Jev/issues/new?template=wrong-answer.yml)
 · [report an experiment](https://github.com/Shanghua-Gao/RSI-Jev/issues/new?template=experiment.yml).
 Each becomes a registered prediction tested in the next version. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md). To collaborate or support the work with compute,
