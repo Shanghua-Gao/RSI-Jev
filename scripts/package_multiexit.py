@@ -1,4 +1,4 @@
-"""Package a multi-exit checkpoint with per-exit temperatures and its exit policy (v6.0-VL stage 5).
+"""Package a multi-exit checkpoint with per-exit temperatures and its exit policy (v6.0-VL stage 5, v6.1-VL stage 5).
 
 Nothing is trained or fitted here: the inputs are the head-stage checkpoint and the outputs
 of scripts/select_exit_policy.py. The steps are those that built v6.0-VL's package, in order:
@@ -21,11 +21,19 @@ of scripts/select_exit_policy.py. The steps are those that built v6.0-VL's packa
   4. --thresholds: adaptive.auto_thresholds = the confirmed per-exit thresholds
      (effort=auto; serve/release.py auto_thresholds), tau stays the single-number default.
 
+v6.1-VL (a weight average, scripts/soup_checkpoints.py) has no seed or cascade-selection step:
+--temperatures takes every exit's temperature, the main exit's included, from the thresholds
+step's refit ("T"), so cal_logT and calibration.json's main_logT are the same number, and
+--single-tau takes the single-number tau from `thresholds --single` (its fallback included,
+recorded as not confirmed).
+
 The tower is linked, not copied. The output loads with serve/release.py like any release
 checkpoint (base model from the Hub).
 
   python scripts/package_multiexit.py --ckpt D/heads-s1 --seed-metric D/policy/seed.json --seed s1 \\
       --policy D/policy/cascade.json --drop-exit 12 --thresholds D/policy/auto.json --out D/package
+  python scripts/package_multiexit.py --ckpt D/soup --temperatures D/policy/auto.json \\
+      --single-tau D/policy/single.json --drop-exit 12 --thresholds D/policy/auto.json --out D/package
 """
 from __future__ import annotations
 
@@ -58,6 +66,22 @@ def adaptive_block(policy: dict) -> dict:
             "tuned_on": "policy development set: half A (temperatures, policy fit), half B (selection)",
             "dev": policy["dev"][policy["binding"]]["B"],
             "skip_exits": sorted(int(k) for k in (S.get("skip_exit_logT") or {}))}
+
+
+def single_tau_block(exits: list, single: dict) -> dict:
+    """meta.json adaptive for a cascade over `exits` with the single tau of `thresholds --single`."""
+    sel = single["selection"]
+    tau = float(sel["tau"]["16"])
+    assert float(sel["tau"]["20"]) == tau, sel["tau"]
+    blk = {"exits": sorted(int(x) for x in exits), "tau": tau, "conf": "temp", "policy": f"C16_t{tau}",
+           "tuned_on": "policy development set: half A (temperatures, selection), half B (confirmation)",
+           "confirmed": bool(sel.get("CONFIRMED"))}
+    if sel.get("fallback"):
+        blk["fallback"] = True
+        blk["dev"] = sel.get("fallback_B")
+    elif sel.get("winner"):
+        blk["dev"] = {k: v for k, v in single["dev"][sel["winner"]]["B"].items() if k != "feas"}
+    return blk
 
 
 def patch_serving_fields(meta: dict) -> dict:
@@ -93,9 +117,12 @@ def drop_exit(meta: dict, cal: dict, aux: dict, L: int):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--ckpt", required=True, help="the head-stage checkpoint (scripts/fit_head.py --heads all)")
-    ap.add_argument("--seed-metric", required=True, help="select_exit_policy.py seed output")
-    ap.add_argument("--seed", required=True, help="this checkpoint's name in --seed-metric")
-    ap.add_argument("--policy", required=True, help="select_exit_policy.py policy output")
+    ap.add_argument("--seed-metric", help="select_exit_policy.py seed output")
+    ap.add_argument("--seed", help="this checkpoint's name in --seed-metric")
+    ap.add_argument("--policy", help="select_exit_policy.py policy output")
+    ap.add_argument("--temperatures", help="instead of --seed-metric/--policy: a thresholds output whose \"T\" "
+                    "gives every exit's logT, the main exit's included")
+    ap.add_argument("--single-tau", help="with --temperatures: a `thresholds --single` output (the default tau)")
     ap.add_argument("--thresholds", default="", help="select_exit_policy.py thresholds output (CONFIRMED)")
     ap.add_argument("--drop-exit", type=int, action="append", default=[])
     ap.add_argument("--cal-buffers", default="", help="an existing calibration.safetensors to carry along")
@@ -107,18 +134,29 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     meta = json.loads((src / "meta.json").read_text())
     main_L = int(meta["spec"]["arch_extra"]["exit_layer"])
-    seed = json.loads(Path(a.seed_metric).read_text())["metrics"][a.seed]
-    policy = json.loads(Path(a.policy).read_text())
-
-    # 1. temperatures: the served main-exit temperature from the checkpoint's own DEV
+    fit = "per exit: question-type-weighted NLL grid on half A of the policy development set"
     buf = load_file(a.cal_buffers) if a.cal_buffers else {}
-    buf["cal_logT"] = torch.tensor(float(seed["per_exit"][str(main_L)]["logT"]), dtype=torch.float32)
-    # 2. the policy
-    S = policy["serve"]
-    assert int(S["exits"][-1]) == main_L, (S["exits"], main_L)
-    cal = calibration_block(main_L, S["logT"], S.get("skip_exit_logT"),
-                            "per exit: question-type-weighted NLL grid on half A of the policy development set")
-    meta["adaptive"] = adaptive_block(policy)
+    if a.temperatures:
+        if not a.single_tau or a.policy or a.seed_metric:
+            raise SystemExit("--temperatures goes with --single-tau, without --seed-metric / --policy")
+        logT = {int(k): float(v) for k, v in json.loads(Path(a.temperatures).read_text())["T"].items()}
+        # 1. one temperature per exit, the main exit's from the same fit
+        buf["cal_logT"] = torch.tensor(logT[main_L], dtype=torch.float32)
+        cal = calibration_block(main_L, logT, None, fit)
+        # 2. the single-number tau
+        meta["adaptive"] = single_tau_block(list(logT), json.loads(Path(a.single_tau).read_text()))
+    else:
+        if not (a.seed_metric and a.seed and a.policy):
+            raise SystemExit("need --seed-metric, --seed and --policy (or --temperatures and --single-tau)")
+        seed = json.loads(Path(a.seed_metric).read_text())["metrics"][a.seed]
+        policy = json.loads(Path(a.policy).read_text())
+        # 1. temperatures: the served main-exit temperature from the checkpoint's own DEV
+        buf["cal_logT"] = torch.tensor(float(seed["per_exit"][str(main_L)]["logT"]), dtype=torch.float32)
+        # 2. the policy
+        S = policy["serve"]
+        assert int(S["exits"][-1]) == main_L, (S["exits"], main_L)
+        cal = calibration_block(main_L, S["logT"], S.get("skip_exit_logT"), fit)
+        meta["adaptive"] = adaptive_block(policy)
     patch_serving_fields(meta)
     aux = load_file(str(src / "aux_scorers.safetensors"))
     # 3. exits the policy never uses

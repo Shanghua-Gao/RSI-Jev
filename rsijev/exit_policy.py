@@ -22,7 +22,15 @@ Three steps, in the order v6.0-VL ran them:
     the last exit), the feasible point with the best Decision-Index-metric U on a
     shift-matched set wins (ties within .002: lower depth, then lower tau16, tau20),
     and it must be confirmed on half B (feasible there and better than the single-tau
-    cascade at 0.59).
+    cascade at 0.59). With single=True the same rule runs over one tau shared by both
+    early exits (the default for multi-question requests); when no member is confirmed
+    it falls back to 0.95, the most conservative member, recorded as not confirmed
+    (v6.1-VL).
+
+Before a refit on a new checkpoint (v6.1-VL, a weight average of two fine-tunes), every
+development row whose case id, or whose state and first question, appears in a training
+corpus of either parent is dropped from every dump: overlap_case_ids finds them,
+drop_case_ids removes them.
 
 The halves of every development set are fixed by a hash of the case id
 (sha256("policy3-half:" + case_id) % 2: 0 -> A, 1 -> B); the checkpoint's own DEV dump
@@ -30,6 +38,7 @@ maps its "cal" half to A and its "tau" half to B.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections import defaultdict
@@ -76,6 +85,77 @@ def half_of(cid: str) -> str:
 
 def load(p):
     return torch.load(p, map_location="cpu", weights_only=False)
+
+
+# ---------------------------------------------------------------- development rows a parent trained on
+def row_keys(row: dict) -> tuple:
+    """(case id, content key) of a corpus or development row: the content key hashes the
+    state and the first question's instructions and options, so a row re-keyed under a new
+    case id still matches."""
+    st = json.dumps(row.get("state", {}), sort_keys=True)
+    qs = row.get("questions") or []
+    q0 = json.dumps([(q.get("instructions") or q.get("prompt") or "", q.get("options")) for q in qs][:1], sort_keys=True)
+    return row.get("case_id"), hashlib.md5((st + q0).encode()).hexdigest()
+
+
+def overlap_case_ids(dev_rows, corpus_rows, dev_case_ids=()) -> set:
+    """Development case ids that a training corpus contains, by case id or by content.
+
+    dev_rows: development rows (dicts with case_id, state, questions); dev_case_ids: further
+    ids (a dump's own DEV rows, matched by id only); corpus_rows: training rows."""
+    ids, by_key = set(dev_case_ids), defaultdict(list)
+    for r in dev_rows:
+        c, k = row_keys(r)
+        if c is None:
+            continue
+        ids.add(c)
+        by_key[k].append(c)
+    hit = set()
+    for r in corpus_rows:
+        c, k = row_keys(r)
+        if c in ids:
+            hit.add(c)
+        hit.update(by_key.get(k, ()))
+    return hit
+
+
+def jsonl_rows(root, skip=("dev", "held")):
+    """Every dict row with a case_id under root (recursively); files whose name contains
+    one of `skip` (a corpus's held-out files) are left out."""
+    for f in sorted(Path(root).rglob("*.jsonl")):
+        if any(s in f.name for s in skip):
+            continue
+        for line in open(f):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and "case_id" in r:
+                yield r
+
+
+def drop_case_ids(dump: dict, excluded) -> dict:
+    """The dump without the rows whose case_id is excluded: every tensor, list and per-exit
+    dict aligned with case_id is cut the same way. A dump without case ids (an image dump)
+    is returned as it is."""
+    if "case_id" not in dump:
+        return dump
+    ex = set(excluded)
+    cid = list(dump["case_id"])
+    n = len(cid)
+    keep = [i for i, c in enumerate(cid) if c not in ex]
+    ix = torch.tensor(keep, dtype=torch.long)
+
+    def cut(v):
+        if torch.is_tensor(v) and v.dim() > 0 and v.shape[0] == n:
+            return v[ix]
+        if isinstance(v, list) and len(v) == n:
+            return [v[i] for i in keep]
+        if isinstance(v, dict) and v and all((torch.is_tensor(x) and x.dim() > 0 and x.shape[0] == n)
+                                             or (isinstance(x, list) and len(x) == n) for x in v.values()):
+            return {k: cut(x) for k, x in v.items()}
+        return v
+    return {k: cut(v) for k, v in dump.items()}
 
 
 # ---------------------------------------------------------------- temperatures
@@ -435,13 +515,21 @@ class Thresholds:
 
     G16 = [.59, .65, .70, .75, .80, .85, .90, .95]
     G20 = [.50, .59, .70, .80]
+    # single=True: one tau at both early exits (the union of the two grids), and the
+    # member taken when the A winner is not confirmed on B.
+    G_SINGLE = [.50, .59, .65, .70, .75, .80, .85, .90, .95]
+    FALLBACK = .95
     DCAP, TOL, TIE = 24.0, .003, .002
 
-    def __init__(self, v1: dict, T: dict, WB: dict, CHANCE: dict):
+    def __init__(self, v1: dict, T: dict, WB: dict, CHANCE: dict, single: bool = False):
         self.v1, self.T, self.WB, self.CHANCE = v1, {int(k): float(v) for k, v in T.items()}, WB, CHANCE
         self.EX = v1["EX"]
         self.EXT = torch.tensor(self.EX, dtype=torch.float)
-        self.grid = [{"kind": "pm", "tau": {16: a, 20: b}} for a in self.G16 for b in self.G20]
+        self.single = single
+        if single:
+            self.grid = [{"kind": "pm", "tau": {16: t, 20: t}} for t in self.G_SINGLE]
+        else:
+            self.grid = [{"kind": "pm", "tau": {16: a, 20: b}} for a in self.G16 for b in self.G20]
         self.pols = {"fixed16": {"kind": "fixed", "L": 16}, "fixed20": {"kind": "fixed", "L": 20},
                      "fixed32": {"kind": "fixed", "L": 32}}
         self.pols.update({self.name(p): p for p in self.grid})
@@ -657,6 +745,13 @@ class Thresholds:
             sel["CONFIRMED"] = bool(win != self.c16 and all(b["feas"].values()) and b["sm_U"] > res["dev"][self.c16]["B"]["sm_U"])
         else:
             sel["CONFIRMED"] = False
+        if self.single:
+            sel["family"] = "single"
+            if not sel["CONFIRMED"]:
+                sel["fallback"] = True
+                sel["tau"] = {"16": self.FALLBACK, "20": self.FALLBACK}
+                fb = self.name({"tau": {16: self.FALLBACK, 20: self.FALLBACK}})
+                sel["fallback_B"] = {k: v for k, v in res["dev"][fb]["B"].items() if k != "feas"}
         res["selection"] = sel
         return res
 
