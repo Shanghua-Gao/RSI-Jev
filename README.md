@@ -29,7 +29,7 @@ experiment that failed on the way, is published with its numbers. The loop is th
 
 - **8 releases in 13 days**, from v1.0 to v6.1-VL, each trained, evaluated and documented by the loop.
 - **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
-- **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, tied for best at 4B.
+- **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, up from 46.23 for v6.0-VL.
 
 <p align="center">
   <picture>
