@@ -8,8 +8,7 @@
 same base, trained on other data. Nothing was trained after the average; the loop refit each
 exit's temperature and chose the exit thresholds again. The gain is in the averaged tower. At
 layer 32 it leads v6.0-VL on the suite (0.793 vs 0.770) and the held-out set (0.728 vs 0.695),
-and it scores 50.98 on the public Decision Index 0.3 (v6.0-VL 46.23), tied with the best 4B model
-on the board. Calibration is worse than v6.0-VL's (final ECE 0.048 vs 0.036).
+and it scores 50.98 on the public Decision Index 0.3 (v6.0-VL 46.23). Calibration is worse than v6.0-VL's (final ECE 0.048 vs 0.036).
 [`versions/v6.1-vl.md`](../versions/v6.1-vl.md) is its record.
 
 <details>
