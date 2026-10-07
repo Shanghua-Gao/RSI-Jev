@@ -1,0 +1,85 @@
+{
+ "what": "v6.1-VL = the uniform average of two fine-tunes of Qwen/Qwen3.5-4B-Base with the same architecture (decision heads at layers 12, 16, 20 and 32; 12 dropped at packaging). Member A is v6.0-VL's head-stage checkpoint; member B is a second line of the same model family trained on other data. Both share the base's frozen token embeddings; their towers are separate fine-tune chains.",
+ "member_A": {
+  "name": "heads-s1 (v6.0-VL)",
+  "recipe": "data/v6.0-vl_recipe/ stages 1-4 (trunk with detached exits, exit-head refit, images, all four heads; seed 1)"
+ },
+ "member_B_chain": [
+  {
+   "stage": "B0",
+   "out": "b-trunk/s17",
+   "init": "Qwen/Qwen3.5-4B-Base",
+   "steps": 28886,
+   "batch": 16,
+   "grad_accum": 8,
+   "lr_base": 5e-06,
+   "lr_head": 0.0001,
+   "corpus": "b-text-corpus (95 sources, 304,521 training questions; not public)",
+   "what": "text from the base, all 32 layers (the lowest 8 at a tenth of the learning rate), main head at layer 32 and exit heads at 12, 16 and 20 trained with the trunk (attached, not detached): cross-entropy at every exit plus distillation to the main head at 0.5; one epoch; 32k middle-cut encoder",
+   "spec": "not in this directory: the corpus is not public"
+  },
+  {
+   "stage": "B1",
+   "out": "b-images/s17",
+   "init": "b-trunk/s17",
+   "steps": 3000,
+   "batch": 16,
+   "grad_accum": 8,
+   "lr_base": 2e-06,
+   "lr_head": 5e-05,
+   "corpus": "image-corpus (the corpus of v6.0-VL's stage 3; 30,736 training cases)",
+   "what": "images, layers 0-7 frozen, exits 12/16/20 carried"
+  },
+  {
+   "stage": "B2",
+   "out": "b-domain-1/s17",
+   "init": "b-images/s17",
+   "steps": 3000,
+   "batch": 16,
+   "grad_accum": 8,
+   "lr_base": 2e-06,
+   "lr_head": 5e-05,
+   "lr_aux": 0.0001,
+   "aux_exit_weights": {
+    "12": 0.3,
+    "16": 0.3,
+    "20": 0.3
+   },
+   "corpus": "domain-mix-1 (158 sources, 37,143 training questions; not public)",
+   "what": "Decision Index training pools 35%, knowledge 15%, replay 50%; exit heads detached",
+   "spec": "the schema and settings of 1-member-b-domain-mix.json except init (b-images/s17), corpus (158 sources: that spec's minus the 13 listed in 1-member-b-domain-mix.json 'sources_added') and why"
+  },
+  {
+   "stage": "B3",
+   "out": "b-domain-2/s17",
+   "spec": "1-member-b-domain-mix.json",
+   "sources_added": [
+    "dt_chess_sf",
+    "dt_crux_real_apps",
+    "dt_crux_real_mbpp",
+    "dt_halu_hotpot",
+    "dt_hardmc_arc_c",
+    "dt_hardmc_multirc",
+    "dt_hardmc_obqa",
+    "dt_hardmc_sciq",
+    "dt_home_sim",
+    "dt_intent_bare",
+    "dt_news_boundary",
+    "dt_pop909_real",
+    "dt_refusal_pairs"
+   ]
+  },
+  {
+   "stage": "B4",
+   "out": "b-heads-s1",
+   "spec": "2-member-b-heads.json"
+  }
+ ],
+ "then": [
+  "3-soup.json (A + B, uniform)",
+  "4-calibration.json (one temperature per exit, refit)",
+  "5-exit-policy.json (auto's thresholds and the single-number tau)"
+ ],
+ "member_B_alone": "not releasable: MMLU-Pro 0.418 at layer 32 against the 0.429 bar (every other bar passed)",
+ "why_one_basin": "the whole fine-tune chain moves the trunk by about 1.7% of its norm, so both members sit near the base; the averaged tower beats both members' towers under either member's heads"
+}

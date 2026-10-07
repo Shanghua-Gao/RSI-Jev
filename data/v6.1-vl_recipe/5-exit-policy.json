@@ -1,0 +1,89 @@
+{
+ "what": "the exit policy at the refit temperatures (4-calibration.json): (a) effort=auto's per-exit thresholds, (b) the single-number tau that the default cascade (multi-question requests, no effort) and a one-number confidence_threshold use",
+ "dev_sets": "as for v6.0-VL (data/v6.0-vl_recipe/6-exit-policy.json b_thresholds.dev_sets), after the exclusion in 4-calibration.json. The image development rows have no case id and are used unfiltered; images always exit at layer 32, so they enter every candidate equally and cannot move a threshold.",
+ "auto": {
+  "script": "scripts/select_exit_policy.py thresholds (A selects, B confirms), then thresholds --eval (one evaluation read)",
+  "rule": "v6.0-VL's rule unchanged: grid tau16 {.59 .65 .7 .75 .8 .85 .9 .95} x tau20 {.5 .59 .7 .8}; C1 suite-like depth <= 24, C2 suite-like U >= fixed 32 - .003, C3 held-out accuracy >= fixed 32 - .003; max shift-matched U on A (ties within .002: lower depth, lower tau16, tau20); confirmed when the A winner meets C1-C3 on B and its B shift-matched U beats the cascade at 0.59",
+  "check": "the same code on v6.0-VL's dumps reproduces v6.0-VL's thresholds (0.95 / 0.59, confirmed) and temperatures (logT 0.63 / 0.68 / 0.80)",
+  "result": {
+   "tau": {
+    "16": 0.85,
+    "20": 0.5
+   },
+   "CONFIRMED": true,
+   "A": {
+    "suite_U": 0.7738,
+    "suite_depth": 20.51,
+    "heldout_acc": 0.7389,
+    "sm_U": 0.6048
+   },
+   "B": {
+    "suite_U": 0.7835,
+    "suite_depth": 20.57,
+    "heldout_acc": 0.743,
+    "sm_U": 0.6191
+   },
+   "B_sm_U_cascade_0.59": 0.6008,
+   "B_fixed32": {
+    "suite_U": 0.7852,
+    "heldout_acc": 0.7446,
+    "sm_U": 0.6227
+   },
+   "B_fixed20": {
+    "suite_U": 0.7869,
+    "heldout_acc": 0.7416,
+    "sm_U": 0.6197
+   }
+  },
+  "eval_read": {
+   "suite_wo_open_jev_ood": 0.7924,
+   "final": 0.7324,
+   "mmlu_pro": 0.46,
+   "final_ece": 0.0547,
+   "depth_all": 19.48,
+   "depth_final": 19.73,
+   "share16/20/32": [
+    0.521,
+    0.349,
+    0.13
+   ],
+   "kobbq_acc": 0.9308,
+   "kobbq_amb_unknown": 0.9444,
+   "clinc_gold_plus1": 0.0067
+  },
+  "where_it_lives": "meta.json adaptive.auto_thresholds"
+ },
+ "single": {
+  "why": "v6.0-VL's single tau, 0.59, does not transfer: at the refit temperatures the early exits are sharper, and 0.59 sends about 77% of evaluation questions to layer 16 (held-out set 0.7183, final ECE 0.0615 in the served package)",
+  "script": "scripts/select_exit_policy.py thresholds --single",
+  "rule": "written before the fit: the auto rule above restricted to one tau at both early exits, tau in {.50 .59 .65 .70 .75 .80 .85 .90 .95}; if no member is feasible on A, or the A winner fails on B, the fallback is 0.95 (the most conservative member), stated as not confirmed",
+  "result": {
+   "feasible_A": {
+    "0.80": {
+     "suite_depth": 23.15,
+     "sm_U": 0.601
+    },
+    "0.85": {
+     "suite_depth": 23.99,
+     "sm_U": 0.604
+    }
+   },
+   "winner_A": 0.85,
+   "winner_on_B": "fails C1: depth 24.08 > 24 (C2 and C3 hold; sm_U 0.6155 > 0.6008)",
+   "CONFIRMED": false,
+   "fallback": true,
+   "tau": {
+    "16": 0.95,
+    "20": 0.95
+   },
+   "fallback_B": {
+    "suite_U": 0.7852,
+    "heldout_acc": 0.7448,
+    "sm_U": 0.6225,
+    "suite_depth": 26.8
+   },
+   "stated_not_selected": "0.80 passed C1-C3 on both halves (B depth 23.28, sm_U 0.6132); the rule picks 0.95"
+  },
+  "where_it_lives": "meta.json adaptive.tau"
+ }
+}
