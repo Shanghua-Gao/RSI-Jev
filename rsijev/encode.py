@@ -20,7 +20,10 @@ import random
 from dataclasses import dataclass
 from typing import Literal, Sequence
 
-import torch
+try:
+    import torch
+except ImportError:      # encoding needs no torch; only collate / unpermute_logits do (rsijev/mlx)
+    torch = None
 
 from .contract import MODES, Case, Question
 

@@ -276,6 +276,11 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
+    ap.add_argument("--backend", default=os.environ.get("RSIJEV_BACKEND", "").strip().lower() or "torch",
+                    choices=["torch", "mlx"],
+                    help="torch (default): the PyTorch path. mlx: Apple Silicon, an MLX checkpoint "
+                         "made by scripts/convert_mlx.py (8-bit or bf16); same API and response "
+                         "fields, no torch needed. Also RSIJEV_BACKEND.")
 
 
 def serve(a: argparse.Namespace) -> int:
@@ -285,6 +290,8 @@ def serve(a: argparse.Namespace) -> int:
                          "shgao/rsi-jev-v3.0-qwen3.5-2b, or an alias such as v3.0-2b")
     for k, v in apply_profile(a.profile).items():
         print(f"profile {a.profile}: {k}={v}", flush=True)
+    if getattr(a, "backend", "torch") == "mlx":
+        return serve_mlx(a, ref)
 
     import torch
     import uvicorn
@@ -359,6 +366,60 @@ def serve(a: argparse.Namespace) -> int:
     print(f"serving {ref} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {s.meta['base_model']}, calibration {s.meta.get('calibration', 'none')}",
           flush=True)
+    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
+    return 0
+
+
+def serve_mlx(a: argparse.Namespace, ref) -> int:
+    """`serve` on the MLX backend (rsijev/mlx/serving.py): the same app, routes and response
+    fields; one request at a time (no micro-batching), no document cache."""
+    import uvicorn
+    from serve.app import create_app
+    from serve.effort import default_effort
+    from rsijev.mlx.serving import load_for_serving as load_mlx, model_worker as mlx_worker
+    if a.batch_window_ms is not None:
+        print("micro-batching is not available on the MLX backend; --batch-window-ms ignored", flush=True)
+    s = load_mlx(ref, revision=a.revision, max_length=getattr(a, "max_length", None),
+                 truncate=getattr(a, "truncate", None),
+                 fixed_exit=getattr(a, "fixed_exit", None) or None,
+                 adaptive=getattr(a, "adaptive", None), dtype=a.dtype)
+    effort = default_effort(getattr(a, "effort", None))
+    explicit_mode = (getattr(a, "adaptive", None) is not None) or bool(getattr(a, "fixed_exit", False))
+    if effort is not None and explicit_mode:
+        raise SystemExit("--effort / RSIJEV_EFFORT sets the default depth itself; drop "
+                         "--adaptive / --fixed-exit (and RSIJEV_ADAPTIVE / RSIJEV_FIXED_EXIT)")
+    scorer = mlx_worker(s, batch_size=a.batch_size, default_effort=effort)
+    if not a.no_warmup:
+        print(f"warm-up: {warm_up(scorer, images=s.prep is not None):.1f} s", flush=True)
+    name = a.served_model_name or s.name
+    served_version = a.version or s.version
+    app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
+                     accept_models=a.accept_model, images=s.image_limits,
+                     calibration=s.meta.get("calibration", "none"),
+                     **({"version": served_version} if served_version else {}))
+    import mlx.core as mx
+    rec = s.model.mlx_record.get("tower") or {}
+    print(f"runtime: mlx {mx.__version__}, {s.device}, tower {s.dtype_name}"
+          + (f" (affine g{rec.get('group_size')})" if rec.get("group_size") else "")
+          + ", heads fp32", flush=True)
+    sv = s.meta.get("serving") or {}
+    if sv.get("adaptive"):
+        ad = sv["adaptive"]
+        print(f"adaptive exit {ad.get('mode')}: exits {ad['exits']}, tau {ad['tau']} "
+              f"(usage.depth reports the layers run)", flush=True)
+    elif sv.get("adaptive_off"):
+        print(f"adaptive exit off: {sv['adaptive_off']}", flush=True)
+    if getattr(s.model, "effort_base", None) is not None:
+        print(f"effort: default {effort or 'unset (as above)'}; requests may ask for low, "
+              f"medium, high or auto (usage.effort reports it); images run at full depth", flush=True)
+    il = s.image_limits
+    if il.get("supported"):
+        print(f"images: up to {il['max_images']} per request, {il['image_token_budget']} image "
+              f"tokens per question", flush=True)
+    elif il.get("reason"):
+        print(f"images: off ({il['reason']})", flush=True)
+    print(f"serving {ref} on MLX as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
+          f"calibration {s.meta.get('calibration', 'none')}", flush=True)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")
     return 0
 

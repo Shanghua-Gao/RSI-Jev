@@ -23,6 +23,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install "transformers>=5.17,<5.18" safetensors huggingface_hub fastapi uvicorn httpx pytest pillow
+          # the MLX backend's converter and small-shape parity tests (mlx's Linux CPU build)
+          pip install "mlx[cpu]>=0.32"
 
       # Everything except the tests that need real weights, which are marked
       # `slow` and run on a machine that has them. tests/ is only what CI runs;
