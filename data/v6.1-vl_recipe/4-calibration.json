@@ -1,0 +1,48 @@
+{
+ "what": "one temperature per exit, refit on the averaged weights. v6.0-VL's temperatures do not transfer: averaging shrinks the logits, and at v6.0-VL's temperatures the average is underconfident",
+ "ckpt": "soup",
+ "method": "temp",
+ "option_pool_own_tokens": true,
+ "fit": "per exit L: logT_L = argmin over the grid -2..3 step .01 of the question-type-weighted NLL on the text rows of half A of the policy development set (the checkpoint's own DEV dump, 'cal' half, plus policy development set v1 text); image rows are not in the fit (rsijev/exit_policy.py fit_temperatures, run by select_exit_policy.py thresholds)",
+ "weights": "w = p_EVAL(cell) / n_half(cell), cell = (mode, option-count bucket <=2 | 3-4 | 5-9 | >=10), as for v6.0-VL",
+ "exclusion": {
+  "rule": "every development case id that a member's training corpus contains, by case id or by state + first question, is dropped from every development dump before the fit (select_exit_policy.py overlap, exclude); corpora checked: domain-mix-2, domain-mix-1, image-corpus",
+  "dropped_case_ids": {
+   "own DEV dump": 1969,
+   "policy-dev-v1": 1642,
+   "policy-dev-v2": 819,
+   "policy-dev-v2-fill": 297
+  },
+  "note": "the own-DEV part is over-inclusive: those rows are held out of training by the same hash rule that defines the DEV split, so the fit leans on the held-out proxy rows. The corpora of the earlier stages (b-text-corpus, v6.0-VL's text-corpus and its ancestors) were not checked."
+ },
+ "fitted": {
+  "logT": {
+   "12": -0.25,
+   "16": -0.14,
+   "20": -0.47,
+   "32": 0.02
+  },
+  "T": {
+   "16": 0.8694,
+   "20": 0.625,
+   "32": 1.0202
+  }
+ },
+ "v6.0-VL_for_reference": {
+  "logT_exits": {
+   "16": 0.63,
+   "20": 0.68
+  },
+  "main_exit_served_logT": 0.5
+ },
+ "exit_12": "fitted (logT -0.25) but dropped at packaging",
+ "package": {
+  "calibration.safetensors cal_logT": 0.02,
+  "calibration.json main_logT": 0.02,
+  "calibration.json exits": {
+   "16": -0.14,
+   "20": -0.47
+  },
+  "note": "one temperature per exit and no other calibration buffers; the main exit's value is the same in both files (package_multiexit.py --temperatures)"
+ }
+}

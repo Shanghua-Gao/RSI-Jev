@@ -1,0 +1,35 @@
+{
+ "what": "uniform weight average of two checkpoints: every tensor of tower.safetensors, scorer.safetensors (main head, layer 32) and aux_scorers.safetensors (exits 12/16/20) is the mean of the two members; nothing is trained",
+ "members": [
+  "heads-s1 (v6.0-VL, data/v6.0-vl_recipe)",
+  "b-heads-s1 (2-member-b-heads.json)"
+ ],
+ "weights": [
+  0.5,
+  0.5
+ ],
+ "script": "scripts/soup_checkpoints.py D/soup D/heads-s1 D/b-heads-s1",
+ "dtypes": "mean computed in fp32; tower stored in the first member's tower dtype; heads stored in fp32",
+ "asserts": "equal readout, layout, option_pool, max_options, arch_extra, residual, logit_cap, head_input_norm, readout_layer; identical tensor names per file",
+ "meta": "the first member's meta.json plus a soup block (members, weights)",
+ "packaging": "exit 12 is fitted (4-calibration.json) but dropped at packaging, as for v6.0-VL",
+ "selection": {
+  "rule": "pre-registered before any averaged number: the average must beat the better single member on half B of the policy development set at layer 32, then pass every release bar on one evaluation read",
+  "dev_B_layer32": "+0.0129 over the better member (z 2.08); +0.0184 (z 4.4) with the 969 development case ids found in a member's training data dropped",
+  "eval_read_layer32_vs_v6.0": {
+   "suite_without_open_jev_ood": [
+    0.7934,
+    0.7701
+   ],
+   "final": [
+    0.7284,
+    0.6953
+   ],
+   "mmlu_pro": [
+    0.462,
+    0.443
+   ]
+  }
+ },
+ "choice_of_weights": "after the fact, not a selection: 0.3 / 0.7 (v6.0-VL / member B) is level with 0.5 / 0.5 within noise, 0.7 / 0.3 is lower by 0.016 (z -3.7). The gain is in the tower: the averaged tower with v6.0-VL's own heads recovers 98% of the averaged model's gain at layer 32; v6.0-VL's tower with averaged heads recovers none."
+}

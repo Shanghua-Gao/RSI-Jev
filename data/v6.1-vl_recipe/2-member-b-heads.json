@@ -1,0 +1,43 @@
+{
+ "what": "member B, stage B4: all four decision heads (exits 12/16/20 and main 32) retrained on the frozen B3 tower under the own-token readout; same script and settings as v6.0-VL's stage 4",
+ "ckpt": "b-domain-2/s17",
+ "out": "b-heads-s1 (tower linked to B3; scorer and aux_scorers new)",
+ "script": "scripts/fit_head.py --heads all --sdpa-math --max-length 4096 --skip-prefix vis",
+ "heads": [
+  12,
+  16,
+  20,
+  32
+ ],
+ "steps": 600,
+ "batch": 8,
+ "lr": 1e-05,
+ "seed": 1,
+ "max_length": 4096,
+ "optimizer": "AdamW, weight_decay 0, no schedule, no clipping (as v6.0-VL stage 4)",
+ "loss": "sum over heads of soft-CE to gold",
+ "truncation": "middle cut",
+ "option_order": "canonical",
+ "attention_backend": "the MATH SDPA backend on every exit's scorer (--sdpa-math)",
+ "env": {
+  "RSIJEV_OPTION_POOL_OWN_TOKENS": "1"
+ },
+ "data": {
+  "corpus": "domain-mix-2",
+  "sources": "the B3 spec's text sources (vis* skipped): 141",
+  "excluded": "held-out cases of domain-mix-2 (sha256(case_id) % 10 == 0) and every state of a held-out case of the parent corpus domain-mix-1 (1,916 states)",
+  "cases_usable": 26215,
+  "rows_available": 31612,
+  "rows_used": 4800,
+  "rows_skipped": 0
+ },
+ "final_losses_step600": {
+  "12": 0.7447,
+  "16": 0.5373,
+  "20": 0.5152,
+  "32": 0.5126
+ },
+ "train_seconds": 2001,
+ "gpu": "1x RTX PRO 6000 Blackwell 96 GB",
+ "seed_choice": "seed 1 of {0, 1} was named in the averaging experiment's pre-registration before any averaged number was read. Member B's own seed selection had picked seed 0."
+}
