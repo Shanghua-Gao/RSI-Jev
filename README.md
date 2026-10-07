@@ -13,12 +13,12 @@
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="docs/inference.md">Docs</a> ·
   <a href="EXPLORE.md">Every experiment</a> ·
-  <a href="versions/v6.0-vl.md">Release notes</a>
+  <a href="versions/v6.1-vl.md">Release notes</a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-black" alt="MIT"></a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v6.1-vl-4b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
@@ -27,14 +27,14 @@ experiments, and retire their own champions when the evidence says to. Every rel
 experiment that failed on the way, is published with its numbers. The loop is the next version of
 [AutoScientists](https://github.com/mims-harvard/AutoScientists).
 
-- **7 releases in 12 days**, from v1.0 to v6.0-VL, each trained, evaluated and documented by the loop.
-- **471 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
-- **v6.0-VL 4B scores 46.24 on the public Decision Index**, the best 4B model on the board.
+- **8 releases in 13 days**, from v1.0 to v6.1-VL, each trained, evaluated and documented by the loop.
+- **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
+- **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, tied for best at 4B.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/board-v6-dark.svg">
-    <img src="assets/board-v6-light.svg" width="760" alt="Decision Index public board, 4B models and smaller: RSI-Jev v6.0-VL 46.24, JPT-4B 43.04, Jet v6.2 42.60, Decider 4B 40.70, RSI-Jev v5.0-VL 38.38">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/board-v6.1-dark.svg">
+    <img src="assets/board-v6.1-light.svg" width="760" alt="Decision Index 0.3 public index, 4B models and smaller: RSI-Jev v6.1-VL 50.98, ezjev 4B s2 50.82, RSI-Jev v6.0-VL 46.23, jiwo 4B 45.76, Nox 4B 44.21, JPT-4B 42.82">
   </picture>
 </p>
 
@@ -44,7 +44,7 @@ Models that answer a yes/no, pick-one-of-*k* or rate-on-a-rubric question about 
 or an image. One forward pass returns a calibrated probability for every option. Nothing is
 generated, so there are no reasoning tokens to spend.
 
-What v6.0-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
+What v6.1-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
 how many layers a request uses:
 
 | effort | layers | median latency | use it for |
@@ -52,7 +52,7 @@ how many layers a request uses:
 | `low` | 16 | 23 ms | intent, routing, retrieval: layer 16 is already as good as 32 |
 | `medium` | 20 | 27 ms | classification and judgement |
 | `high` | 32 | 40 ms | knowledge, multi-step reasoning, code |
-| `auto` | 16, 20 or 32 | – | mixed traffic: stops at the first layer that is confident enough |
+| `auto` | 16, 20 or 32 | 28 ms | mixed traffic: stops at the first layer that is confident enough |
 
 Fast when it's easy, deep when it's hard. Which tasks need which depth:
 [docs/effort-depth.md](docs/effort-depth.md).
@@ -67,7 +67,7 @@ Fast when it's easy, deep when it's hard. Which tasks need which depth:
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v6.0-vl-4b --effort auto --port 8000
+rsi-jev serve v6.1-vl-4b --effort auto --port 8000
 ```
 
 ```bash
@@ -83,7 +83,7 @@ Or in Python, with no server:
 ```python
 from rsijev import Decider
 
-d = Decider("v6.0-vl-4b")
+d = Decider("v6.1-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])
@@ -95,22 +95,25 @@ response reports which layer answered and how confident it was. Options and limi
 
 ## Releases
 
-| Model | Input | Decision Index | Held-out set | |
-|---|---|---|---|---|
-| **v6.0-VL-4B** | text, images | **46.24** | **0.698** | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
-| v5.0-VL-3B | text, images | 38.38 | 0.689 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
-| v4.0-VL-2B | text, images | – | 0.653 | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
-| v3.0-2B | text | – | 0.649 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
-| v2.1-2B | text | – | 0.633 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
-| v2.0-2B | text | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) |
-| v1.0-2B | text | – | 0.604 | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
-| v1.0-0.8B | text | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
+| Model | Input | Decision Index 0.3 | Decision Index 0.2.1 | Held-out set | |
+|---|---|---|---|---|---|
+| **v6.1-VL-4B** | text, images | **50.98** | **50.74** | **0.729** | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-4b) |
+| v6.0-VL-4B | text, images | 46.23 | 46.24 | 0.698 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
+| v5.0-VL-3B | text, images | – | 38.38 | 0.689 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
+| v4.0-VL-2B | text, images | – | – | 0.653 | [🤗](https://huggingface.co/shgao/rsi-jev-v4.0-vl-qwen3.5-2b) |
+| v3.0-2B | text | – | – | 0.649 | [🤗](https://huggingface.co/shgao/rsi-jev-v3.0-qwen3.5-2b) |
+| v2.1-2B | text | – | – | 0.633 | [🤗](https://huggingface.co/shgao/rsi-jev-v2.1-qwen3.5-2b) |
+| v2.0-2B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v2.0-qwen3.5-2b) |
+| v1.0-2B | text | – | – | 0.604 | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-2b) |
+| v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
-Decision Index 0.2.1 is the public benchmark, full run. The held-out set is our zero-shot check: no
-release trained on it. All are fine-tuned from Qwen3.5 Base; v6.0-VL runs the whole Qwen3.5-4B-Base
-and can answer at layer 16, 20 or 32 of it. Every number, caveat and per-benchmark score is in the
-[release records](versions/).
+Decision Index is the public benchmark, full runs of the default configuration: the 0.3 public
+index (scored with the pre-release 0.3 kit) and 0.2.1. The held-out set is our zero-shot check:
+no release trained on it. All are fine-tuned from Qwen3.5 Base; v6.0-VL and v6.1-VL run the whole
+Qwen3.5-4B-Base and can answer at layer 16, 20 or 32 of it. Every number, caveat and
+per-benchmark score is in the [release records](versions/).
 
+- **2026-10-07 · v6.1-VL 4B** averages v6.0-VL with a second fine-tune of the same base. Decision Index 0.3 46.23 → 50.98.
 - **2026-10-06 · v6.0-VL 4B** chooses its depth per question. Decision Index 38.38 → 46.24.
 - **2026-10-02 · v5.0-VL 3B** cuts the model to the first 20 of 32 layers and says "unknown" when a question has no answer.
 - **2026-10-01 · v4.0-VL** reads images, with text held at v3.0's level.
@@ -128,7 +131,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 [docs/rl.md](docs/rl.md).
 
 <details>
-<summary><b>Each experiment that moved a release, from v1.0 to v6.0-VL</b></summary>
+<summary><b>Each experiment that moved a release, from v1.0 to v6.1-VL</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -159,6 +162,9 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | 10,000 steps on a cleaned corpus instead of 40,000 on the old one | held-out +0.026, MMLU-Pro +0.043 | longer training overfits the suite; shorter and cleaner wins held out |
 | one temperature per exit and an exit policy fitted on held-out proxies of the test mix | every release bar passes at 20.9 layers on average | policies tuned on in-distribution rows stop too early on hard questions |
 | **v6.0-VL** | Decision Index **46.24**, MMLU-Pro **0.440** | **4B: answers at layer 16, 20 or 32, whichever is confident first** |
+| v6.0-VL averaged, weight 0.5 each, with a second fine-tune of the same base trained on other data | suite 0.793 and held-out 0.728 at layer 32, against 0.770 and 0.695 | the average beats both members; the gain is in the tower, the heads add nothing |
+| one temperature per exit and both thresholds chosen again for the average | `auto` at 0.85 / 0.50 matches layer 32 at 19.5 layers | averaging shrinks the logits: at v6.0-VL's temperatures it was underconfident; calibration ends worse than v6.0-VL's (final ECE 0.048 vs 0.036) |
+| **v6.1-VL** | Decision Index 0.3 **50.98**, held-out **0.729** | **4B: v6.0-VL averaged with a second fine-tune** |
 
 </details>
 

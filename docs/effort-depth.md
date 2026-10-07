@@ -34,6 +34,11 @@ Decision Index 0.2.1, a public benchmark of 38 decision tasks.
 This table compares effort levels on the same sample rows. The full benchmark, run as served by default,
 scores 46.24: on the 2026-09-28 board, the highest among 4B models and anything smaller (14th of 71 overall).
 
+*These are v6.0-VL's numbers. v6.1-VL, the average of v6.0-VL and a second fine-tune, reads 47.9 /
+50.8 / 51.4 / 50.9 (`low` / `medium` / `high` / `auto`) on the same rows. There layer 32 leads
+layer 20 by 0.7, so "20 layers, mostly" holds less well for v6.1-VL. The per-task and
+per-question analysis below was not repeated on it ([v6.1-VL's record](../versions/v6.1-vl.md)).*
+
 On this benchmark the last 12 layers add nothing on average. Layer 20 matches all 32 at about
 two thirds of the latency. Layer 16 gives up 2.6 points for the lowest latency.
 
@@ -117,7 +122,7 @@ weights, only the exit changed.
 
 - Model: [shgao/rsi-jev-v6.0-vl-4b](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b)
 - The full per-benchmark and per-question tables: [the release record, section 4.4](../versions/v6.0-vl.md#44-which-tasks-and-questions-need-depth)
-- How to set `effort` and `confidence_threshold`: [inference.md](inference.md#effort-levels-v60-vl)
+- How to set `effort` and `confidence_threshold`: [inference.md](inference.md#effort-levels)
 
 *Apart from the full-run score of 46.24, Decision Index numbers are 16,000-row sample reads of version 0.2.1 with one seed. Per-benchmark
 differences under 0.03 are within noise.*

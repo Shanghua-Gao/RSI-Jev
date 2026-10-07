@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 384" width="880" height="384" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="880" height="384" rx="14" fill="#ffffff"/>
+<text x="32" y="40" font-size="20" font-weight="600" fill="#14161c">Decision Index 0.3 · public index · 4B models and smaller</text>
+<text x="32" y="95" font-size="16" font-weight="600" fill="#14161c">RSI-Jev v6.1-VL</text>
+<rect x="230" y="82" width="540.4" height="16" rx="8" fill="#4b5bdc"/>
+<text x="780.4" y="95" font-size="16" font-weight="600" fill="#14161c">50.98</text>
+<text x="32" y="141" font-size="16" font-weight="400" fill="#14161c">ezjev 4B s2</text>
+<rect x="230" y="128" width="538.7" height="16" rx="8" fill="#d5d8e0"/>
+<text x="778.7" y="141" font-size="16" font-weight="400" fill="#14161c">50.82</text>
+<text x="32" y="187" font-size="16" font-weight="400" fill="#14161c">RSI-Jev v6.0-VL</text>
+<rect x="230" y="174" width="490.0" height="16" rx="8" fill="#d5d8e0"/>
+<text x="730.0" y="187" font-size="16" font-weight="400" fill="#14161c">46.23</text>
+<text x="32" y="233" font-size="16" font-weight="400" fill="#14161c">jiwo 4B</text>
+<rect x="230" y="220" width="485.1" height="16" rx="8" fill="#d5d8e0"/>
+<text x="725.1" y="233" font-size="16" font-weight="400" fill="#14161c">45.76</text>
+<text x="32" y="279" font-size="16" font-weight="400" fill="#14161c">Nox 4B</text>
+<rect x="230" y="266" width="468.6" height="16" rx="8" fill="#d5d8e0"/>
+<text x="708.6" y="279" font-size="16" font-weight="400" fill="#14161c">44.21</text>
+<text x="32" y="325" font-size="16" font-weight="400" fill="#14161c">JPT-4B</text>
+<rect x="230" y="312" width="453.9" height="16" rx="8" fill="#d5d8e0"/>
+<text x="693.9" y="325" font-size="16" font-weight="400" fill="#14161c">42.82</text>
+<text x="32" y="362" font-size="13" fill="#6b7080">Board of 2026-10-06; RSI-Jev full runs with the pre-release 0.3 kit. Within 0.25 counts as tied. v6.1-VL: 27th of 113.</text>
+</svg>

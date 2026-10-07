@@ -609,3 +609,33 @@ weighted mean **without `open_jev_ood`**, which overlapped training data; rows m
 
 The rows measured on the in-distribution suite (`lenx`, `dietx`, `keyv1`) use a 13-benchmark set without
 `open_jev_ood`, values around 0.80–0.83, not comparable with the 15-benchmark rows.
+
+## jevtr_v1, continued — from v6.0-VL to v6.1-VL (2026-10-05/06)
+
+Same loop and evaluator. **25 arms** ran in this window, counted as for v6.0-VL: one per distinct
+experiment id with a run record, first recorded after the run that chose v6.0-VL's `auto`
+thresholds and through the run that chose v6.1-VL's, a rerun once (24 without one analysis-only
+record). They span data (8), calibration and exit policy (6), method (6), the 27B line (4) and RL
+(1). The ones below are on the released line, in the order they started. The second member of the
+average was trained before this window; it is in the previous section's table as a rival that
+was not releasable on its own. The rest will be
+written up with the work they belong to. Suite is the fifteen-benchmark mean without
+`open_jev_ood`.
+
+- **Averaging two fine-tunes of one base beat both.** v6.0-VL and the second member (not releasable
+  on its own: MMLU-Pro 0.418) averaged weight for weight, nothing retrained, led the better of the two
+  by 0.0129 at layer 32 on held-out development rows (z 2.08), and v6.0-VL by 0.023 on the suite
+  and 0.033 on the held-out set in one test read.
+- **The gain is in the tower.** The averaged tower under v6.0-VL's own heads gives 98% of it;
+  averaging only the heads gives nothing. The two members moved the trunk about 1.7% of its norm
+  from the base, close enough for their midpoint to beat both ends.
+- **Averaging moves calibration.** The averaged logits are smaller: at v6.0-VL's temperatures the
+  model was underconfident, and v6.0-VL's single threshold of 0.59 stopped about 77% of questions
+  at layer 16. Temperatures and thresholds were chosen again; final ECE still ends above
+  v6.0-VL's (0.048 vs 0.036).
+
+| arm | axis | outcome | suite mean | final | MMLU-Pro | what it was |
+|---|---|---|---|---|---|---|
+| `m32-soup4b` | method | **kept = v6.1-VL** (weights) | 0.7934 at 32 | 0.7284 | 0.462 | the uniform average of v6.0-VL and `lad2v3` (head stage seed 1), tower and all four heads: +0.0129 over the better member on half B of the development sets (z 2.08; +0.0184, z 4.4, with the rows a member trained on dropped), then one test read; every release bar passed at layer 32 |
+| `m33-tsauto` | calibration / policy | **kept** (temperatures, thresholds) | 0.7924 with `auto` | 0.7324 | 0.460 | one temperature per exit refit on the average (T 0.87 / 0.63 / 1.02 at 16 / 20 / 32), development rows a member trained on dropped first; `auto` 0.85 at 16 and 0.50 at 20, confirmed, 19.5 layers on average; the single threshold's rule picked 0.85 on half A, missed the depth cap on half B by 0.08 layers and fell back to 0.95, not confirmed |
+| `m34-soupwhy` | method | finding | – | – | – | why the average wins, on development rows: the averaged tower recovers 98% of the gain under v6.0-VL's heads, averaged heads alone none; weights 0.3 / 0.7 level with 0.5 / 0.5, 0.7 / 0.3 lower (−0.016, z −3.7) |
