@@ -127,7 +127,8 @@ def test_convert_package(package, tmp_path, bits, group, embed_bits):
     from safetensors import safe_open
     pkg, sd = package
     out = tmp_path / f"out{bits}"
-    rec = convert(pkg, out, bits=bits, group=group or 64, embed_bits=embed_bits, log=lambda *a: None)
+    rec = convert(pkg, out, bits=bits, group=group or 64, embed_bits=embed_bits,
+                  embed_group=group or 64, log=lambda *a: None)
     with safe_open(str(out / "tower.safetensors"), "pt") as fh:
         got = {k: fh.get_tensor(k) for k in fh.keys()}
     # layers 6 and 7 (past exit_layer 6) never run: dropped
@@ -158,7 +159,9 @@ def test_convert_package(package, tmp_path, bits, group, embed_bits):
     for f in ("scorer.safetensors", "aux_scorers.safetensors", "calibration.safetensors",
               "visual.safetensors", "calibration.json", "config.json", "tokenizer.json", "meta.json"):
         assert (out / f).read_bytes() == (pkg / f).read_bytes(), f
+    _check_sums(out)
     m = json.loads((out / "mlx.json").read_text())
+    assert m["size"]["weights_bytes"] == sum(p.stat().st_size for p in out.glob("*.safetensors"))
     assert m["format"] == "rsijev-mlx" and m["tower"]["bits"] == bits
     assert m["source_tower_sha256"] == "abc123" and m["embed_tokens"]["bits"] == embed_bits
     # a width the group does not divide stays dense (here out_proj / in_proj with 32 inputs at g64)
@@ -185,3 +188,93 @@ def test_refuses_a_package_without_config(package, tmp_path):
     (pkg / "config.json").unlink()
     with pytest.raises(SystemExit):
         convert(pkg, tmp_path / "x", log=lambda *a: None)
+
+
+def _check_sums(out: Path):
+    import hashlib
+    lines = (out / "SHA256SUMS").read_text().split("\n")
+    files = {ln.split("  ")[1]: ln.split("  ")[0] for ln in lines if ln}
+    assert set(files) == {p.name for p in out.iterdir() if p.name != "SHA256SUMS"}
+    for name, h in files.items():
+        assert hashlib.sha256((out / name).read_bytes()).hexdigest() == h, name
+
+
+def _codes_file(sd, path, bits=4, group=32, seed=3):
+    """A GPTQ-like result: codes not equal to round-to-nearest, fp32 scales / biases."""
+    from safetensors.torch import save_file
+    g = torch.Generator().manual_seed(seed)
+    out = {}
+    for k, w in sd.items():
+        if not is_quantized_linear(k) or w.shape[1] % group:
+            continue
+        n = k[: -len(".weight")]
+        q, s, b = quantize(w, bits, group)
+        flip = torch.rand(q.shape, generator=g) < 0.2         # move 20% of codes by one step
+        q = torch.where(flip, (q.long() + 1).clamp(max=(1 << bits) - 1), q.long()).to(torch.uint8)
+        out[n + ".q"], out[n + ".s"], out[n + ".b"] = q, s.float() * 1.001, b.float()
+    save_file(out, str(path))
+    return out
+
+
+def test_convert_from_codes_packs_them_as_is(package, tmp_path):
+    """--codes: every tower linear from the file, bit for bit (no re-quantization); bits and
+    group read from the file; embeddings at their own group; heads stored bf16."""
+    from safetensors import safe_open
+    from safetensors.torch import load_file
+    pkg, sd = package
+    # out_proj (32 inputs) is divisible by g32, so the file covers every tower linear
+    codes = _codes_file(sd, tmp_path / "codes.safetensors")
+    out = tmp_path / "o4"
+    rec = convert(pkg, out, bits=8, group=64, codes=tmp_path / "codes.safetensors", embed_bits=8,
+                  embed_group=64, heads_dtype="bf16", log=lambda *a: None)
+    assert rec["tower"]["bits"] == 4 and rec["tower"]["group_size"] == 32
+    assert rec["tower"]["method"].startswith("precomputed") and len(rec["tower"]["codes_sha256"]) == 64
+    assert rec["embed_tokens"] == {"bits": 8, "group_size": 64, "method": "round-to-nearest (mx.quantize)"}
+    with safe_open(str(out / "tower.safetensors"), "pt") as fh:
+        got = {k: fh.get_tensor(k) for k in fh.keys()}
+    n = 0
+    for k in sd:
+        name = k[: -len(".weight")]
+        if name + ".q" not in codes or k.startswith(("layers.6.", "layers.7.")):
+            continue
+        q = unpack(got[k].view(torch.int32).numpy().view(np.uint32), 4, sd[k].shape[1])
+        assert np.array_equal(q, codes[name + ".q"].numpy()), k
+        assert torch.equal(got[name + ".scales"], codes[name + ".s"].bfloat16())
+        assert torch.equal(got[name + ".biases"], codes[name + ".b"].bfloat16())
+        n += 1
+    assert n == sum(is_quantized_linear(k) for k in sd if not k.startswith(("layers.6.", "layers.7.")))
+    e = got["embed_tokens.weight"]
+    assert e.shape == (V, H * 8 // 32) and got["embed_tokens.scales"].shape == (V, H // 64)
+    for f in ("scorer.safetensors", "aux_scorers.safetensors"):
+        a, b = load_file(str(pkg / f)), load_file(str(out / f))
+        assert all(b[k].dtype == torch.bfloat16 and torch.equal(b[k], a[k].bfloat16()) for k in a)
+    assert (out / "calibration.safetensors").read_bytes() == (pkg / "calibration.safetensors").read_bytes()
+    _check_sums(out)
+
+
+def test_codes_must_cover_every_linear(package, tmp_path):
+    from safetensors.torch import load_file, save_file
+    pkg, sd = package
+    _codes_file(sd, tmp_path / "c.safetensors")
+    c = load_file(str(tmp_path / "c.safetensors"))
+    drop = "layers.0.mlp.up_proj"
+    save_file({k: v for k, v in c.items() if not k.startswith(drop + ".")}, str(tmp_path / "c2.safetensors"))
+    with pytest.raises(SystemExit, match="no entry"):
+        convert(pkg, tmp_path / "x", codes=tmp_path / "c2.safetensors", log=lambda *a: None)
+
+
+def test_codes_dequantize_in_mlx_to_the_measured_weights(package, tmp_path):
+    """mx.dequantize of the packed file == the effective bf16 weights the codes define."""
+    mx = pytest.importorskip("mlx.core")
+    from rsijev.mlx.quant import dequantize
+    pkg, sd = package
+    codes = _codes_file(sd, tmp_path / "c.safetensors")
+    out = tmp_path / "o"
+    convert(pkg, out, codes=tmp_path / "c.safetensors", log=lambda *a: None)
+    t = mx.load(str(out / "tower.safetensors"))
+    for n in sorted({k.rsplit(".", 1)[0] for k in codes}):
+        if n.startswith(("layers.6.", "layers.7.")):
+            continue
+        deq = mx.dequantize(t[n + ".weight"], t[n + ".scales"], t[n + ".biases"], group_size=32, bits=4)
+        ref = dequantize(codes[n + ".q"], codes[n + ".s"].bfloat16(), codes[n + ".b"].bfloat16(), 32)
+        assert np.array_equal(np.array(deq.astype(mx.float32)), ref.float().numpy()), n

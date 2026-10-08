@@ -16,7 +16,8 @@ one pass, raw (no calibration), as the study's reference was.
     python scripts/mlx_parity.py effort --ckpt MLXDIR --data DATA --exits mlx_8bit.npz --out effort.json
 
 DATA holds eval_suite_v2/, eval_final_v2/, clinc_items300.jsonl and eval_vision_v1/ (with the
-300 images used). A reference .npz may also be the study's ref_logits.pt (H200, bf16).
+300 images used), and optionally heldout300.jsonl (extra text rows, reported as their own
+subset "heldout"; "all" stays the 2,200 eval rows). A reference .npz may also be the study's ref_logits.pt (H200, bf16).
 """
 from __future__ import annotations
 
@@ -78,6 +79,14 @@ def text_rows(data: Path, per_suite=100, per_final=60):
         c = Case(case_id=it["id"], source="clinc_eval", state="", questions=(Q,),
                  gold={"q1": tuple(1.0 if o == it["gold"] else 0.0 for o in keys)})
         rows.append((c, Q, "clinc151"))
+    held = data / "heldout300.jsonl"
+    if held.exists():               # optional: held-out training-distribution rows (text), tag "heldout"
+        for line in open(held):
+            r = json.loads(line)
+            q = r["question"]
+            Q = Question(q["key"], q["mode"], q["instructions"], tuple(q["options"]), q["criteria"])
+            rows.append((Case(r["case_id"], r["source"], r["state"], (Q,), {q["key"]: tuple(r["gold"])}),
+                         Q, "heldout"))
     return rows
 
 
@@ -172,18 +181,23 @@ def run_mlx(a):
     tags = [t for *_, t in text] + [f"vis.{b}" for *_, b in vis]
     y = [gold_index(c, q) for c, q, _ in text] + [gold_index(c, q) for c, q, _, _ in vis]
     n = len(tags)
+    k, nsh = (int(x) for x in a.shard.split("/")) if a.shard else (0, 1)
+    done = np.zeros(n, bool)
     exits = model.exit_indices()
     Z = {L: np.full((n, 160), -np.inf, dtype=np.float32) for L in exits}
     encd = [encode_question(tok, c.state, q, enc) for c, q, _ in text]
     lengths = [len(e["input_ids"]) for e in encd]
-    log(f"text rows {len(text)}: {sum(lengths)} tokens, longest {max(lengths)}")
+    log(f"text rows {len(text)}: {sum(lengths)} tokens, longest {max(lengths)}; shard {k}/{nsh}")
     batches = token_budget_batches(lengths, a.tok_budget, a.batch_size)
+    batches = [ix for bi, ix in enumerate(batches) if bi % nsh == k]
+    vsel = [i for i in range(0, len(vis), 8) if (i // 8) % nsh == k]
     for bi, ix in enumerate(batches):
         b = collate(tok, [encd[i] for i in ix], 160)
         out = model.forward_exits(b, calibrate=False)
         mx.eval(list(out.values()))
         for L, z in out.items():
             Z[L][ix] = unpermute(np.array(z.astype(mx.float32)), b["option_perm"], b["option_mask"])
+        done[ix] = True
         if bi % 20 == 0:
             log(f"text batch {bi + 1}/{len(batches)}")
     if vis:
@@ -193,7 +207,7 @@ def run_mlx(a):
         venc = dataclasses.replace(enc, max_length=max(enc.max_length, 1024 + 2048))
         pad = tok.convert_tokens_to_ids(IMAGE_PAD)
         off = len(text)
-        for i in range(0, len(vis), 8):
+        for i in vsel:
             part = vis[i:i + 8]
             rows, feats, grids = [], [], []
             for c, q, ims, _ in part:
@@ -212,8 +226,24 @@ def run_mlx(a):
             for L, z in out.items():
                 Z[L][off + i: off + i + len(part)] = unpermute(np.array(z.astype(mx.float32)),
                                                                b["option_perm"], b["option_mask"])
-        log(f"vision rows {len(vis)} done")
-    _save(a.out, Z, y, tags, {"elapsed_s": np.asarray(time.time() - T0)})
+            done[off + i: off + i + len(part)] = True
+        log(f"vision rows {len(vsel) and sum(len(vis[i:i + 8]) for i in vsel)} done")
+    _save(a.out, Z, y, tags, {"elapsed_s": np.asarray(time.time() - T0), "done": done})
+
+
+def run_merge(a):
+    """Shards of `mlx --shard K/N` -> one dump (every row exactly once)."""
+    parts = [np.load(p) for p in a.parts]
+    done = np.stack([p["done"] for p in parts])
+    if not (done.sum(0) == 1).all():
+        raise SystemExit(f"rows covered {np.bincount(done.sum(0))} times (want every row once)")
+    Z = {}
+    for k in parts[0].files:
+        if k.startswith("z") and k[1:].isdigit():
+            # padded options are -inf in the shard that ran the row; 0 elsewhere
+            Z[int(k[1:])] = sum(np.where(p["done"][:, None], p[k], 0) for p in parts).astype(np.float32)
+    _save(a.out, Z, parts[0]["y"], parts[0]["tags"],
+          {"elapsed_s": np.asarray(sum(float(p["elapsed_s"]) for p in parts)), "done": done.any(0)})
 
 
 # ------------------------------------------------------------------------------- torch
@@ -303,10 +333,11 @@ def softmax(z):
 
 
 def compare(A, B, y, tags, temps) -> dict:
-    groups = {"all": np.ones(len(tags), bool),
-              "text": np.array([not t.startswith("vis.") and t != "clinc151" for t in tags]),
+    groups = {"all": np.array([t != "heldout" for t in tags]),        # the study's 2,200 eval rows
+              "text": np.array([not t.startswith("vis.") and t not in ("clinc151", "heldout") for t in tags]),
               "clinc151": np.array([t == "clinc151" for t in tags]),
-              "vision": np.array([t.startswith("vis.") for t in tags])}
+              "vision": np.array([t.startswith("vis.") for t in tags]),
+              "heldout": np.array([t == "heldout" for t in tags])}
     out = {}
     for L in sorted(A):
         pa, pb = softmax(A[L] / temps[L]), softmax(B[L] / temps[L])
@@ -332,7 +363,31 @@ def run_compare(a):
     assert tags is not None, "one side must carry tags (an .npz from this script)"
     if not np.array_equal(y, yb):
         raise SystemExit("the two files hold different rows (gold labels differ)")
-    res = compare(A, B, y, list(tags), temps_of(Path(a.pkg)))
+    temps = temps_of(Path(a.pkg))
+    res = compare(A, B, y, list(tags), temps)
+    taus = (json.loads((Path(a.pkg) / "meta.json").read_text()).get("adaptive") or {}).get("auto_thresholds")
+    if taus:                        # effort auto: each side's own cascade over its own exits
+        exits = sorted(A)
+        taus = {int(k): float(v) for k, v in taus.items()}
+        ra, rb = cascade(A, temps, taus, exits), cascade(B, temps, taus, exits)
+        txt = np.array([not str(t).startswith("vis.") for t in tags])     # images run all layers
+        ra[~txt], rb[~txt] = exits[-1], exits[-1]
+        pick = lambda Z, r: np.array([softmax(Z[int(L)][i:i + 1] / temps[int(L)])[0]  # noqa: E731
+                                      for i, L in enumerate(r)], dtype=object)
+        pa, pb = pick(A, ra), pick(B, rb)
+        aa = np.array([p.argmax() for p in pa]); ab = np.array([p.argmax() for p in pb])
+        dp = np.array([np.abs(p - q).max() for p, q in zip(pa, pb)])
+        tg = np.asarray(tags)
+        for g, m in {"all": tg != "heldout", "heldout": tg == "heldout"}.items():
+            if m.any():
+                res[f"{g}@auto"] = {"n": int(m.sum()), "agree": round(float((aa[m] == ab[m]).mean()), 5),
+                                    "flips": int((aa[m] != ab[m]).sum()), "dp_mean": round(float(dp[m].mean()), 5),
+                                    "dp_p99": round(float(np.quantile(dp[m], .99)), 4),
+                                    "dp_max": round(float(dp[m].max()), 4),
+                                    "acc_a": round(float((aa[m] == y[m]).mean()), 4),
+                                    "acc_b": round(float((ab[m] == y[m]).mean()), 4),
+                                    "route_eq": round(float((ra[m] == rb[m]).mean()), 5),
+                                    "depth_a": round(float(ra[m].mean()), 2), "depth_b": round(float(rb[m].mean()), 2)}
     print(f"{'subset@exit':16s} {'n':>5s} {'agree':>7s} {'flips':>5s} {'dp_mean':>8s} {'dp_p99':>7s} {'dp_max':>7s} {'acc_a':>6s} {'acc_b':>6s}")
     for k, v in res.items():
         print(f"{k:16s} {v['n']:5d} {100 * v['agree']:6.2f}% {v['flips']:5d} {v['dp_mean']:8.5f} "
@@ -435,9 +490,14 @@ def main(argv=None):
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--text-only", action="store_true")
     p.add_argument("--cpu", action="store_true")
+    p.add_argument("--shard", default=None, help="K/N: every N-th batch from the K-th (merge with `merge`)")
     p.add_argument("--tok-budget", type=int, default=65536)
     p.add_argument("--batch-size", type=int, default=32)
     p.set_defaults(func=run_mlx)
+    p = sub.add_parser("merge")
+    p.add_argument("out")
+    p.add_argument("parts", nargs="+")
+    p.set_defaults(func=run_merge)
     p = sub.add_parser("torch")
     p.add_argument("--pkg", required=True)
     p.add_argument("--data", required=True)

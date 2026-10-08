@@ -99,11 +99,13 @@ class MLXDecisionModel:
         self.tcfg = TextConfig.from_config(self.config)
         self.cfg = _spec_cfg(spec, self.tcfg.num_hidden_layers)
         self.dtype = dtype
-        group = (self.mlx_record.get("tower") or {}).get("group_size") or \
-            (self.mlx_record.get("embed_tokens") or {}).get("group_size")
+        # the tower linears and the embedding table may use different group sizes
+        # (4-bit g32 tower + 8-bit g64 embeddings); bits follow from the array shapes
+        group = (self.mlx_record.get("tower") or {}).get("group_size")
+        embed_group = (self.mlx_record.get("embed_tokens") or {}).get("group_size")
         params = mx.load(str(path / "tower.safetensors"))
-        self.tower = TextTower(self.tcfg, params, group=group, dtype=dtype,
-                               n_layers=self.cfg.exit_layer)
+        self.tower = TextTower(self.tcfg, params, group=group or embed_group, dtype=dtype,
+                               n_layers=self.cfg.exit_layer, embed_group=embed_group or group)
         del params
         kw = dict(heads=self.cfg.xattn_heads, combine=self.cfg.xattn_combine,
                   head_input_norm=self.cfg.head_input_norm)

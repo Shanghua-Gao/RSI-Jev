@@ -483,10 +483,10 @@ class TextTower:
     """Embeddings, decoder layers [0, n_layers) and the shared final norm."""
 
     def __init__(self, cfg: TextConfig, params: dict, *, group: int | None = None,
-                 dtype=mx.bfloat16, n_layers: int | None = None):
+                 dtype=mx.bfloat16, n_layers: int | None = None, embed_group: int | None = None):
         self.cfg, self.dtype = cfg, dtype
         n = n_layers or cfg.num_hidden_layers
-        self.embed_tokens = Embedding(params, group, dtype)
+        self.embed_tokens = Embedding(params, embed_group or group, dtype)
         self.layers = [DecoderLayer(cfg, params, i, group, dtype) for i in range(n)]
         self.norm_w = 1.0 + params["norm.weight"].astype(F32)
 
