@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 import mlx.core as mx
 
 F32 = mx.float32
+# queries per attention block on long inputs (Attention); bounds the score memory
+ATTN_BLOCK = 1024
 
 
 @dataclass
@@ -436,10 +438,25 @@ class Attention:
         k = apply_rotary(k, cos, sin)
         if record is not None:
             record.keys, record.values = k, v
+        P = 0
         if cache is not None and cache.keys is not None:
             P = cache.keys.shape[2]
             k = mx.concatenate([mx.broadcast_to(cache.keys, (B, self.nkv, P, self.hd)), k], axis=2)
             v = mx.concatenate([mx.broadcast_to(cache.values, (B, self.nkv, P, self.hd)), v], axis=2)
+        if T > ATTN_BLOCK:
+            # long inputs: queries in blocks, each against the keys it can see, evaluated one
+            # block at a time. Where no fused kernel covers this head size (256), attention
+            # materializes the scores, (T x T x heads) fp32 in one piece: 57 GB at 30k tokens.
+            outs = []
+            for s0 in range(0, T, ATTN_BLOCK):
+                s1 = min(T, s0 + ATTN_BLOCK)
+                mask = mx.arange(P + s1)[None, :] <= (mx.arange(s0, s1)[:, None] + P)
+                ob = mx.fast.scaled_dot_product_attention(q[:, :, s0:s1], k[:, :, :P + s1], v[:, :, :P + s1],
+                                                          scale=self.scale, mask=mask)
+                mx.eval(ob)
+                outs.append(ob)
+            o = mx.concatenate(outs, axis=2)
+        elif P:
             # the T new queries sit at the end: query i sees keys 0..P+i
             mask = mx.arange(P + T)[None, :] <= (mx.arange(T)[:, None] + P)
             o = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale, mask=mask)
@@ -513,6 +530,9 @@ class TextTower:
             if record is not None:
                 r = record.layers.setdefault(i, LayerCache())
             h = self.layers[i](h, cos, sin, c, r)
+            # one layer at a time: a lazy graph over many layers keeps every layer's fp32
+            # intermediates (the chunked delta rule's) alive at once (19 GB at 8k tokens)
+            mx.eval(h)
         if record is not None:
             record.length = h.shape[1] + (cache.length if cache is not None else 0)
         return h

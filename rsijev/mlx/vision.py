@@ -154,6 +154,9 @@ class VisionTower:
             h = _layer_norm(x, blk["norm2.weight"], blk["norm2.bias"])
             h = _gelu_tanh((h @ blk["mlp.linear_fc1.weight"].T + blk["mlp.linear_fc1.bias"]).astype(F32)).astype(self.dtype)
             x = x + (h @ blk["mlp.linear_fc2.weight"].T + blk["mlp.linear_fc2.bias"])
+            # one block at a time: a lazy graph over all blocks keeps every block's attention
+            # scores alive (28 GB peak for one 1,024-token image)
+            mx.eval(x)
         mg = self.merger
         h = _layer_norm(x, mg["norm.weight"], mg["norm.bias"]).reshape(-1, self.hidden * self.merge ** 2)
         h = _gelu((h @ mg["linear_fc1.weight"].T + mg["linear_fc1.bias"]).astype(F32)).astype(self.dtype)

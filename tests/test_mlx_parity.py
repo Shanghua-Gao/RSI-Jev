@@ -425,6 +425,20 @@ def test_8bit_equals_torch_with_the_mlx_weights(models, release):
         assert (_np(got[L]).argmax(-1) == _np(ref[L]).argmax(-1))[clear].all(), (L, err, r[:, -2:])
 
 
+def test_blocked_attention_equals_one_block(models, monkeypatch):
+    """Long inputs run attention in query blocks (T.ATTN_BLOCK) and evaluate layer by layer:
+    the same logits as one block."""
+    from rsijev.mlx.collate import collate
+    _, tok, enc, _, m16, _ = models
+    rows = _text_batch(tok, enc)
+    b = collate(tok, rows, 8)
+    ref = m16.forward_exits(b)
+    monkeypatch.setattr(T, "ATTN_BLOCK", 16)
+    got = m16.forward_exits(b)
+    for L in ref:
+        assert np.allclose(_np(got[L]), _np(ref[L]), atol=1e-4, equal_nan=True), L
+
+
 def test_4bit_codes_8bit_embeddings_bf16_heads_equal_torch(models, release, tmp_path):
     """The small build's layout: tower from precomputed 4-bit g32 codes, embeddings 8-bit g64,
     scorer / exit heads stored bf16. MLX vs the PyTorch model holding exactly those weights."""
