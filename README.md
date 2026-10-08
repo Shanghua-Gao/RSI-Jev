@@ -29,13 +29,13 @@ experiment that failed on the way, is published with its numbers. The loop is th
 
 - **8 releases in 13 days**, from v1.0 to v6.1-VL, each trained, evaluated and documented by the loop.
 - **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
+- **v6.1-VL 27B has the highest score on the Decision Index 0.3 public set: 65.64**, with `--effort auto`. The official score is pending.
 - **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, up from 46.23 for v6.0-VL.
-- **v6.1-VL 27B scores 65.64 on the Decision Index 0.3 public set** with `--effort auto` (65.46 with effort unset). The official score is pending.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/board-v6.1-dark.svg">
-    <img src="assets/board-v6.1-light.svg" width="760" alt="Decision Index 0.3 public index, 4B models and smaller: RSI-Jev v6.1-VL 50.98, ezjev 4B s2 50.82, RSI-Jev v6.0-VL 46.23, jiwo 4B 45.76, Nox 4B 44.21, JPT-4B 42.82">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/board-v6.1-27b-dark.svg">
+    <img src="assets/board-v6.1-27b-light.svg" width="760" alt="Decision Index 0.3 public set: RSI-Jev v6.1-VL 27B 65.64, Torchcast Decision 27B 65.10, Perplexity Decider v1.1 (27B) 62.25, Cloudflare clef 61.71, Jev 57.96, RSI-Jev v6.1-VL 4B 50.98">
   </picture>
 </p>
 
@@ -176,7 +176,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | **v6.1-VL** | Decision Index 0.3 **50.98**, held-out **0.729** | **4B: v6.0-VL averaged with a second fine-tune** |
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
-| **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto` (65.46 unset), held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto`, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
 
 </details>
 

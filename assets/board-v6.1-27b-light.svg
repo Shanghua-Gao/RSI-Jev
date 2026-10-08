@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 384" width="880" height="384" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="880" height="384" rx="14" fill="#ffffff"/>
+<text x="32" y="40" font-size="20" font-weight="600" fill="#14161c">Decision Index 0.3 · public set</text>
+<text x="32" y="95" font-size="16" font-weight="600" fill="#14161c">RSI-Jev v6.1-VL 27B</text>
+<rect x="290" y="82" width="440.7" height="16" rx="8" fill="#4b5bdc"/>
+<text x="740.7" y="95" font-size="16" font-weight="600" fill="#14161c">65.64</text>
+<text x="32" y="141" font-size="16" font-weight="400" fill="#14161c">Torchcast Decision 27B</text>
+<rect x="290" y="128" width="437.1" height="16" rx="8" fill="#d5d8e0"/>
+<text x="737.1" y="141" font-size="16" font-weight="400" fill="#14161c">65.10</text>
+<text x="32" y="187" font-size="16" font-weight="400" fill="#14161c">Perplexity Decider v1.1 (27B)</text>
+<rect x="290" y="174" width="418.0" height="16" rx="8" fill="#d5d8e0"/>
+<text x="718.0" y="187" font-size="16" font-weight="400" fill="#14161c">62.25</text>
+<text x="32" y="233" font-size="16" font-weight="400" fill="#14161c">Cloudflare clef</text>
+<rect x="290" y="220" width="414.3" height="16" rx="8" fill="#d5d8e0"/>
+<text x="714.3" y="233" font-size="16" font-weight="400" fill="#14161c">61.71</text>
+<text x="32" y="279" font-size="16" font-weight="400" fill="#14161c">Jev</text>
+<rect x="290" y="266" width="389.2" height="16" rx="8" fill="#d5d8e0"/>
+<text x="689.2" y="279" font-size="16" font-weight="400" fill="#14161c">57.96</text>
+<text x="32" y="325" font-size="16" font-weight="400" fill="#14161c">RSI-Jev v6.1-VL 4B</text>
+<rect x="290" y="312" width="342.3" height="16" rx="8" fill="#d5d8e0"/>
+<text x="642.3" y="325" font-size="16" font-weight="400" fill="#14161c">50.98</text>
+<text x="32" y="362" font-size="13" fill="#6b7080">Board of 2026-10-07; v6.1-VL 27B with effort auto. Official scores add private sets; ours is pending.</text>
+</svg>
