@@ -173,6 +173,9 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | v6.0-VL averaged, weight 0.5 each, with a second fine-tune of the same base trained on other data | suite 0.793 and held-out 0.728 at layer 32, against 0.770 and 0.695 | the average beats both members; the gain is in the tower, the heads add nothing |
 | one temperature per exit and both thresholds chosen again for the average | `auto` at 0.85 / 0.50 matches layer 32 at 19.5 layers | averaging shrinks the logits: at v6.0-VL's temperatures it was underconfident; calibration ends worse than v6.0-VL's (final ECE 0.048 vs 0.036) |
 | **v6.1-VL** | Decision Index 0.3 **50.98**, held-out **0.729** | **4B: v6.0-VL averaged with a second fine-tune** |
+| two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
+| short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
+| **v6.1-VL 27B** | Decision Index 0.3 **65.46** in our own run, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
 
 </details>
 
