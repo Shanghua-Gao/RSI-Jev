@@ -103,7 +103,6 @@ response reports which layer answered and how confident it was. Options and limi
 | Model | Input | Decision Index 0.3 | Decision Index 0.2.1 | Held-out set | |
 |---|---|---|---|---|---|
 | **v6.1-VL-27B**, `auto` | text, images | **65.64** | **64.92** | **0.808** | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b) |
-| v6.1-VL-27B, effort unset | text, images | 65.46 | 64.72 | 0.808 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b) |
 | v6.1-VL-4B | text, images | 50.98 | 50.74 | 0.729 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-4b) |
 | v6.0-VL-4B | text, images | 46.23 | 46.24 | 0.698 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
 | v5.0-VL-3B | text, images | – | 38.38 | 0.689 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
