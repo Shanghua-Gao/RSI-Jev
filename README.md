@@ -114,7 +114,7 @@ response reports which layer answered and how confident it was. Options and limi
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
 Decision Index is the public benchmark, full runs of the default configuration (the 27B with
-`--effort auto`, which we recommend, and with effort unset): the 0.3 public
+`--effort auto`, which we recommend): the 0.3 public
 index (public set; v6.1-VL 4B scored with the pre-release 0.3 kit) and 0.2.1. The held-out set
 is our zero-shot check: no release trained on it. The 4B and smaller are fine-tuned from Qwen3.5
 Base; v6.0-VL and v6.1-VL 4B run the whole Qwen3.5-4B-Base and can answer at layer 16, 20 or 32
