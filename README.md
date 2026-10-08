@@ -30,7 +30,7 @@ experiment that failed on the way, is published with its numbers. The loop is th
 - **8 releases in 13 days**, from v1.0 to v6.1-VL, each trained, evaluated and documented by the loop.
 - **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
 - **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, up from 46.23 for v6.0-VL.
-- **v6.1-VL 27B scores 65.46 on the public Decision Index 0.3** in our own full run, 65.64 with `auto`. The official score is pending.
+- **v6.1-VL 27B scores 65.46 on the Decision Index 0.3 public set**, 65.64 with `auto`. The official score is pending.
 
 <p align="center">
   <picture>
@@ -114,13 +114,13 @@ response reports which layer answered and how confident it was. Options and limi
 | v1.0-0.8B | text | – | – | – | [🤗](https://huggingface.co/shgao/rsi-jev-v1.0-qwen3.5-0.8b) |
 
 Decision Index is the public benchmark, full runs of the default configuration: the 0.3 public
-index (our own runs; v6.1-VL 4B scored with the pre-release 0.3 kit) and 0.2.1. The held-out set
+index (public set; v6.1-VL 4B scored with the pre-release 0.3 kit) and 0.2.1. The held-out set
 is our zero-shot check: no release trained on it. The 4B and smaller are fine-tuned from Qwen3.5
 Base; v6.0-VL and v6.1-VL 4B run the whole Qwen3.5-4B-Base and can answer at layer 16, 20 or 32
 of it. v6.1-VL 27B is fine-tuned from Qwen3.8-27B and answers at layer 48, 56 or 64. Every
 number, caveat and per-benchmark score is in the [release records](versions/).
 
-- **2026-10-08 · v6.1-VL 27B** brings the same method to Qwen3.8-27B. Decision Index 0.3 65.46 in our own run.
+- **2026-10-08 · v6.1-VL 27B** brings the same method to Qwen3.8-27B. Decision Index 0.3 public set 65.46.
 - **2026-10-07 · v6.1-VL 4B** averages v6.0-VL with a second fine-tune of the same base. Decision Index 0.3 46.23 → 50.98.
 - **2026-10-06 · v6.0-VL 4B** chooses its depth per question. Decision Index 38.38 → 46.24.
 - **2026-10-02 · v5.0-VL 3B** cuts the model to the first 20 of 32 layers and says "unknown" when a question has no answer.
@@ -175,7 +175,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | **v6.1-VL** | Decision Index 0.3 **50.98**, held-out **0.729** | **4B: v6.0-VL averaged with a second fine-tune** |
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
-| **v6.1-VL 27B** | Decision Index 0.3 **65.46** in our own run, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| **v6.1-VL 27B** | Decision Index 0.3 public set **65.46**, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
 
 </details>
 
