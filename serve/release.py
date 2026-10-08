@@ -27,6 +27,9 @@ from rsijev.encode import EncodeConfig
 # moment there are two of them.
 REPOS = {"v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
          "v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
+         # MLX builds of v6.1-VL 4B (Apple silicon): serve with --backend mlx
+         "v6.1-vl-4b-mlx-8bit": "shgao/rsi-jev-v6.1-vl-4b-mlx-8bit",
+         "v6.1-vl-4b-mlx-4bit": "shgao/rsi-jev-v6.1-vl-4b-mlx-4bit",
          "v6.0-vl-4b": "shgao/rsi-jev-v6.0-vl-4b",
          "v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
          "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",

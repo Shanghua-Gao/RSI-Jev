@@ -26,6 +26,8 @@ across requests, the image prefix cache.
 """
 from __future__ import annotations
 
+import contextlib
+
 import dataclasses
 import json
 import os
@@ -299,6 +301,13 @@ def score_image_planned(model, tokenizer, plan: dict, *, max_options, batch_size
 
 
 # ----------------------------------------------------------------------------- loading
+def serving_stream():
+    """A stream on the default device that any thread may run (MLX's thread-unsafe stream;
+    the default stream where MLX has no per-thread streams)."""
+    make = getattr(mx, "new_thread_unsafe_stream", None)
+    return make(mx.default_device()) if make else mx.default_stream(mx.default_device())
+
+
 def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixed_exit=None,
                      adaptive=None, vision: bool | None = None, dtype: str | None = None):
     """serve.server.load_for_serving for an MLX checkpoint -> serve.server.Served.
@@ -321,7 +330,13 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     dt = {None: mx.bfloat16, "bf16": mx.bfloat16, "fp32": mx.float32}.get(dtype)
     if dt is None:
         raise ValueError(f"dtype must be bf16 or fp32 on the MLX backend, got {dtype!r}")
+    # MLX streams belong to the thread that made them (mlx >= 0.2x): the server runs the
+    # model on its worker thread, so load and run everything on one stream any thread
+    # may use (one request at a time, so no two threads use it at once)
+    stream = serving_stream()
+    mx.set_default_stream(stream)
     model = MLXDecisionModel(path, vision=bool(vb) and vision is not False, dtype=dt)
+    model.serving_stream = stream
     tok = AutoTokenizer.from_pretrained(str(path))
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
@@ -411,8 +426,10 @@ class MLXRunner:
     def one(self, plan):
         s = self.s
         run = score_image_planned if plan["path"] == "image" else score_planned
-        preds, tokens = run(s.model, s.tok, plan, max_options=plan["max_options"],
-                            batch_size=self.batch_size)
+        stream = getattr(s.model, "serving_stream", None)
+        with (mx.stream(stream) if stream is not None else contextlib.nullcontext()):
+            preds, tokens = run(s.model, s.tok, plan, max_options=plan["max_options"],
+                                batch_size=self.batch_size)
         return [list(p.probs) for p in preds], tokens
 
     def run(self, plans: list) -> list:

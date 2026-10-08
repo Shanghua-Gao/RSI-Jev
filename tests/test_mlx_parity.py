@@ -425,6 +425,56 @@ def test_8bit_equals_torch_with_the_mlx_weights(models, release):
         assert (_np(got[L]).argmax(-1) == _np(ref[L]).argmax(-1))[clear].all(), (L, err, r[:, -2:])
 
 
+def test_4bit_codes_8bit_embeddings_bf16_heads_equal_torch(models, release, tmp_path):
+    """The small build's layout: tower from precomputed 4-bit g32 codes, embeddings 8-bit g64,
+    scorer / exit heads stored bf16. MLX vs the PyTorch model holding exactly those weights."""
+    from safetensors.torch import load_file, save_file
+    from rsijev.encode import collate as tcollate
+    from rsijev.mlx.collate import collate
+    from rsijev.mlx.convert import convert, is_quantized_linear
+    from rsijev.mlx.model import MLXDecisionModel
+    from rsijev.mlx.quant import dequantize, qdq, quantize
+    from serve.release import load_release
+    pkg, _, _ = release
+    tm, tok, enc, _, _, _ = models
+    sd = load_file(str(pkg / "tower.safetensors"))
+    codes = {}
+    for k, w in sd.items():
+        if is_quantized_linear(k):
+            q, s, b = quantize(w.bfloat16(), 4, 32)
+            n = k[: -len(".weight")]
+            codes[n + ".q"], codes[n + ".s"], codes[n + ".b"] = q, s.float(), b.float()
+    save_file(codes, str(tmp_path / "codes.safetensors"))
+    out = tmp_path / "mlx-4bit"
+    convert(pkg, out, codes=tmp_path / "codes.safetensors", embed_bits=8, embed_group=64,
+            heads_dtype="bf16", log=lambda *a: None)
+    m4 = MLXDecisionModel(out, dtype=mx.float32)
+    m4.calibration.mode = m4.cal_mode = "none"
+    assert m4.tower.layers[0].mlp.gate_proj.bits == 4 and m4.tower.embed_tokens.bits == 8
+    tq, *_ = load_release(pkg, "cpu")
+    tq.cal_mode = "none"
+    with torch.no_grad():
+        for name, p in tq.tower.named_parameters():
+            n = name[: -len(".weight")]
+            if n + ".q" in codes:
+                p.copy_(dequantize(codes[n + ".q"], codes[n + ".s"].bfloat16(),
+                                   codes[n + ".b"].bfloat16(), 32).float())
+            elif name == "embed_tokens.weight":
+                p.copy_(qdq(p.data.bfloat16(), 8, 64).float())
+        for p in list(tq.scorer.parameters()) + list(tq.aux_scorers.parameters()):
+            p.copy_(p.data.bfloat16().float())
+    rows = _text_batch(tok, enc)
+    b = tcollate(tok, rows, 8)
+    with torch.no_grad():
+        ref, base = tq.forward_exits(**b), tm.forward_exits(**b)
+    got = m4.forward_exits(collate(tok, rows, 8))
+    mask = b["option_mask"].numpy()
+    for L in ref:
+        _, err = _close(got[L], ref[L], mask, 1)
+        _, quant = _close(base[L], ref[L], mask, 1)
+        assert err < max(2e-2, 0.5 * quant) * max(1.0, float(np.abs(_np(ref[L])[mask]).max())), (L, err, quant)
+
+
 # ------------------------------------------------------------------------------- serving
 @pytest.fixture(scope="module")
 def deciders(release):
@@ -484,6 +534,25 @@ def test_decider_matches_torch(deciders, effort, which):
     rt, rm = _ask(t, TEXT_STATE, qs, effort), _ask(m, TEXT_STATE, qs, effort)
     _same(rt, rm)
     assert "depth" in rm["usage"] and "confidence" in rm["usage"]
+
+
+def test_server_worker_thread_answers(release, deciders):
+    """`rsi-jev serve --backend mlx` runs the model on the worker thread (serve.batcher):
+    MLX streams are per thread, so the load and every request share one stream any thread
+    may use. Same answers as the Decider (caller's thread)."""
+    from rsijev.mlx.serving import load_for_serving, model_worker
+    _, out16, _ = release
+    s = load_for_serving(str(out16), dtype="fp32")
+    worker = model_worker(s)
+    try:
+        got = worker(TEXT_STATE, QS)
+        got_img = worker("A short note.", QS, _images()[:1])
+    finally:
+        worker.close()
+    ref = deciders[1]._scorer(TEXT_STATE, QS)
+    for a, b in zip(got[0], ref[0]):
+        assert np.allclose(np.asarray(a), np.asarray(b), atol=1e-5)
+    assert len(got_img[0]) == len(QS)
 
 
 def test_decider_read_once_path_matches_torch(deciders, monkeypatch):
