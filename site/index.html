@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="RSI-Jev: Jev-style System One decision models, built by AI research agents. Every release and every failed experiment is published. v6.1-VL 4B averages two fine-tunes and scores 50.98 on the public Decision Index 0.3.">
+<meta name="description" content="RSI-Jev: Jev-style System One decision models, built by AI research agents. Every release and every failed experiment is published. v6.1-VL averages two fine-tunes: 50.98 on the public Decision Index 0.3 at 4B, 65.46 at 27B on the public set.">
 <title>RSI-Jev</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -402,7 +402,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
   <div class="stats">
     <div class="stat"><b>8</b><span>releases in 13 days</span></div>
     <div class="stat"><b>496</b><span>experiments, all published, failures included</span></div>
-    <div class="stat"><b>50.98</b><span>Public Decision Index 0.3 for <span style="white-space:nowrap">v6.1-VL</span> 4B, up from 46.23</span></div>
+    <div class="stat"><b>65.46</b><span>Decision Index 0.3 public set, <span style="white-space:nowrap">v6.1-VL</span> 27B</span></div>
   </div>
   <div class="visual tile">
     <ol class="timeline" aria-label="Releases, oldest to newest">
@@ -413,7 +413,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
       <li><a class="v" href="#v4">v4.0-VL</a><span class="d">Oct 1</span><span class="f">Reads images</span></li>
       <li><a class="v" href="#v5">v5.0-VL</a><span class="d">Oct 2</span><span class="f">20 of 32 layers</span></li>
       <li><a class="v" href="#v6">v6.0-VL</a><span class="d">Oct 6</span><span class="f">Chooses its depth</span></li>
-      <li class="now"><a class="v" href="#v61">v6.1-VL</a><span class="d">Oct 7</span><span class="f">Averages two fine-tunes</span></li>
+      <li class="now"><a class="v" href="#v61-27b">v6.1-VL</a><span class="d">Oct 7–8</span><span class="f">Averages two fine-tunes, at 4B and 27B</span></li>
     </ol>
   </div>
 </section>
@@ -457,6 +457,22 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     <div><b>Calibrated</b><span>A probability for every option, fitted so confidence matches accuracy.</span></div>
     <div><b>Jev-compatible</b><span><code>POST /v1/systemone</code>. Existing Jev code works once its base URL points here.</span></div>
   </div>
+</section>
+
+<section id="v61-27b">
+  <p class="eyebrow">v6.1-VL 27B · October 8</p>
+  <h2>The same recipe at 27B.</h2>
+  <p class="sub">Two fine-tunes of Qwen3.8-27B, averaged, with answer heads at layers 48, 56 and 64. It runs on one 96 GB GPU.</p>
+  <div class="visual tile ba">
+    <div class="nums four">
+      <div><b>65.46</b><span>Decision Index 0.3</span><span class="was">v6.1-VL 4B 50.98</span></div>
+      <div><b>0.808</b><span>held-out set</span><span class="was">v6.1-VL 4B 0.728</span></div>
+      <div><b>0.660</b><span>MMLU-Pro</span><span class="was">v6.1-VL 4B 0.462</span></div>
+      <div><b>0.858</b><span>held-out images</span><span class="was">v6.1-VL 4B 0.834</span></div>
+    </div>
+    <p class="cap">Decision Index: public set, default effort; 65.64 with <code>auto</code>. The official score is pending. The rest at the deepest layer, on the same evaluation sets. Final ECE 0.064, against 0.048 for the 4B.</p>
+  </div>
+  <p class="links2"><a href="https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b">The model on Hugging Face</a><a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v6.1-vl-27b.md">How it was made</a></p>
 </section>
 
 <section id="v61">
@@ -643,7 +659,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
 <section id="start">
   <p class="eyebrow">Get started</p>
   <h2>Three commands.</h2>
-  <p class="sub">Install it, serve v6.1-VL on your own GPU, and ask.</p>
+  <p class="sub">Install it, serve v6.1-VL on your own GPU, and ask. On a 96 GB GPU, serve <code>v6.1-vl-27b</code> instead.</p>
   <div class="visual cmds">
     <div class="cmd"><span class="k">1</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"</code></pre></div></div>
     <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v6.1-vl-4b --effort auto</code></pre></div></div>
@@ -663,7 +679,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     <a href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
     <a href="https://huggingface.co/shgao">Hugging Face</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/docs/inference.md">Docs</a>
-    <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v6.1-vl.md">Release notes</a>
+    <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v6.1-vl-27b.md">Release notes</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/EXPLORE.md">Every experiment</a>
     <a href="gallery.html">Image gallery</a>
   </nav>

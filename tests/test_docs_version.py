@@ -26,8 +26,9 @@ RELEASE_DOCS = []
 PROJECT_DOCS = ["BENCHMARKS.md", "CONTRIBUTING.md", "README.md", "EXPLORE.md",
                 "rsijev/README.md", "serve/README.md", "docs/inference.md"]
 DOCS = RELEASE_DOCS + PROJECT_DOCS
-# A release may carry a suffix naming what it adds: v4.0-VL, recorded as versions/v4.0-vl.md.
-MARKER = re.compile(r"\*Describes release (v\d+\.\d+(?:-[A-Za-z]+)?) · updated (\d{4}-\d{2}-\d{2})\*")
+# A release may carry a suffix naming what it adds: v4.0-VL, recorded as versions/v4.0-vl.md;
+# and a size when the same version ships at another size: v6.1-VL 27B, versions/v6.1-vl-27b.md.
+MARKER = re.compile(r"\*Describes release (v\d+\.\d+(?:-[A-Za-z]+)?(?: \d+B)?) · updated (\d{4}-\d{2}-\d{2})\*")
 
 
 def released_versions() -> list[str]:
@@ -79,8 +80,8 @@ def test_versions_holds_nothing_but_release_records():
     evidence.
     """
     stray = sorted(p.name for p in (ROOT / "versions").iterdir()
-                   if not re.fullmatch(r"v\d+\.\d+(?:-[a-z]+)?\.md", p.name))
-    assert not stray, (f"versions/ holds only v<major>.<minor>[-suffix].md release records; found "
+                   if not re.fullmatch(r"v\d+\.\d+(?:-[a-z]+)?(?:-\d+b)?\.md", p.name))
+    assert not stray, (f"versions/ holds only v<major>.<minor>[-suffix][-size].md release records; found "
                        f"{stray}. Anything else belongs in the root docs or in scripts/.")
 
 
@@ -104,7 +105,7 @@ def test_a_version_card_describes_itself():
     wrong = {}
     for p in sorted((ROOT / "versions").glob("v*.md")):
         m = MARKER.search(p.read_text())
-        if m and m.group(1).lower() != p.stem:
+        if m and m.group(1).lower().replace(" ", "-") != p.stem:
             wrong[p.name] = m.group(1)
     assert not wrong, f"version cards whose marker disagrees with their filename: {wrong}"
 

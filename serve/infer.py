@@ -145,11 +145,22 @@ def run_rows(model, tokenizer, rows: Sequence[dict], *, max_options: int, device
     # of running the GPU out of memory. Rows under the budget batch exactly as before.
     if max_tokens is None:
         max_tokens = FORWARD_MAX_TOKENS
-    lengths = [len(e["input_ids"]) + npfx for e in rows]
+    # serve/padded.py: text rows right-padded to the release's pad multiple (0: unpadded eager)
+    from serve import padded as P
+    m = P.active(model, device) if positions is None and row_embeds is None else 0
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    lengths = [len(e["input_ids"]) + npfx for e in rows]     # the unpadded path's batches
     for idx in row_order(lengths, batch_size, sort, max_tokens):
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if trim_options else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
+        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m):
+            z = P.runner(model).fixed(batch, [len(e["input_ids"]) for e in part], m, pad_id)
+            logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature
+            probs = F.softmax(logits, dim=-1).float().cpu()
+            for r, i in enumerate(idx):
+                out[i] = probs[r, : ks[i]].tolist()
+            continue
         if cache is not None:
             w = batch["input_ids"].shape[1]
             batch["attention_mask"] = torch.cat(
@@ -821,11 +832,16 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
         policy = A.Policy(list(policy.exits), dict(policy.cal), float(t))
     opt = speed_options(sort=sort, trim_options=trim_options)
     encoded, prefix = plan["encoded"], plan["prefix"]
+    from serve import padded as P
+    m = P.active(model, device)
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    path = P.plan_path(model, plan, batch_size, device)
+    plan["path_run"] = path
     cache, npfx = None, 0
-    if plan["path"] == "doc":
+    if path == "doc":
         npfx = len(prefix) - plan["doc_cache"].holdback
         cache = plan["doc_cache"].get(model, prefix[:npfx], device)
-    elif plan["path"] == "cached":
+    elif path == "cached":
         npfx = len(prefix)
         cache = model.encode_prefix(torch.tensor([prefix], dtype=torch.long, device=device))
     rows = _suffixes(encoded, npfx) if cache is not None else encoded
@@ -836,11 +852,20 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
     out: list[Prediction | None] = [None] * len(rows)
     depth: list[int | None] = [None] * len(rows)
     # the same batches as run_rows, FORWARD_MAX_TOKENS cap included
-    lengths = [len(e["input_ids"]) + npfx for e in rows]
+    lengths = [len(e["input_ids"]) + npfx for e in rows]     # the unpadded path's batches
     for idx in row_order(lengths, batch_size, opt["sort"], FORWARD_MAX_TOKENS):
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if opt["trim_options"] else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
+        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m):
+            # padded (+ CUDA-graphed) staged exit, serve/padded.py
+            z, d = P.runner(model).staged(policy, batch, [len(e["input_ids"]) for e in part], m, pad_id)
+            logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature
+            probs = F.softmax(logits, dim=-1).float().cpu()
+            for r, (i, L) in enumerate(zip(idx, d.tolist())):
+                out[i] = Prediction(tuple(probs[r, :ks[i]].tolist()))
+                depth[i] = int(L)
+            continue
         kw = {}
         if cache is not None:
             n, w = len(part), batch["input_ids"].shape[1]
@@ -889,10 +914,13 @@ def _score_planned(model, tokenizer, plan: dict, *, max_options: int, device,
     kw = dict(max_options=max_options, device=device, batch_size=batch_size,
               temperature=temperature, sort=opt["sort"], trim_options=opt["trim_options"])
     encoded, prefix = plan["encoded"], plan["prefix"]
-    if plan["path"] == "plain":
+    from serve import padded as P
+    path = P.plan_path(model, plan, batch_size, device)
+    plan["path_run"] = path
+    if path == "plain":
         probs = run_rows(model, tokenizer, encoded, **kw)
         return [Prediction(tuple(p)) for p in probs], sum(len(e["input_ids"]) for e in encoded)
-    if plan["path"] == "doc":
+    if path == "doc":
         doc_cache = plan["doc_cache"]
         npfx = len(prefix) - doc_cache.holdback
         cache = doc_cache.get(model, prefix[:npfx], device)

@@ -25,7 +25,8 @@ from rsijev.vision import vision_block
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
+REPOS = {"v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
+         "v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
          "v6.0-vl-4b": "shgao/rsi-jev-v6.0-vl-4b",
          "v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
          "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
@@ -387,6 +388,9 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     ckpt = Path(ckpt)
     meta = json.loads((ckpt / "meta.json").read_text())
     spec = meta["spec"]
+    # meta.json serving.pad_multiple: the numerics this release is defined on (serve/padded.py);
+    # read before meta["serving"] is rebuilt below. RSIJEV_PAD_MULTIPLE overrides it at run time.
+    pad_multiple = int((meta.get("serving") or {}).get("pad_multiple", 0) or 0)
     # A self-contained release (config.json next to meta.json) carries everything it
     # runs: the tokenizer, the image processor, the text tower with its embeddings and
     # the vision tower. It never touches the base model on the Hub. Older releases
@@ -488,10 +492,15 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
                        option_pool_own_tokens=own_token_pool(spec, meta))
     ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
     model.adaptive_policy = ada
+    model.serving_pad_multiple = pad_multiple
     served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
     meta["serving"] = {"max_length": cap, "truncate": policy,
                        "exit_layer": arch.exit_layer, "adaptive": served_ada,
                        "option_pool_own_tokens": enc.option_pool_own_tokens}
+    if pad_multiple:
+        from serve.padded import pad_multiple as _pm
+        meta["serving"]["pad_multiple"] = pad_multiple
+        meta["serving"]["pad_multiple_served"] = _pm(model)
     if why:
         meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta

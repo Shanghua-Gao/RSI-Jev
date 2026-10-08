@@ -69,7 +69,7 @@ The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v6.1-vl-4b`;
-- an alias: `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
