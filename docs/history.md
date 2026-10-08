@@ -13,11 +13,11 @@ and it scores 50.98 on the public Decision Index 0.3 (v6.0-VL 46.23). Calibratio
 
 **v6.1-VL 27B** (2026-10-08) brings the same method to Qwen3.8-27B: two LoRA fine-tunes of one
 parent, averaged, with answer heads at layers 48, 56 and 64. The average was chosen from 9 full
-Decision Index 0.3 reads of candidate trunks. On the release package it scores
-65.46 on the Decision Index 0.3 public set at the default effort and 65.64 with `auto`; the official
-score is pending. At layer 64 it reads 0.843 on the suite and 0.808 on the held-out set (v6.1-VL
-4B: 0.793 and 0.728); final ECE is 0.064 (4B: 0.048). It runs on one 96 GB GPU.
-[`versions/v6.1-vl-27b.md`](../versions/v6.1-vl-27b.md) is its record.
+Decision Index 0.3 reads of candidate trunks. On the release package it scores 65.64 on the
+Decision Index 0.3 public set with `--effort auto`, the setting we recommend, and 65.46 with
+effort unset; the official score is pending. At layer 64 it reads 0.843 on the suite and 0.808 on
+the held-out set (v6.1-VL 4B: 0.793 and 0.728); final ECE is 0.064 (4B: 0.048). It runs on one 96
+GB GPU. [`versions/v6.1-vl-27b.md`](../versions/v6.1-vl-27b.md) is its record.
 
 <details>
 <summary>the seven releases behind it</summary>
@@ -115,7 +115,7 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | **v6.1-VL** | Decision Index 0.3 **50.98**, held-out **0.729** | **4B: v6.0-VL averaged with a second fine-tune** |
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
-| **v6.1-VL 27B** | Decision Index 0.3 public set **65.46**, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto` (65.46 unset), held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
 and every arm on the v4.0-VL, v5.0-VL, v6.0-VL and v6.1-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
