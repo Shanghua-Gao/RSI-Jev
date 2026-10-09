@@ -103,6 +103,17 @@ def test_no_images_is_the_text_path(client):
         assert calls[-1][2] is None
 
 
+def test_data_url_with_long_params_is_accepted(client):
+    # RFC 2397 allows ;key=value parameters before ;base64; a long params run
+    # must not push ";base64," past the matcher's view of the URL.
+    params = ";".join(f"k{i}=v{i}" for i in range(60))
+    long_url = "data:image/png;" + params + ";base64," + base64.b64encode(png()).decode()
+    assert len(long_url) > 256
+    r = client.post("/v1/systemone", json=body([long_url], state="<image>"))
+    assert r.status_code == 200, r.text
+    assert len(calls[-1][2]) == 1
+
+
 def test_up_to_four_images(client):
     four = [url(png((i * 60, 0, 0))) for i in range(4)]
     r = client.post("/v1/systemone", json=body(four, state="a <image> b <image> c <image> d <image>"))

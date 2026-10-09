@@ -71,14 +71,16 @@ def decode_data_url(url: Any, index: int) -> bytes:
     if url[:8].lower().startswith(("http://", "https://")):
         raise RequestError(f"{where}: only data URLs are accepted "
                            f"(data:image/png;base64,...); http(s) URLs are not fetched")
-    m = _DATA_URL.match(url[:256])
+    # Match the header on its own: a data URL may carry RFC 2397 parameters
+    # (;key=value) that push ";base64," past a fixed-length prefix slice.
+    head, sep, payload = url.partition(";base64,")
+    m = _DATA_URL.match(head + sep) if sep else None
     if not m:
         raise RequestError(f"{where}: not a base64 data URL; expected "
                            f"data:image/<png|jpeg|webp>;base64,<data>")
     mime = m.group("mime").lower()
     if mime not in FORMATS:
         raise RequestError(f"{where}: unsupported type {mime}; use PNG, JPEG or WebP")
-    payload = url[m.end():]
     # base64 inflates by 4/3; refuse an oversized payload before decoding it.
     if len(payload) > (MAX_IMAGE_BYTES * 4) // 3 + 8:
         raise RequestError(f"{where}: image is over {MAX_IMAGE_BYTES // 2**20} MiB")
