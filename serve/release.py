@@ -17,16 +17,19 @@ import os
 import re
 from pathlib import Path
 
-import torch
-
-from rsijev.arch import ArchConfig, DecisionModel
 from rsijev.encode import EncodeConfig
-from rsijev.vision import vision_block
+
+# torch, rsijev.arch and rsijev.vision are imported where a model is built (load_release),
+# so the torch-free helpers here (resolve_ckpt, adaptive_mode, exit_logts, ...) also serve
+# the MLX backend (rsijev/mlx), which runs without torch.
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
 REPOS = {"v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
          "v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
+         # MLX builds of v6.1-VL 4B (Apple silicon): serve with --backend mlx
+         "v6.1-vl-4b-mlx-8bit": "shgao/rsi-jev-v6.1-vl-4b-mlx-8bit",
+         "v6.1-vl-4b-mlx-4bit": "shgao/rsi-jev-v6.1-vl-4b-mlx-4bit",
          "v6.0-vl-4b": "shgao/rsi-jev-v6.0-vl-4b",
          "v5.0-vl-3b": "shgao/rsi-jev-v5.0-vl-3b",
          "v4.0-vl-2b": "shgao/rsi-jev-v4.0-vl-qwen3.5-2b",
@@ -280,15 +283,14 @@ def _build_policy(meta: dict, ckpt: Path, model, device, block: dict, temps):
 CAL_JSON = "calibration.json"
 
 
-def exit_temperatures(ckpt: Path, exits: list[int]) -> dict | None:
-    """The per-exit scalar temperatures in calibration.json, or None when it has none.
+def exit_logts(ckpt: Path, exits: list[int]) -> dict | None:
+    """The per-exit scalar temperatures in calibration.json as {exit: logT}, or None when it
+    has none (torch-free; `exit_temperatures` wraps them for rsijev.adaptive).
 
     Format: "exits": {"<aux exit>": {"cal_mode": "temp", "logT": <finite number>}, ...},
     one entry for every aux exit (the main exit's calibration is the file's own cal_mode
-    and calibration.safetensors). Returns {exit: {"logT": float32 scalar}} (the
-    rsijev.adaptive temp_cal form); any other shape is refused."""
+    and calibration.safetensors). Any other shape is refused."""
     import math
-    from rsijev import adaptive as A
     p = Path(ckpt) / CAL_JSON
     if not p.exists():
         return None
@@ -307,8 +309,18 @@ def exit_temperatures(ckpt: Path, exits: list[int]) -> dict | None:
         v = e["logT"]
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
             raise RuntimeError(f"calibration.json exits[{k}].logT must be a finite number, got {v!r}")
-        out[int(k)] = A.temp_cal(v)
+        out[int(k)] = float(v)
     return out
+
+
+def exit_temperatures(ckpt: Path, exits: list[int]) -> dict | None:
+    """`exit_logts` as {exit: {"logT": float32 scalar}} (the rsijev.adaptive temp_cal form),
+    or None when calibration.json has none."""
+    logts = exit_logts(ckpt, exits)
+    if logts is None:
+        return None
+    from rsijev import adaptive as A
+    return {L: A.temp_cal(v) for L, v in logts.items()}
 
 
 def _layer_at_or_above(key: str, n: int) -> bool:
@@ -345,6 +357,7 @@ def serving_arch_extra(spec: dict) -> dict:
     """spec.arch_extra minus the training-only keys. Any other key ArchConfig doesn't know is an
     error: it may change what the model computes."""
     import dataclasses
+    from rsijev.arch import ArchConfig
     extra = {k: v for k, v in dict(spec.get("arch_extra") or {}).items() if k not in TRAINING_ONLY_ARCH_KEYS}
     known = {f.name for f in dataclasses.fields(ArchConfig)}
     unknown = sorted(set(extra) - known)
@@ -383,8 +396,11 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     requests, each question stopping at the first exit confident enough,
     serve/infer.score_adaptive). Every other model gets `adaptive_policy = None`.
     """
+    import torch
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from rsijev.arch import ArchConfig, DecisionModel
+    from rsijev.vision import vision_block
     ckpt = Path(ckpt)
     meta = json.loads((ckpt / "meta.json").read_text())
     spec = meta["spec"]

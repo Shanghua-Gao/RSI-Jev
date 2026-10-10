@@ -59,7 +59,7 @@ def image_limits(meta_vision: dict | None) -> dict[str, Any]:
 
 
 def _doc_cache_on() -> bool:
-    from serve.infer import _flag
+    from serve.plan import _flag
     return _flag("RSIJEV_DOC_CACHE")
 
 
@@ -126,7 +126,7 @@ def load_image_bytes(data: bytes, index: int):
 
 def check_markers(state: str, n_images: int) -> None:
     """The state's `<image>` markers must match the images, or be absent."""
-    from rsijev.vision import VISION_SPECIAL_TOKENS
+    from rsijev.image_text import VISION_SPECIAL_TOKENS
     k = state.count(MARKER)
     if k not in (0, n_images):
         raise RequestError(f"state has {k} {MARKER} markers for {n_images} images: use one "

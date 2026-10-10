@@ -45,11 +45,10 @@ from .arch import DecisionModel
 from .contract import Question
 from .encode import EncodeConfig, collate, encode_question
 
-IMAGE_MARKER = "<image>"
-VISION_START, IMAGE_PAD, VISION_END = "<|vision_start|>", "<|image_pad|>", "<|vision_end|>"
-# Qwen's multimodal special tokens. A state may not spell them itself: they
-# would tokenise as the real tokens and be counted as image positions.
-VISION_SPECIAL_TOKENS = (VISION_START, IMAGE_PAD, VISION_END, "<|video_pad|>")
+# The text side of image states lives in rsijev/image_text.py (no torch), shared with
+# the MLX backend; re-exported here.
+from .image_text import (IMAGE_MARKER, IMAGE_PAD, VISION_END,  # noqa: F401
+                         VISION_SPECIAL_TOKENS, VISION_START, expand_state)
 
 
 # The base-model snapshot each vision release was verified against. The vision tower's
@@ -116,17 +115,6 @@ class ImagePrep:
         grid = out["image_grid_thw"]
         m = self._base.merge_size
         return out["pixel_values"], grid, [int(g.prod()) // (m * m) for g in grid]
-
-
-def expand_state(state: str, n_tokens: Sequence[int]) -> str:
-    runs = [VISION_START + IMAGE_PAD * n + VISION_END for n in n_tokens]
-    k = state.count(IMAGE_MARKER)
-    if k == 0:
-        return "\n".join(runs) + ("\n" + state if state.strip() else "")
-    if k != len(runs):
-        raise ValueError(f"state has {k} {IMAGE_MARKER} markers for {len(runs)} images")
-    parts = state.split(IMAGE_MARKER)
-    return "".join(p + (runs[i] if i < len(runs) else "") for i, p in enumerate(parts))
 
 
 def encode_vision_question(tokenizer, prep: ImagePrep, state: str, images: Sequence,

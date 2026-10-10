@@ -23,7 +23,8 @@ class Decider:
     """A released checkpoint, ready to answer typed questions.
 
     `model` is a checkpoint directory, a Hugging Face repo id or an alias such as
-    `v3.0-2b`. Device and precision are picked as the server picks them (CUDA,
+    `v3.0-2b`. `backend="mlx"` runs an MLX checkpoint (Apple Silicon, scripts/convert_mlx.py)
+    with the same answers and fields; `dtype` there is "bf16" (default) or "fp32" compute. Device and precision are picked as the server picks them (CUDA,
     then Apple Silicon, then CPU; a bf16 tower on CUDA, fp32 elsewhere; the scorer
     always fp32). `profile` is the server's `--profile`: "agent" or "server". It
     sets the same RSIJEV_* defaults in this process's environment, and variables
@@ -32,11 +33,19 @@ class Decider:
 
     def __init__(self, model: str, *, device: str | None = None, dtype: str | None = None,
                  batch_size: int = 16, profile: str | None = None,
-                 revision: str | None = None):
+                 revision: str | None = None, backend: str = "torch"):
         from serve.runtime import apply_profile
-        from serve.server import load_for_serving, make_scorer
         apply_profile(profile)
-        self.served = load_for_serving(model, device=device, dtype=dtype, revision=revision)
+        if backend == "mlx":
+            # Apple Silicon: `model` is an MLX checkpoint (scripts/convert_mlx.py); no torch
+            from rsijev.mlx.serving import load_for_serving, make_scorer
+            self.served = load_for_serving(model, revision=revision, dtype=dtype)
+        elif backend == "torch":
+            from serve.server import load_for_serving, make_scorer
+            self.served = load_for_serving(model, device=device, dtype=dtype, revision=revision)
+        else:
+            raise ValueError(f"backend must be 'torch' or 'mlx', got {backend!r}")
+        self.backend = backend
         self.name = self.served.name
         self.version = self.served.version
         self.device = self.served.device

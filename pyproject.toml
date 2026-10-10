@@ -33,6 +33,9 @@ vision = ["pillow", "torchvision"]
 # httptools on its own when they are installed. Same answers, same API.
 http = ["orjson>=3.10", "uvloop>=0.21; sys_platform != 'win32'", "httptools>=0.6"]
 test = ["pytest", "httpx"]
+# Apple Silicon: serve an MLX checkpoint (scripts/convert_mlx.py) with --backend mlx.
+# mlx-lm is optional (its Metal gated-delta kernel, RSIJEV_MLX_DELTA=kernel).
+mlx = ["mlx>=0.32", "numpy", "pillow"]
 
 [project.scripts]
 rsi-jev = "serve.cli:main"
@@ -42,7 +45,7 @@ Homepage = "https://github.com/Shanghua-Gao/RSI-Jev"
 Weights = "https://huggingface.co/shgao"
 
 [tool.setuptools]
-packages = ["rsijev", "serve"]
+packages = ["rsijev", "rsijev.mlx", "serve"]
 
 [tool.setuptools.package-data]
 serve = ["ui.html", "examples.json"]
