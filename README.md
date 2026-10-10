@@ -75,6 +75,10 @@ rsi-jev serve v6.1-vl-4b --effort auto --port 8000
 
 On a 96 GB GPU, `rsi-jev serve v6.1-vl-27b --effort auto` serves the 27B.
 
+On a Mac with Apple silicon, the MLX builds of the 4B (8-bit, lossless; 4-bit, smaller) run with
+`pip install "rsi-jev[mlx,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"` and
+`rsi-jev serve v6.1-vl-4b-mlx-8bit --backend mlx`: [`docs/mac.md`](docs/mac.md).
+
 ```bash
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
@@ -185,6 +189,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | | |
 |---|---|
 | [Inference guide](docs/inference.md) | setups, measured latency, speed-ups |
+| [Mac (MLX)](docs/mac.md) | the 8-bit and 4-bit Apple-silicon builds and what each costs |
 | [Effort and depth](docs/effort-depth.md) | which tasks and questions need the deep layers |
 | [HTTP API](serve/README.md) | the Jev-compatible server |
 | [Benchmarks](BENCHMARKS.md) | what each number means and how to reproduce it |
