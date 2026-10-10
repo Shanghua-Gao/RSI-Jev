@@ -424,6 +424,19 @@ def test_cascade_and_seed_pick():
     assert P.pick_seed({"s0": {"sel_metric": .0310}, "s1": {"sel_metric": .0300}}) == "s0"
 
 
+def test_pick_seed_tie_anchor():
+    # A seed within `tie` of the first listed one does not displace it, and it
+    # must not shield a clearly better seed behind it either: with the anchor
+    # fixed on the first listed metric, C clears the bar even though B (inside
+    # the tie) was evaluated before it.
+    m = {"A": {"sel_metric": .100}, "B": {"sel_metric": .090}, "C": {"sel_metric": .0885}}
+    assert P.pick_seed(m, tie=.002) == "C"
+    # Without the anchor, C would be blocked by B: the running best drifts to B
+    # after the first swap, and C is only .0015 below B (inside the tie).
+    assert P.pick_seed({"A": {"sel_metric": .100}, "B": {"sel_metric": .0985}}, tie=.002) == "A"
+    assert P.pick_seed({"A": {"sel_metric": .100}, "B": {"sel_metric": .090}}, tie=.002) == "B"
+
+
 def test_seed_metric(v1):
     n = 400
     dev = _synthetic_dump(n, EX4, 0, [f"td|{'cal' if i % 2 else 'tau'}" for i in range(n)], [f"d{i}" for i in range(n)])

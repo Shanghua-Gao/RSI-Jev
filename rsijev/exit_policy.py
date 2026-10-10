@@ -199,11 +199,15 @@ def seed_metric(dev: dict) -> dict:
 
 
 def pick_seed(metrics: dict, tie: float = 0.002) -> str:
-    """The seed with the lower selection metric; within `tie` the first one listed."""
+    """The seed with the lower selection metric; a seed within `tie` of the first
+    listed one does not displace it. The anchor stays on the first listed metric,
+    so a clearly better seed later in the list is not blocked by an intermediate
+    seed that only ties with the first."""
     names = list(metrics)
     best = names[0]
+    floor = metrics[best]["sel_metric"] - tie
     for n in names[1:]:
-        if metrics[n]["sel_metric"] < metrics[best]["sel_metric"] - tie:
+        if metrics[n]["sel_metric"] < floor:
             best = n
     return best
 
