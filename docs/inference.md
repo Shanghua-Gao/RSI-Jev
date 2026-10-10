@@ -70,6 +70,7 @@ Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v6.1-vl-4b`;
 - an alias: `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+  on a Mac, the MLX builds `v6.1-vl-4b-mlx-8bit` and `v6.1-vl-4b-mlx-4bit` with `--backend mlx` ([`mac.md`](mac.md));
 - a local directory.
 
 `[fast]` installs fla (`flash-linear-attention` and `fla-core` 0.5.x). It only does
@@ -365,7 +366,7 @@ the benchmark above.
 | questions of very different lengths in one request | `RSIJEV_SORT_ROWS=1 RSIJEV_TRIM_OPTIONS=1` | 32 questions with 2–40 options: 1.7–1.8x. 32 uniform questions: 1.08–1.13x |
 | Python, no server | `Decider(...)` | the server's numbers minus HTTP |
 | CPU only | `--device cpu` (fp32) | on the GB10's Arm CPU: 1 question 733 ms, 3 questions 1.5 s, 32 questions on 1,052 tokens 16.7 s |
-| Apple Silicon | torch on MPS or CPU | not measured; an MLX port is in progress and not released |
+| Apple Silicon | `rsi-jev serve v6.1-vl-4b-mlx-8bit --backend mlx` (MLX; 4-bit: `v6.1-vl-4b-mlx-4bit`) | not yet measured on a Mac; quality and the builds: [`mac.md`](mac.md) |
 
 Environment variables win over a profile: `RSIJEV_DOC_CACHE=0 rsi-jev serve ... --profile
 agent` runs without the document cache. On an H100, CUDA graphs on an unreleased internal

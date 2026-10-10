@@ -19,6 +19,10 @@ effort unset; the official score is pending. At layer 64 it reads 0.843 on the s
 the held-out set (v6.1-VL 4B: 0.793 and 0.728); final ECE is 0.064 (4B: 0.048). It runs on one 96
 GB GPU. [`versions/v6.1-vl-27b.md`](../versions/v6.1-vl-27b.md) is its record.
 
+**Mac (MLX) builds of v6.1-VL 4B** (2026-10-10): 8-bit (6.3 GB; Decision Index 0.2.1 16k sample
+51.39 against 51.24 for the bf16 release on the same GPU type) and 4-bit GPTQ (3.9 GB; 50.99). Speed
+and memory on Apple silicon are not yet measured. [`mac.md`](mac.md) has the details.
+
 <details>
 <summary>the seven releases behind it</summary>
 
