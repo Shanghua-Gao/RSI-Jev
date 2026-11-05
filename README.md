@@ -48,12 +48,12 @@ generated, so there are no reasoning tokens to spend.
 What v7.0-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
 how many layers a request uses:
 
-| effort | layers | median latency | use it for |
+| effort | layers | median / mean latency | use it for |
 |---|---|---|---|
-| `low` | 16 | 23 ms | intent, routing, retrieval: layer 16 is already as good as 32 |
-| `medium` | 20 | 27 ms | classification and judgement |
-| `high` | 32 | 40 ms | knowledge, multi-step reasoning, code |
-| `auto` | 16, 20 or 32 | 28 ms | mixed traffic: stops at the first layer that is confident enough |
+| `low` | 16 | 24 / 65 ms | intent, routing, retrieval |
+| `medium` | 20 | 28 / 78 ms | classification and judgement |
+| `high` | 32 | 42 / 117 ms | knowledge, multi-step reasoning, code |
+| `auto` | 16, 20 or 32 | 41 / 85 ms | mixed traffic: stops at the first layer that is confident enough |
 
 v6.1-VL 27B has the same levels at layers 48, 56 and 64.
 
