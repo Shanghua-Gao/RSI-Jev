@@ -28,7 +28,7 @@ experiment that failed on the way, is published with its numbers. The loop is th
 [AutoScientists](https://github.com/mims-harvard/AutoScientists).
 
 - **9 releases in 41 days**, from v1.0 to v7.0-VL, each trained, evaluated and documented by the loop.
-- **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
+- **801 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
 - **v6.1-VL 27B has the highest score on the Decision Index 0.3 public set: 65.64**, with `--effort auto`. The official score is pending.
 - **v7.0-VL 4B scores 60.63 on the public Decision Index 0.3**, up from 50.98 for v6.1-VL 4B.
 
@@ -148,7 +148,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 [docs/rl.md](docs/rl.md).
 
 <details>
-<summary><b>Each experiment that moved a release, from v1.0 to v6.1-VL</b></summary>
+<summary><b>Each experiment that moved a release, from v1.0 to v7.0-VL</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -185,6 +185,10 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
 | **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto`, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| repeat the option list once and read the second copy; let the prompt and the options attend both ways | our 4B pick set +3.5 and +2.6, +3.8 over v6.1-VL together with an option-order consistency loss | what the readout sees mattered more than ~150 later loss and schedule variants |
+| start from the instruction-tuned model, keep the base model's reasoning traces as a training signal | held level at 4B, +1.78 at 2B | reasoning stays a training-time teacher; nothing is generated at inference |
+| data rounds 7 to 12: each round's weakest families get training data built from public train splits | Decision Index 0.3 53.06 → 60.62 | targeted data moves its targets and dilutes the rest; rounds are judged per benchmark |
+| **v7.0-VL** | Decision Index 0.3 **60.63**, held-out **0.811** | **4B: option echo and prefix-bidirectional attention, instruction-tuned start, one end-to-end run** |
 
 </details>
 

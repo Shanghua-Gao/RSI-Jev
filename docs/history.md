@@ -4,7 +4,20 @@
   <img src="../assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v6.1-VL**, the current release, ships at 4B and 27B. **At 4B it is v6.0-VL averaged with a
+**v7.0-VL**, the current release, ships at 4B. **It reads the options in a new way**: the option
+list is repeated once and the readout reads the second copy, and the prompt and the options attend
+to each other in both directions. It starts from the instruction-tuned Qwen3.5-4B and was trained
+once, end to end, on 2.76M examples that the data loop built round by round from the families the
+previous model was weakest on; long reasoning traces from the base model are a training signal
+only, never generated. At layer 32 it leads v6.1-VL 4B on the suite (0.798 vs 0.793), the
+held-out set (0.811 vs 0.728) and MMLU-Pro (0.502 vs 0.462), with better calibration (final ECE
+0.039 vs 0.048), and scores 60.63 on the public Decision Index 0.3 (v6.1-VL 4B 50.98).
+[`versions/v7.0-vl.md`](../versions/v7.0-vl.md) is its record.
+
+<details>
+<summary>the eight releases behind it</summary>
+
+**v6.1-VL shipped at 4B and 27B. At 4B it was v6.0-VL averaged with a
 second fine-tune** of the same base, trained on other data. Nothing was trained after the average; the loop refit each
 exit's temperature and chose the exit thresholds again. The gain is in the averaged tower. At
 layer 32 it leads v6.0-VL on the suite (0.793 vs 0.770) and the held-out set (0.728 vs 0.695),
@@ -23,8 +36,6 @@ GB GPU. [`versions/v6.1-vl-27b.md`](../versions/v6.1-vl-27b.md) is its record.
 51.39 against 51.24 for the bf16 release on the same GPU type) and 4-bit GPTQ (3.9 GB; 50.99). Speed
 and memory on Apple silicon are not yet measured. [`mac.md`](mac.md) has the details.
 
-<details>
-<summary>the seven releases behind it</summary>
 
 **v6.0-VL 4B picked its depth per question.** It read a decision at layers 16, 20 and 32 of
 Qwen3.5-4B-Base and answered at the first one that was confident enough. Classification, intent
@@ -81,7 +92,7 @@ zero-shot and remain the reference every later release is compared against.
 reported, compare each bin with how often it was actually right, average the gaps. Lower is
 better, 0 is perfect.*
 
-Of the 496 arms run since v1.0 (the latest 122 counted by a slightly different rule), these are the ones that got from one release to the next, each
+Of the 801 arms run since v1.0 (the latest 427 counted by a slightly different rule), these are the ones that got from one release to the next, each
 ruling something out. (Arms are now counted one per run record, a rerun counting once; v2.1's
 "ninety-two" counted logged experiment ids, a log most v3.0 arms were never written to.)
 
@@ -120,9 +131,13 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
 | **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto`, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| repeat the option list once and read the second copy; let the prompt and the options attend both ways | our 4B pick set +3.5 and +2.6, +3.8 over v6.1-VL together with an option-order consistency loss | what the readout sees mattered more than ~150 later loss and schedule variants |
+| start from the instruction-tuned model, keep the base model's reasoning traces as a training signal | held level at 4B, +1.78 at 2B | reasoning stays a training-time teacher; nothing is generated at inference |
+| data rounds 7 to 12: each round's weakest families get training data built from public train splits | Decision Index 0.3 53.06 → 60.62 | targeted data moves its targets and dilutes the rest; rounds are judged per benchmark |
+| **v7.0-VL** | Decision Index 0.3 **60.63**, held-out **0.811** | **4B: option echo and prefix-bidirectional attention, instruction-tuned start, one end-to-end run** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
-and every arm on the v4.0-VL, v5.0-VL, v6.0-VL and v6.1-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
+and every arm on the v4.0-VL, v5.0-VL, v6.0-VL, v6.1-VL and v7.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
 v1.0
 
 ## Human in the loop

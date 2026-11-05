@@ -639,3 +639,52 @@ written up with the work they belong to. Suite is the fifteen-benchmark mean wit
 | `m32-soup4b` | method | **kept = v6.1-VL** (weights) | 0.7934 at 32 | 0.7284 | 0.462 | the uniform average of v6.0-VL and `lad2v3` (head stage seed 1), tower and all four heads: +0.0129 over the better member on half B of the development sets (z 2.08; +0.0184, z 4.4, with the rows a member trained on dropped), then one test read; every release bar passed at layer 32 |
 | `m33-tsauto` | calibration / policy | **kept** (temperatures, thresholds) | 0.7924 with `auto` | 0.7324 | 0.460 | one temperature per exit refit on the average (T 0.87 / 0.63 / 1.02 at 16 / 20 / 32), development rows a member trained on dropped first; `auto` 0.85 at 16 and 0.50 at 20, confirmed, 19.5 layers on average; the single threshold's rule picked 0.85 on half A, missed the depth cap on half B by 0.08 layers and fell back to 0.95, not confirmed |
 | `m34-soupwhy` | method | finding | – | – | – | why the average wins, on development rows: the averaged tower recovers 98% of the gain under v6.0-VL's heads, averaged heads alone none; weights 0.3 / 0.7 level with 0.5 / 0.5, 0.7 / 0.3 lower (−0.016, z −3.7) |
+
+## From v6.1-VL to v7.0-VL (2026-10-15/11-05)
+
+Two lines ran side by side: a data loop (each round benchmarked the current model, found its
+weakest families and added training data for them) and a method line (what the model reads and how
+it is trained). **305 arms**: 84 on the data loop and 221 on the method line, one per distinct
+experiment id with a run record, a rerun once. The data count is arms that trained 4B weights (72
+without the 12 build stages); the method count includes build stages and read-only serving checks
+(57 kept, 6 kept as secondary, 156 discarded, 2 incomplete). Neither line trained between 10-07
+and 10-14. Reads: "pick set" is our 4B selection set (133 task families, effort high, v6.1-VL 46.08),
+with paired 95% intervals; DI 0.3 is the full public Decision Index run.
+
+- **What the model reads mattered more than how it is trained.** Repeating the options (+3.5 on the
+  pick set) and letting the prompt and the options attend both ways (+2.6) were the two big wins;
+  together with an option-order consistency loss, +3.9 over its control and +3.8 over v6.1-VL in a
+  full 4B run. About 150 later loss, schedule, optimiser and regulariser variants were flat or worse.
+- **A 2B model is a biased testbed.** Levers that add fit or compute helped the under-fit 2B proxy
+  and vanished at 4B: the model's own reasoning on every row +0.058 at 2B, −0.014 at 4B; twice the
+  training length +0.0096 at 2B, +0.0012 at 4B. A 2B win now needs a 4B read before it counts.
+- **Data built from benchmark train splits moved its targets, and diluted the rest.** Round 10's
+  targeted data lifted its benchmarks (home-appliance simulator +35, API-Bank +13, PhishNChips +6)
+  while families it did not target fell (pick set −1.2). Round 12's knowledge data lifted MuSR
+  (+17.5), CRUXEval (+8.4) and CLadder (+6.7) over the round-10 retrain; its recipe also changed,
+  so the gain is not credited to data alone. Some untargeted benchmarks fell (BPoMP −4.0, When2Call
+  −2.8).
+- **Check that a feature is really on.** Two features were silently inactive in some
+  configurations: the order-consistency loss whenever images were in the run, and the early exits
+  under the bidirectional attention. Parity reads against the full-depth path caught both.
+- **Only benchmark train splits were used;** test splits stayed on the never-train list, and a
+  pre-train leak gate held every round until each source had a leak-check receipt.
+
+| arm | line | outcome | pick set | DI 0.3 | what it was |
+|---|---|---|---|---|---|
+| `scr_e1k` | method | kept | +3.50 (z 4.9) | – | option echo: the option list repeated, the readout reads the second copy (4B quarter-length screen) |
+| `scr_arch2` | method | kept | +2.60 (z 3.6) | – | prefix-bidirectional attention on the full-attention layers (4B screen) |
+| `fs1` | method | kept | +3.93 vs control, +3.81 vs v6.1-VL | – | echo + bidirectional prefix + option-order KL 2.0, full 4B run |
+| `fs1x32mx` | method | kept | +0.77 (z 1.5, non-inferiority) | – | the main exit at layer 32 with detached exits at 12, 16 and 20 |
+| `fs1x32rt` | method | kept | −0.41 (inside the −0.5 guard) | – | retention KL to the base model's own reasoning traces |
+| `inst2bw` | method | kept (2B) | +1.78 at 2B (z 2.5) | – | start from the instruction-tuned model; adopted for every data round from round 10 |
+| `r7d` | data | kept | 55.17 (+9.09 [7.97, 10.23]) | 53.06 | the first merged corpus, 484 sources, on the echo + bidirectional recipe, 6,000 steps |
+| `r8b-e1` | data | not kept (unresolved) | 55.69 | 56.11 | 577 sources incl. 13 built from benchmark train splits, one full epoch |
+| `r9` | data | kept | 55.85 | 56.23 | + 133 image sources at a 20% image share |
+| `r10` | data | kept | 54.68 | 58.78 | + 31 text sources (+21% rows) and 276 image sources |
+| `r10-v2i` | data | recipe kept | 55.78 | 59.61 | round 10's data on the newest recipe: instruction-tuned start, multi-exit, retention traces |
+| `r12-pv` | data | **shipped = v7.0-VL** | 54.95 (vs `r10-v2i` −0.60 [−1.25, +0.11]) | 60.62 | 977 sources (158 new, 65 removed) on the `r10-v2i` recipe with the order-consistency loss on every text row, 36,149 steps |
+
+The pick set does not separate round 12 from `r10-v2i` (−0.60, interval includes 0); the public
+index (60.62 vs 59.61) and our 30-family new-domain set (+0.012 [0.001, 0.023] at full depth) favour
+round 12. The release package of `r12-pv` reads 60.63 on DI 0.3.
