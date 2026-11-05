@@ -35,6 +35,12 @@ from serve.plan import (_QWEN_PRE, _QWEN_SPLIT, _env_on, _flag, _shared_prefix, 
 
 DEFAULT_MAX_OPTIONS = 80
 
+
+def _prefix_bidir_on() -> bool:
+    """Prefix-bidirectional flag (RSIJEV_PREFIX_BIDIR=1), read at call time as rsijev.arch does."""
+    from rsijev.arch import _prefix_bidir_on as on
+    return on()
+
 # Redundant prefix tokens ((Q-1) * prefix) that must be avoidable before the
 # cached path is worth its fixed cost. See score_questions_cached.
 #
@@ -542,6 +548,10 @@ def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: Enco
     else:
         encoded, lead = [encode_question(tokenizer, state, q, enc) for q in questions], None
     prefix = _shared_prefix(tokenizer, state, enc, encoded, ids=lead)
+    if _prefix_bidir_on():
+        # a prefix-bidirectional model has no causal state prefix to cache or continue; every
+        # question is one full forward pass (plain path, no document cache)
+        prefix, doc_cache = None, None
     if doc_cache is not None and prefix is not None and len(prefix) > doc_cache.holdback:
         path = "doc"
     elif prefix is None or len(questions) < 2 or \
@@ -647,9 +657,14 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
                  batch["attention_mask"]], dim=1)
             kw = {"stage_cache": stage_cache,
                   "position_ids": (torch.arange(w, device=device) + npfx).unsqueeze(0).expand(n, w)}
-        z, d = A.staged_scores_fast(model._exit_text, scorers, policy, batch,
-                                    option_pool=model.cfg.option_pool, logit_cap=model.cfg.logit_cap,
-                                    finalize=_adaptive_finalizer(model, policy, batch["mode_id"]), **kw)
+        from rsijev.arch import _prefix_bidir_scope
+        # the staged exit runs inside the bidir scope (no-op without RSIJEV_PREFIX_BIDIR=1), the
+        # same scope DecisionModel._compute opens on the fixed path; rsijev.adaptive._StageRunner reads its rows
+        with _prefix_bidir_scope(model, batch["attention_mask"], batch.get("option_span_end"),
+                                 batch.get("option_mask"), past_key_values=stage_cache):
+            z, d = A.staged_scores_fast(model._exit_text, scorers, policy, batch,
+                                        option_pool=model.cfg.option_pool, logit_cap=model.cfg.logit_cap,
+                                        finalize=_adaptive_finalizer(model, policy, batch["mode_id"]), **kw)
         logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature
         probs = F.softmax(logits, dim=-1).float().cpu()
         for r, (i, L) in enumerate(zip(idx, d.tolist())):
@@ -792,6 +807,8 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
     `plan_request` is for text, so the model's thread only runs the model: the
     image processor once, every question encoded, and the choice of path.
 
+    under RSIJEV_OPTION_ECHO / RSIJEV_PREFIX_BIDIR the plan is always "plain" (one whole pass per question).
+
     `image_path` is "plain" (each question reads the whole state), "cached" (the
     state is read once for this request) or "doc" (through the document cache),
     by the same rules as text. For the last two the plan also carries the M-RoPE
@@ -800,6 +817,11 @@ def plan_image_request(tokenizer, prep, state: str, images: Sequence,
     With `vision_cache` (VisionCache), images seen before skip the image processor
     here and the vision tower on the model's thread: the plan carries their
     features. Raises ValueError when truncation would cut an image."""
+    if getattr(enc, "option_echo", False) or _prefix_bidir_on():
+        # under echo / prefix-bidir every image question is one whole forward
+        # pass ("plain"): a bidir prefix has no causal state to cache, and plain is the path the trainer's own
+        # VisionDecisionModel forward computes (workspace/vis_c/test_vis_c.py parity). Flags unset: unchanged.
+        read_once = False
     from rsijev.vision import IMAGE_PAD, encode_vision_question, expand_state, mrope_position_ids
     feats = vkey = None
     if vision_cache is not None:

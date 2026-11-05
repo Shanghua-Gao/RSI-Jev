@@ -61,6 +61,8 @@ def enable_compile(model, *, mode: str | None = None, dynamic: bool = True,
 def apply_env(model) -> list[str]:
     """Apply what RSIJEV_COMPILE asks for; returns what was applied."""
     done = []
+    if _flag("RSIJEV_COMPILE") and os.environ.get("RSIJEV_PREFIX_BIDIR", "0") == "1":
+        raise RuntimeError("RSIJEV_COMPILE is not supported with RSIJEV_PREFIX_BIDIR=1")
     if _flag("RSIJEV_COMPILE"):
         mode = os.environ.get("RSIJEV_COMPILE_MODE") or None
         done.append(f"compile ({enable_compile(model, mode=mode)} modules, {mode or 'default'})")

@@ -99,7 +99,14 @@ def active(model, device) -> int:
     m = pad_multiple(model)
     if m <= 0 or torch.device(device).type != "cuda" or not supported(model):
         return 0
+    if _prefix_bidir_on():          # the padded / CUDA-graphed stage path is causal-only
+        return 0
     return m
+
+
+def _prefix_bidir_on() -> bool:
+    from rsijev.arch import _prefix_bidir_on as on
+    return on()
 
 
 def pads(n_rows: int, width: int, m: int) -> bool:
@@ -112,6 +119,8 @@ def pads(n_rows: int, width: int, m: int) -> bool:
 def plan_path(model, plan: dict, batch_size: int, device) -> str:
     """The path a text plan runs on: the planner's own (prefix paths are kept; see the
     module docstring). One place to change the rule."""
+    if _prefix_bidir_on() and plan["path"] in ("cached", "doc"):   # never a prefix cache
+        raise RuntimeError(f"RSIJEV_PREFIX_BIDIR=1 but the plan is {plan['path']!r}; plan_request should have made it plain")
     return plan["path"]
 
 
