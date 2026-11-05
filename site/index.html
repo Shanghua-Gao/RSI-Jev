@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="RSI-Jev: Jev-style System One decision models, built by AI research agents. Every release and every failed experiment is published. v6.1-VL averages two fine-tunes: 50.98 on the public Decision Index 0.3 at 4B, 65.64 at 27B on the public set.">
+<meta name="description" content="RSI-Jev: Jev-style System One decision models, built by AI research agents. Every release and every failed experiment is published. v7.0-VL 4B reads the options in a new way: 60.63 on the public Decision Index 0.3, up from 50.98.">
 <title>RSI-Jev</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -380,7 +380,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
   <a class="brand" href="#top">RSI-Jev</a>
   <nav class="links" aria-label="Page">
     <a href="#loop" class="opt-nav">How it’s built</a>
-    <a href="#v6">Releases</a>
+    <a href="#v70">Releases</a>
     <a href="#start">Get started</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
     <button class="theme" id="theme" type="button" aria-label="Switch light or dark theme" hidden>◐</button>
@@ -400,8 +400,8 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     <a class="btn" href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/EXPLORE.md">Every experiment</a>
   </div>
   <div class="stats">
-    <div class="stat"><b>8</b><span>releases in 13 days</span></div>
-    <div class="stat"><b>496</b><span>experiments, all published, failures included</span></div>
+    <div class="stat"><b>9</b><span>releases in 41 days</span></div>
+    <div class="stat"><b>801</b><span>experiments, all published, failures included</span></div>
     <div class="stat"><b>65.64</b><span>Decision Index 0.3 public set, <span style="white-space:nowrap">v6.1-VL</span> 27B</span></div>
   </div>
   <div class="visual tile">
@@ -413,7 +413,8 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
       <li><a class="v" href="#v4">v4.0-VL</a><span class="d">Oct 1</span><span class="f">Reads images</span></li>
       <li><a class="v" href="#v5">v5.0-VL</a><span class="d">Oct 2</span><span class="f">20 of 32 layers</span></li>
       <li><a class="v" href="#v6">v6.0-VL</a><span class="d">Oct 6</span><span class="f">Chooses its depth</span></li>
-      <li class="now"><a class="v" href="#v61-27b">v6.1-VL</a><span class="d">Oct 7–8</span><span class="f">Averages two fine-tunes, at 4B and 27B</span></li>
+      <li><a class="v" href="#v61-27b">v6.1-VL</a><span class="d">Oct 7–8</span><span class="f">Averages two fine-tunes, at 4B and 27B</span></li>
+      <li class="now"><a class="v" href="#v70">v7.0-VL</a><span class="d">Nov 5</span><span class="f">Reads the options both ways</span></li>
     </ol>
   </div>
 </section>
@@ -457,6 +458,22 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     <div><b>Calibrated</b><span>A probability for every option, fitted so confidence matches accuracy.</span></div>
     <div><b>Jev-compatible</b><span><code>POST /v1/systemone</code>. Existing Jev code works once its base URL points here.</span></div>
   </div>
+</section>
+
+<section id="v70">
+  <p class="eyebrow">v7.0-VL 4B · November 5</p>
+  <h2>A new way to read the options.</h2>
+  <p class="sub">v7.0-VL repeats the option list once and lets the question and the options see each other in both directions. It starts from the instruction-tuned Qwen3.5-4B and was trained once, end to end, on data the loop built round by round for its weakest tasks.</p>
+  <div class="visual tile ba">
+    <div class="nums four">
+      <div><b>60.63</b><span>Decision Index 0.3</span><span class="was">v6.1-VL 4B 50.98</span></div>
+      <div><b>0.811</b><span>held-out set</span><span class="was">v6.1-VL 4B 0.728</span></div>
+      <div><b>0.502</b><span>MMLU-Pro</span><span class="was">v6.1-VL 4B 0.462</span></div>
+      <div><b>0.839</b><span>held-out images</span><span class="was">v6.1-VL 4B 0.834</span></div>
+    </div>
+    <p class="cap">Decision Index: public index, full run, effort unset (the released files read 60.61). The rest at 32 layers, on the same evaluation sets with the same code. Better calibrated (final ECE 0.039, against 0.048); KoBBQ is lower (0.903, against 0.937). The same request gets the same answer on every run.</p>
+  </div>
+  <p class="links2"><a href="https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b">The model on Hugging Face</a><a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v7.0-vl.md">How it was made</a></p>
 </section>
 
 <section id="v61-27b">
@@ -659,10 +676,10 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
 <section id="start">
   <p class="eyebrow">Get started</p>
   <h2>Three commands.</h2>
-  <p class="sub">Install it, serve v6.1-VL on your own GPU, and ask. On a 96 GB GPU, serve <code>v6.1-vl-27b --effort auto</code> instead.</p>
+  <p class="sub">Install it, serve v7.0-VL on your own GPU, and ask. On a 96 GB GPU, serve <code>v6.1-vl-27b --effort auto</code> for the 27B.</p>
   <div class="visual cmds">
     <div class="cmd"><span class="k">1</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"</code></pre></div></div>
-    <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v6.1-vl-4b --effort auto</code></pre></div></div>
+    <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v7.0-vl-4b --effort auto</code></pre></div></div>
     <div class="cmd"><span class="k">3</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
   "questions": {"refund": {"type": "noul",
@@ -679,7 +696,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     <a href="https://github.com/Shanghua-Gao/RSI-Jev">GitHub</a>
     <a href="https://huggingface.co/shgao">Hugging Face</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/docs/inference.md">Docs</a>
-    <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v6.1-vl-27b.md">Release notes</a>
+    <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v7.0-vl.md">Release notes</a>
     <a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/EXPLORE.md">Every experiment</a>
     <a href="gallery.html">Image gallery</a>
   </nav>
