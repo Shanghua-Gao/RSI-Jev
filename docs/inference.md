@@ -56,7 +56,7 @@ document cache had the same fault on every hit. Both are fixed now, and
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v6.1-vl-4b --port 8000
+rsi-jev serve shgao/rsi-jev-v7.0-vl-4b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -68,8 +68,8 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v6.1-vl-4b`;
-- an alias: `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v7.0-vl-4b`;
+- an alias: `v7.0-vl-4b`, `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
   on a Mac, the MLX builds `v6.1-vl-4b-mlx-8bit` and `v6.1-vl-4b-mlx-4bit` with `--backend mlx` ([`mac.md`](mac.md));
 - a local directory.
 
@@ -94,7 +94,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.1-vl-4b")
+d = Decider("shgao/rsi-jev-v7.0-vl-4b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -203,7 +203,7 @@ as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.1-vl-4b")
+d = Decider("shgao/rsi-jev-v7.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL

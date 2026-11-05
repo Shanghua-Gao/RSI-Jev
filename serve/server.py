@@ -76,6 +76,9 @@ def load_for_serving(ref, *, device: str | None = None, dtype: str | None = None
     path = resolve_ckpt(ref, revision=revision)
     device = device or best_device(torch)
     keep_fused_kernels_off(device)
+    if str(device).startswith("cuda"):  # before the first fla kernel: one numeric path per process
+        from serve.serve_tune import install
+        print(install(), flush=True)
     dtype_name = dtype or default_dtype_name(device)
     torch_dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[dtype_name]
     model, tok, enc, meta = load_release(path, device, infer_dtype=torch_dtype,
