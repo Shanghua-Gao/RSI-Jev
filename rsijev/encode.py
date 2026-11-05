@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import random
 from dataclasses import dataclass
 from typing import Literal, Sequence
@@ -86,6 +87,10 @@ class EncodeConfig:
     head_frac: float = 0.25          # share of the kept state taken from its head
     cut_marker: str = "\n[... {n} tokens of the state omitted ...]\n"
     desc_marker: str = " ..."        # appended to a trimmed option description
+    # Option echo (RSIJEV_OPTION_ECHO=1, v7.0-VL on): after the K option blocks
+    # repeat them once ("\n\nOptions (again):" + the same blocks, presented order); spans / option_index point to the
+    # SECOND copy. Default from env RSIJEV_OPTION_ECHO=1, as in training. Unset: nothing changes.
+    option_echo: bool = dataclasses.field(default_factory=lambda: os.environ.get("RSIJEV_OPTION_ECHO", "0") == "1")
 
 
 class _NoRoom(ValueError):
@@ -206,6 +211,19 @@ def _encode(tokenizer, state: str, q: Question, cfg: EncodeConfig, order) -> dic
         start = len(ids)
         ids += tokenizer("\n" + block, add_special_tokens=False)["input_ids"]
         spans.append((start, len(ids)))            # [start, end) of this option block
+    if getattr(cfg, "option_echo", False) and spans:   # option echo, capped
+        # The echo is added only if the whole echoed row stays <= RSIJEV_OPTION_ECHO_MAXLEN (default 29581 = the training
+        # length cap): a row that would cross the cap is encoded without echo, so the cap's drop list is the base one.
+        e_ids = tokenizer("\n\nOptions (again):", add_special_tokens=False)["input_ids"]
+        e_spans = []
+        for block in parts[:-1]:                   # the echo copy: each option here has seen all K
+            start = len(ids) + len(e_ids)
+            e_ids = e_ids + tokenizer("\n" + block, add_special_tokens=False)["input_ids"]
+            e_spans.append((start, len(ids) + len(e_ids)))
+        n_cue = len(tokenizer(parts[-1], add_special_tokens=False)["input_ids"])
+        if len(ids) + len(e_ids) + n_cue <= int(os.environ.get("RSIJEV_OPTION_ECHO_MAXLEN", "29581")):
+            ids += e_ids
+            spans = e_spans
     option_index = [e - 1 for _, e in spans]
     ids += tokenizer(parts[-1], add_special_tokens=False)["input_ids"]
     decision_index = len(ids) - 1
@@ -421,11 +439,11 @@ def collate(tokenizer, examples: Sequence[dict], max_options: int,
             mid[r] = MODES.index(e["mode"])
         if option_tokens and e.get("options"):
             oti[r, :k] = torch.tensor(option_first_token_ids(tokenizer, e["options"]))
-    return {k: v.to(device) for k, v in
-            {"input_ids": ids, "attention_mask": am, "decision_index": di,
-             "option_index": oi, "option_span_start": os_, "option_span_end": oe,
-             "option_token_ids": oti, "option_mask": om, "mode_id": mid,
-             "option_perm": perm}.items()}
+    out = {"input_ids": ids, "attention_mask": am, "decision_index": di,
+           "option_index": oi, "option_span_start": os_, "option_span_end": oe,
+           "option_token_ids": oti, "option_mask": om, "mode_id": mid,
+           "option_perm": perm}
+    return {k: v.to(device) for k, v in out.items()}
 
 
 def gold_tensor(cases: Sequence[Case], keys: Sequence[str], max_options: int,

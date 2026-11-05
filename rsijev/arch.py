@@ -625,6 +625,7 @@ class DecisionModel(nn.Module):
         optimisation, not an approximation, and `tests/test_prefix_cache.py`
         checks that rather than trusting it.
         """
+        _refuse_cache_under_bidir("encode_prefix")
         with torch.no_grad(), self.exit_tower():
             cache = self.tower(input_ids=input_ids, attention_mask=attention_mask,
                                use_cache=True).past_key_values
@@ -638,6 +639,7 @@ class DecisionModel(nn.Module):
         Under a causal mask this computes what `encode_prefix` would on the joined
         ids, so a caller holding a cache it must keep passes a copy.
         """
+        _refuse_cache_under_bidir("extend_prefix")
         with torch.no_grad(), self.exit_tower():
             pos = torch.arange(start, start + input_ids.shape[1],
                                device=input_ids.device).unsqueeze(0).expand(input_ids.shape[0], -1)
@@ -733,10 +735,12 @@ class DecisionModel(nn.Module):
         would not change the metric but would corrupt every cost comparison in
         the report.
         """
-        hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
-                                    past_key_values=past_key_values,
-                                    position_ids=position_ids,
-                                    inputs_embeds=inputs_embeds)
+        with _prefix_bidir_scope(self, attention_mask, option_span_end, option_mask,
+                                 past_key_values=past_key_values):   # a no-op when RSIJEV_PREFIX_BIDIR is unset
+            hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
+                                        past_key_values=past_key_values,
+                                        position_ids=position_ids,
+                                        inputs_embeds=inputs_embeds)
         b = torch.arange(final.shape[0], device=final.device)
         if self.mix_logits is not None:
             if mode_id is None:
@@ -873,8 +877,9 @@ class DecisionModel(nn.Module):
         only. The values returned are the same either way."""
         if self.aux_scorers is None:
             raise ValueError("forward_exits needs arch aux_exits")
-        hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
-                                    position_ids=position_ids, inputs_embeds=inputs_embeds)
+        with _prefix_bidir_scope(self, attention_mask, option_span_end, option_mask):
+            hs, final = self._run_tower(input_ids, attention_mask, all_states=True,
+                                        position_ids=position_ids, inputs_embeds=inputs_embeds)
         b = torch.arange(final.shape[0], device=final.device)
         norm = self._exit_text.norm
 
@@ -1025,3 +1030,117 @@ class LogprobReadout(nn.Module):
         vocab = self.lm.lm_head(final[b, decision_index])      # (B, V)
         picked = vocab.gather(1, option_token_ids)             # (B, K)
         return picked.masked_fill(~option_mask, float("-inf"))
+
+
+# Prefix-bidirectional full attention (RSIJEV_PREFIX_BIDIR=1, v7.0-VL on).
+# Env RSIJEV_PREFIX_BIDIR=1: on full-attention layers the prefix [0, P) (prompt + options, P = end of the last option span)
+# is non-causal; positions >= P stay causal; linear-attention layers unchanged. Env unset: nothing below changes a call --
+# unlike the training tree the sdpa wrapper is installed lazily, on the first active scope, so with the env unset
+# ALL_ATTENTION_FUNCTIONS is never touched. Not compatible with a KV/prefix cache (a cached state was computed causally):
+# encode_prefix / extend_prefix / a past_key_values pass refuse under the flag; serve/infer.py and serve/padded.py force
+# every text row onto one plain full forward pass.
+import os as _os_e2
+
+
+def _prefix_bidir_on() -> bool:
+    return _os_e2.environ.get("RSIJEV_PREFIX_BIDIR", "0") == "1"
+
+
+def _refuse_cache_under_bidir(what: str) -> None:
+    if _prefix_bidir_on():
+        raise RuntimeError(f"RSIJEV_PREFIX_BIDIR=1: {what} (a causal prefix cache) is not valid for a "
+                           "prefix-bidirectional model; serve every row as one full forward pass")
+
+
+_AAF_e2 = None
+_prev_sdpa_e2 = None
+
+
+def _sdpa_e2(module, query, key, value, attention_mask, *a, **k):
+    if not getattr(attention_mask, "_jm_bidir", False):
+        return _prev_sdpa_e2(module, query, key, value, attention_mask, *a, **k)
+    k.pop("is_causal", None)
+    T, rows = query.shape[2], []
+    for b, (P, n) in enumerate(attention_mask._jm_rows):
+        q, kk, vv = query[b:b + 1], key[b:b + 1], value[b:b + 1]
+        parts = []
+        if P > 0:                              # prefix queries see the whole prefix
+            parts.append(_prev_sdpa_e2(module, q[:, :, :P], kk[:, :, :P], vv[:, :, :P], None, *a, is_causal=False, **k)[0])
+        if n > P:                              # cue/answer queries: causal over [0, n)
+            m = torch.arange(P, n, device=q.device)[:, None] >= torch.arange(n, device=q.device)[None]
+            parts.append(_prev_sdpa_e2(module, q[:, :, P:n], kk[:, :, :n], vv[:, :, :n], m[None, None], *a, is_causal=False, **k)[0])
+        if T > n:                              # right padding: never read by a valid position
+            parts.append(query.new_zeros(1, T - n, query.shape[1], value.shape[-1]))
+        rows.append(torch.cat(parts, 1))
+    return torch.cat(rows, 0), None
+
+
+def _install_sdpa_e2():
+    """Wrap ALL_ATTENTION_FUNCTIONS["sdpa"] once (the training wrapper, verbatim). Returns the registry or None."""
+    global _AAF_e2, _prev_sdpa_e2
+    if _AAF_e2 is not None:
+        return _AAF_e2
+    try:
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS as aaf
+    except Exception as _e:  # noqa: BLE001
+        print(f"[arch] prefix-bidirectional sdpa wrapper NOT installed: {_e}", flush=True)
+        return None
+    if aaf["sdpa"] is not _sdpa_e2:
+        _prev_sdpa_e2 = aaf["sdpa"]
+        aaf["sdpa"] = _sdpa_e2
+    _AAF_e2 = aaf
+    return aaf
+
+
+def _bidir_pre_e2(mod, args, kwargs):
+    rows = getattr(mod, "_jm_bidir_rows", None)
+    am = kwargs.get("attention_mask")
+    if rows is None or isinstance(am, dict):
+        return None
+    if args:
+        raise ValueError("prefix-bidirectional attention: the text model must be called with keyword arguments")
+    if kwargs.get("past_key_values") is not None:
+        raise ValueError("prefix-bidirectional attention: no KV cache continuation under the flag")
+    x = kwargs.get("input_ids") if kwargs.get("input_ids") is not None else kwargs.get("inputs_embeds")
+    B, T = int(x.shape[0]), int(x.shape[1])
+    if len(rows) != B:
+        raise ValueError(f"prefix-bidirectional attention: {len(rows)} prefix rows for a batch of {B}")
+    marker = torch.tensor(rows, dtype=torch.long, device=x.device)
+    marker._jm_bidir, marker._jm_rows = True, rows
+    lin = None if (am is None or T == 1 or bool((am == 1).all())) else am[:, -T:].contiguous()
+    kwargs["attention_mask"] = {"full_attention": marker, "linear_attention": lin}
+    return args, kwargs
+
+
+@contextlib.contextmanager
+def _prefix_bidir_scope(model, attention_mask, option_span_end, option_mask, past_key_values=None):
+    """Inside: the text model's forward runs full-attention layers prefix-bidirectional. No-op when the env is unset."""
+    if not _prefix_bidir_on():
+        yield
+        return
+    if past_key_values is not None:
+        raise ValueError("prefix-bidirectional attention: a prefix-cache continuation is not valid under RSIJEV_PREFIX_BIDIR=1")
+    if _install_sdpa_e2() is None or option_span_end is None:
+        raise ValueError("prefix-bidirectional attention needs the sdpa wrapper and option spans in the batch")
+    tm = _text_model(model.tower)
+    if getattr(tm.config, "_attn_implementation", None) != "sdpa":
+        raise ValueError(f"prefix-bidirectional attention needs sdpa attention, not {tm.config._attn_implementation!r}")
+    if not getattr(tm, "_jm_bidir_hooked", False):
+        tm.register_forward_pre_hook(_bidir_pre_e2, with_kwargs=True)
+        tm._jm_bidir_hooked = True
+    om = option_mask if option_mask is not None else torch.ones_like(option_span_end, dtype=torch.bool)
+    P = torch.where(om, option_span_end, torch.zeros_like(option_span_end)).max(dim=1).values
+    n = attention_mask.sum(dim=1) if attention_mask is not None else None
+    P, n = P.tolist(), (n.tolist() if n is not None else None)
+    rows = [(min(int(p), int(m)), int(m)) for p, m in zip(P, n)] if n is not None else None
+    if rows is None:
+        raise ValueError("prefix-bidirectional attention needs the 2D attention_mask (right padding)")
+    tm._jm_bidir_rows = rows
+    _BIDIR_STATS["scopes"] += 1
+    try:
+        yield
+    finally:
+        tm._jm_bidir_rows = None
+
+
+_BIDIR_STATS = {"scopes": 0}       # active scopes entered (tests read it)

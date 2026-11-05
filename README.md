@@ -13,12 +13,12 @@
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="docs/inference.md">Docs</a> ·
   <a href="EXPLORE.md">Every experiment</a> ·
-  <a href="versions/v6.1-vl-27b.md">Release notes</a>
+  <a href="versions/v7.0-vl.md">Release notes</a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-black" alt="MIT"></a>
-  <a href="https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
+  <a href="https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b"><img src="https://img.shields.io/badge/weights-Apache--2.0-black" alt="Apache-2.0 weights"></a>
   <a href="serve/README.md"><img src="https://img.shields.io/badge/API-Jev%20compatible-black" alt="Jev-compatible API"></a>
 </p>
 
@@ -27,10 +27,10 @@ experiments, and retire their own champions when the evidence says to. Every rel
 experiment that failed on the way, is published with its numbers. The loop is the next version of
 [AutoScientists](https://github.com/mims-harvard/AutoScientists).
 
-- **8 releases in 13 days**, from v1.0 to v6.1-VL, each trained, evaluated and documented by the loop.
-- **496 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
+- **9 releases in 41 days**, from v1.0 to v7.0-VL, each trained, evaluated and documented by the loop.
+- **801 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
 - **v6.1-VL 27B has the highest score on the Decision Index 0.3 public set: 65.64**, with `--effort auto`. The official score is pending.
-- **v6.1-VL 4B scores 50.98 on the public Decision Index 0.3**, up from 46.23 for v6.0-VL.
+- **v7.0-VL 4B scores 60.63 on the public Decision Index 0.3**, up from 50.98 for v6.1-VL 4B.
 
 <p align="center">
   <picture>
@@ -45,15 +45,15 @@ Models that answer a yes/no, pick-one-of-*k* or rate-on-a-rubric question about 
 or an image. One forward pass returns a calibrated probability for every option. Nothing is
 generated, so there are no reasoning tokens to spend.
 
-What v6.1-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
+What v7.0-VL can spend is depth. It has answer heads at layers 16, 20 and 32, and `effort` picks
 how many layers a request uses:
 
-| effort | layers | median latency | use it for |
+| effort | layers | median / mean latency | use it for |
 |---|---|---|---|
-| `low` | 16 | 23 ms | intent, routing, retrieval: layer 16 is already as good as 32 |
-| `medium` | 20 | 27 ms | classification and judgement |
-| `high` | 32 | 40 ms | knowledge, multi-step reasoning, code |
-| `auto` | 16, 20 or 32 | 28 ms | mixed traffic: stops at the first layer that is confident enough |
+| `low` | 16 | 24 / 65 ms | intent, routing, retrieval |
+| `medium` | 20 | 28 / 78 ms | classification and judgement |
+| `high` | 32 | 42 / 117 ms | knowledge, multi-step reasoning, code |
+| `auto` | 16, 20 or 32 | 41 / 85 ms | mixed traffic: stops at the first layer that is confident enough |
 
 v6.1-VL 27B has the same levels at layers 48, 56 and 64.
 
@@ -70,7 +70,7 @@ Fast when it's easy, deep when it's hard. Which tasks need which depth:
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve v6.1-vl-4b --effort auto --port 8000
+rsi-jev serve v7.0-vl-4b --effort auto --port 8000
 ```
 
 On a 96 GB GPU, `rsi-jev serve v6.1-vl-27b --effort auto` serves the 27B.
@@ -92,7 +92,7 @@ Or in Python, with no server:
 ```python
 from rsijev import Decider
 
-d = Decider("v6.1-vl-4b")
+d = Decider("v7.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])
@@ -106,7 +106,8 @@ response reports which layer answered and how confident it was. Options and limi
 
 | Model | Input | Decision Index 0.3 | Decision Index 0.2.1 | Held-out set | |
 |---|---|---|---|---|---|
-| **v6.1-VL-27B**, `auto` | text, images | **65.64** | **64.92** | **0.808** | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b) |
+| **v7.0-VL-4B** | text, images | 60.63 | 59.63 | **0.811** | [🤗](https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b) |
+| v6.1-VL-27B, `auto` | text, images | **65.64** | **64.92** | 0.808 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b) |
 | v6.1-VL-4B | text, images | 50.98 | 50.74 | 0.729 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-4b) |
 | v6.0-VL-4B | text, images | 46.23 | 46.24 | 0.698 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
 | v5.0-VL-3B | text, images | – | 38.38 | 0.689 | [🤗](https://huggingface.co/shgao/rsi-jev-v5.0-vl-3b) |
@@ -122,9 +123,12 @@ Decision Index is the public benchmark, full runs of the default configuration (
 index (public set; v6.1-VL 4B scored with the pre-release 0.3 kit) and 0.2.1. The held-out set
 is our zero-shot check: no release trained on it. The 4B and smaller are fine-tuned from Qwen3.5
 Base; v6.0-VL and v6.1-VL 4B run the whole Qwen3.5-4B-Base and can answer at layer 16, 20 or 32
-of it. v6.1-VL 27B is fine-tuned from Qwen3.8-27B and answers at layer 48, 56 or 64. Every
+of it. v7.0-VL 4B starts from the instruction-tuned Qwen3.5-4B, repeats the options and reads
+them with attention that runs both ways over the prompt; it answers at layer 16, 20 or 32 the same
+way. v6.1-VL 27B is fine-tuned from Qwen3.8-27B and answers at layer 48, 56 or 64. Every
 number, caveat and per-benchmark score is in the [release records](versions/).
 
+- **2026-11-05 · v7.0-VL 4B** reads the options in a new way (option echo, prefix-bidirectional attention) and is trained once on 2.76M examples. Decision Index 0.3 50.98 → 60.63.
 - **2026-10-08 · v6.1-VL 27B** brings the same method to Qwen3.8-27B. Decision Index 0.3 public set 65.64 with `auto`.
 - **2026-10-07 · v6.1-VL 4B** averages v6.0-VL with a second fine-tune of the same base. Decision Index 0.3 46.23 → 50.98.
 - **2026-10-06 · v6.0-VL 4B** chooses its depth per question. Decision Index 38.38 → 46.24.
@@ -144,7 +148,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 [docs/rl.md](docs/rl.md).
 
 <details>
-<summary><b>Each experiment that moved a release, from v1.0 to v6.1-VL</b></summary>
+<summary><b>Each experiment that moved a release, from v1.0 to v7.0-VL</b></summary>
 
 | where it went | result | what it established |
 |---|---|---|
@@ -181,6 +185,10 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | two LoRA fine-tunes of Qwen3.8-27B, averaged weight 0.5 each, chosen from 9 full Decision Index 0.3 reads | Decision Index 0.3 65.59, against 64.83 and 65.30 for the two members | averaging carries over to 27B; uneven weights and a third ingredient read 65.37 to 65.58 |
 | short inputs right-padded to a multiple of 64 tokens and replayed as CUDA graphs | short one-question requests in about half the time | at one request a time the 27B is bound by kernel launches, not compute |
 | **v6.1-VL 27B** | Decision Index 0.3 public set **65.64** with `auto`, held-out **0.808** | **27B: the same method on Qwen3.8-27B, answers at layer 48, 56 or 64** |
+| repeat the option list once and read the second copy; let the prompt and the options attend both ways | our 4B pick set +3.5 and +2.6, +3.8 over v6.1-VL together with an option-order consistency loss | what the readout sees mattered more than ~150 later loss and schedule variants |
+| start from the instruction-tuned model, keep the base model's reasoning traces as a training signal | held level at 4B, +1.78 at 2B | reasoning stays a training-time teacher; nothing is generated at inference |
+| data rounds 7 to 12: each round's weakest families get training data built from public train splits | Decision Index 0.3 53.06 → 60.62 | targeted data moves its targets and dilutes the rest; rounds are judged per benchmark |
+| **v7.0-VL** | Decision Index 0.3 **60.63**, held-out **0.811** | **4B: option echo and prefix-bidirectional attention, instruction-tuned start, one end-to-end run** |
 
 </details>
 

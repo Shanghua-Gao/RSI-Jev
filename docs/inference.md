@@ -56,7 +56,7 @@ document cache had the same fault on every hit. Both are fixed now, and
 
 ```bash
 pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
-rsi-jev serve shgao/rsi-jev-v6.1-vl-4b --port 8000
+rsi-jev serve shgao/rsi-jev-v7.0-vl-4b --port 8000
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
   "model": "jev-latest",
   "state": [{"role": "user", "content": "I was charged twice. Please refund."}],
@@ -68,8 +68,8 @@ curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{
 The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
-- a Hugging Face id, such as `shgao/rsi-jev-v6.1-vl-4b`;
-- an alias: `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- a Hugging Face id, such as `shgao/rsi-jev-v7.0-vl-4b`;
+- an alias: `v7.0-vl-4b`, `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
   on a Mac, the MLX builds `v6.1-vl-4b-mlx-8bit` and `v6.1-vl-4b-mlx-4bit` with `--backend mlx` ([`mac.md`](mac.md));
 - a local directory.
 
@@ -94,7 +94,7 @@ The same thing from Python, with no server:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.1-vl-4b")
+d = Decider("shgao/rsi-jev-v7.0-vl-4b")
 d.decide("I was charged twice. Please refund.",
          {"refund": {"type": "noul", "instructions": "Does the user request a refund?"}})
 ```
@@ -115,24 +115,24 @@ A multi-exit release answers at more than one depth. `effort` picks the depth pe
 `RSIJEV_EFFORT`); a request's own effort wins. It uses the heads the release ships, no other
 weights:
 
-v6.1-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
+v7.0-VL is a System One model: one forward pass, no generated reasoning, a probability for every option. `effort` sets how many layers that one pass uses (16, 20 or 32), not how many tokens it writes; it writes none.
 
-| effort | depth (v6.1-VL) | Decision Index 0.2.1 | median | v6.0-VL |
+| effort | depth (v7.0-VL) | Decision Index 0.2.1 | median / mean | v6.1-VL |
 |---|---|---:|---:|---:|
-| `low` | the shallowest aux exit: layer 16 | 47.9 | 23 ms | 43.3 |
-| `medium` | the deepest aux exit: layer 20 | 50.8 | 27 ms | 45.9 |
-| `high` | the main exit, all layers: layer 32 | 51.4 | 40 ms | 45.9 |
-| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.85 at 16 and 0.50 at 20 by default on v6.1-VL, 0.95 and 0.59 on v6.0-VL), every text request | 50.9 | 28 ms | 45.8 |
-| unset | the default below | 51.4 | 40 ms | 45.7 |
+| `low` | the shallowest aux exit: layer 16 | 54.8 | 24 / 65 ms | 47.9 |
+| `medium` | the deepest aux exit: layer 20 | 59.2 | 28 / 78 ms | 50.8 |
+| `high` | the main exit, all layers: layer 32 | 59.8 | 42 / 117 ms | 51.4 |
+| `auto` | the release's confidence cascade (16 → 20 → 32, stop at the first exit whose calibrated top-1 probability reaches that exit's threshold: 0.80 at 16 and 0.65 at 20 on v7.0-VL, 0.85 and 0.50 on v6.1-VL), every text request | 59.3 | 41 / 85 ms | 50.9 |
+| unset | the default below | 59.7 | 42 / 104 ms | 51.4 |
 
 Any other value is a 422 that lists these four.
 
 Decision Index figures are reads of the kit's stratified 16,000-request sample (one H200, bf16,
-one request at a time), not full runs; v5.0-VL reads 37.4 on the same sample. Latency is
-v6.1-VL's, on the same run.
+one request at a time), not full runs, overlapping rows removed; v5.0-VL reads 37.4 on the same
+sample. Latency is v7.0-VL's, on the same run.
 
 ```bash
-rsi-jev serve v6.1-vl-4b --effort medium            # server default
+rsi-jev serve v7.0-vl-4b --effort medium            # server default
 curl -s localhost:8000/v1/systemone -d '{"model":"jev-latest","effort":"low", ...}'
 ```
 
@@ -154,7 +154,7 @@ image requests (layer 32, the main head's calibration). A single-exit release's 
 their shape.
 
 **Threshold.** `"confidence_threshold"` (a number in (0, 1]) replaces the release's tau (0.95 on
-v6.1-VL, 0.59 on v6.0-VL) for one request: a question stops at the first aux exit where its calibrated top-1
+v7.0-VL and v6.1-VL, 0.59 on v6.0-VL) for one request: a question stops at the first aux exit where its calibrated top-1
 probability is at least the threshold, the same threshold at every aux exit. It applies to
 effort `auto` and to the default adaptive path (multi-question requests); with `low`,
 `medium` or `high`, or outside the range, it is a 422. Lower thresholds stop earlier (any
@@ -167,7 +167,7 @@ With effort `auto` the threshold can also be set per aux exit, as an object:
 there; `1.0` at an exit means never stop at that exit; an exit the release does not have, or a
 value outside (0, 1], is a 422. The object form is refused without effort `auto`. Effort auto's
 default is the release's `meta.json` `adaptive.auto_thresholds` (`{"16": ..., "20": ...}`) when
-it has one, else the single tau; v6.1-VL ships `{"16": 0.85, "20": 0.5}` (v6.0-VL `{"16": 0.95, "20": 0.59}`).
+it has one, else the single tau; v7.0-VL ships `{"16": 0.8, "20": 0.65}` (v6.1-VL `{"16": 0.85, "20": 0.5}`, v6.0-VL `{"16": 0.95, "20": 0.59}`).
 The unset default (no effort) always uses the single tau and ignores `auto_thresholds`, so the
 numbers above hold.
 
@@ -203,7 +203,7 @@ as data URLs and mark where each one goes in the state with `<image>`:
 
 ```python
 from rsijev import Decider
-d = Decider("shgao/rsi-jev-v6.1-vl-4b")
+d = Decider("shgao/rsi-jev-v7.0-vl-4b")
 d.decide("Customer photo: <image>\nThe customer says it arrived damaged.",
          {"damaged": {"type": "noul", "instructions": "Does the photo show visible damage?"}},
          images=["photo.jpg"])          # a path, bytes, a PIL image or a data URL
@@ -280,6 +280,35 @@ multi-question requests and layer 32 for a single question, `--adaptive on` runs
 text request, and `--fixed-exit` never stops early. The effort levels above override this per
 request. Responses report the layer each question used in `usage.depth`. A question answered at
 an early exit gets exactly what the model would return if it were read only at that exit.
+
+### v7.0-VL 4B: a new input format
+
+v7.0-VL has v6.1-VL's files, exits and parameter count (4.69B, self-contained) and is fine-tuned
+from the instruction-tuned `Qwen/Qwen3.5-4B`. It reads the options in a new format: the option list
+is repeated once and the readout reads the second copy, and the prompt and the options attend to
+each other in both directions on the full-attention layers. Its `meta.json` turns both on
+(`"serve_env": {"RSIJEV_OPTION_ECHO": "1", "RSIJEV_PREFIX_BIDIR": "1"}`); the server applies them
+when it loads the release, and refuses to start if the environment sets them otherwise. Because the
+prompt then depends on every option, nothing is cached causally: no prefix or document cache, no
+padded CUDA-graph path, and every question is one full forward pass; full attention runs through
+PyTorch's sdpa.
+
+```json
+{"cal_mode": "temp",
+ "exits": {"16": {"cal_mode": "temp", "logT": 0.28},
+           "20": {"cal_mode": "temp", "logT": 0.22}},
+ "main_logT": 0.26}
+```
+
+`meta.json` `adaptive`: `exits` `[16, 20, 32]`, `tau` 0.95, `auto_thresholds`
+`{"16": 0.8, "20": 0.65}`.
+
+**Deterministic answers.** On a GPU the server fixes the block size and warp count of six fla
+kernels (`serve/serve_tune.py`) instead of letting them autotune when it starts; an autotuned pick
+changes how sums round, so two processes could answer about 1% of questions differently at an
+early exit. With the fix, fresh processes gave bitwise identical outputs on the RTX PRO 6000 and
+the H200. `RSIJEV_TUNE_PIN=0` restores stock autotuning; a pinned configuration that does not fit a
+GPU falls back to autotuning for that kernel and says so at startup.
 
 ### v6.1-VL 4B: two fine-tunes averaged
 

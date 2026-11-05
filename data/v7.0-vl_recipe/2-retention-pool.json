@@ -1,0 +1,27 @@
+{
+ "stage": "longest-boxed retention pool",
+ "script": "train/v7.0/retention/mk_pool_v2i.py",
+ "args": ["<trace_sample_dir>", "<traces.jsonl>", "data/v7.0-vl_recipe/3-train.json", "<k1_drop_file>", 24712, "<retention_pool>/rt_pool_all.jsonl", "<retention_pool>/rt_pool_long.jsonl"],
+ "rules": [
+  "drop holdout rows (sha256(case_id) % 10 == 0) and truncated traces (finish_reason length)",
+  "drop traces containing <think>, </think> or a chat special token (counted, not stripped)",
+  "row text = the CoT prompt + the trace",
+  "keep boxed traces only; sort by (-chars of the answer part, case_id, key); take the first N",
+  "check: no holdout row, no drop-list or K1 pair, every case_id a TRAIN case of the spec's sources"
+ ],
+ "n": 24712,
+ "n_rule": "ceil(21,087 x 2400 / 2048): the file holds 2400/2048 of what the fit keeps",
+ "fit_keeps": {"retention_pool": 21087, "retention_pool_rule": "2048 x 36,149 / 3,511 (earlier pool size scaled by the training steps)"},
+ "receipt": {
+  "traces": 397420,
+  "trunc": 157846,
+  "special_dropped": 69017,
+  "kept": 170535,
+  "boxed_candidates": 169339,
+  "rows": 24712,
+  "trace_chars_min_median_max": [2188, 2702, 7307],
+  "boxed_correct_share": 0.634,
+  "sources": 400,
+  "revisits_per_row": 6.86
+ }
+}

@@ -119,6 +119,9 @@ def encode_questions(tokenizer, state: str, questions: Sequence[Question],
     text after the blank line starts with whitespace, or that needs its state
     truncated, is encoded by encode_question on its own."""
     lead = f"{state}\n\n"
+    if getattr(enc, "option_echo", False):
+        # the option echo changes the rows (rsijev.encode); build each one with encode_question
+        return [encode_question(tokenizer, state, q, enc) for q in questions], None
     if not (enc.layout == "state_first" and enc.option_order in ("canonical", "reversed")
             and state.strip() and splits_after_blank_line(tokenizer)):
         return [encode_question(tokenizer, state, q, enc) for q in questions], None

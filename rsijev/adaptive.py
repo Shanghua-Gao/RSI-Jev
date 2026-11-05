@@ -401,9 +401,18 @@ def staged_scores(tm, scorers: dict, policy: Policy, batch: dict, *, cache_facto
         elif cache_factory is not None:
             extra = {"past_key_values": cache_factory(int(rows.numel())), "use_cache": True,
                      "position_ids": position_ids[rows]}
-        h = run_layers(tm, lo, L, input_ids=ids[rows] if lo == 0 else None,
-                       inputs_embeds=h if lo > 0 else None,
-                       attention_mask=None if am is None else am[rows], **extra)
+        brows = getattr(tm, "_jm_bidir_rows", None)
+        if brows is not None:
+            if extra:
+                raise ValueError("prefix-bidirectional attention: no prefix-cache continuation in the staged exit")
+            tm._jm_bidir_rows = [brows[k] for k in rows.tolist()]   # arch._bidir_pre_e2 reads the rows still running
+        try:
+            h = run_layers(tm, lo, L, input_ids=ids[rows] if lo == 0 else None,
+                           inputs_embeds=h if lo > 0 else None,
+                           attention_mask=None if am is None else am[rows], **extra)
+        finally:
+            if brows is not None:
+                tm._jm_bidir_rows = brows
         z, dh = readout(scorers[L], tm.norm(h), batch, rows=rows, option_pool=option_pool,
                         logit_cap=logit_cap)
         if out is None:
@@ -598,6 +607,16 @@ class _StageRunner:
                       "linear_attention": rec(**mk) if rec is not None
                       else self.tm._update_linear_attn_mask(am, cache)}
         self.pe = self.tm.rotary_emb(x, rpos)
+        brows = getattr(self.tm, "_jm_bidir_rows", None)
+        if brows is not None:
+            # inside arch._prefix_bidir_scope the full-attention layers get the
+            # prefix-bidir marker and the linear-attention layers the raw 2D mask, exactly what arch._bidir_pre_e2
+            # hands tm.forward on the fixed path, for the rows still running
+            sub = brows if full else [brows[k] for k in rows.tolist()]
+            marker = torch.tensor(sub, dtype=torch.long, device=x.device)
+            marker._jm_bidir, marker._jm_rows = True, sub
+            lin = None if (am is None or T == 1 or bool((am == 1).all())) else am[:, -T:].contiguous()
+            self.masks = {"full_attention": marker, "linear_attention": lin}
         self.key = True
 
     def run(self, lo, hi, x):

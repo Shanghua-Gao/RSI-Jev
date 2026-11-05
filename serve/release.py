@@ -25,7 +25,8 @@ from rsijev.encode import EncodeConfig
 
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
-REPOS = {"v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
+REPOS = {"v7.0-vl-4b": "shgao/rsi-jev-v7.0-vl-4b",
+         "v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
          "v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
          # MLX builds of v6.1-VL 4B (Apple silicon): serve with --backend mlx
          "v6.1-vl-4b-mlx-8bit": "shgao/rsi-jev-v6.1-vl-4b-mlx-8bit",
@@ -38,7 +39,7 @@ REPOS = {"v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
          "v2.0-2b": "shgao/rsi-jev-v2.0-qwen3.5-2b",
          "v1.0-2b": "shgao/rsi-jev-v1.0-qwen3.5-2b",
          "v1.0-0.8b": "shgao/rsi-jev-v1.0-qwen3.5-0.8b"}
-LATEST = "v6.1-vl-4b"
+LATEST = "v7.0-vl-4b"
 
 _REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
 
@@ -341,6 +342,29 @@ def strip_exit_tower(src: str | Path, dst: str | Path, exit_layer: int) -> dict:
             "params_dropped": sum(v.numel() for k, v in sd.items() if k not in kept)}
 
 
+# Input-format switches a release can declare in meta.json "serve_env" (v7.0-VL on). They
+# must hold while the model is built and for every request it serves, so they are process
+# environment variables, read by rsijev.encode (option echo) and rsijev.arch (prefix-
+# bidirectional attention) exactly as in training. A release without "serve_env" changes
+# nothing.
+SERVE_ENV_FLAGS = ("RSIJEV_OPTION_ECHO", "RSIJEV_PREFIX_BIDIR")
+
+
+def apply_serve_env(meta: dict) -> dict:
+    """Set the release's meta.json "serve_env" switches in os.environ; returns them.
+    Refuses an unknown switch, and a value the environment already sets differently."""
+    want = {str(k): str(v) for k, v in (meta.get("serve_env") or {}).items()}
+    bad = sorted(set(want) - set(SERVE_ENV_FLAGS))
+    if bad:
+        raise RuntimeError(f"meta.json serve_env names unknown switches {bad}; known: {list(SERVE_ENV_FLAGS)}")
+    for k, v in want.items():
+        cur = os.environ.get(k)
+        if cur is not None and cur != v:
+            raise RuntimeError(f"this release needs {k}={v}, but the environment sets {k}={cur}")
+        os.environ[k] = v
+    return want
+
+
 def own_token_pool(spec: dict, meta: dict) -> bool:
     """Own-token option pooling: meta's flag, or RSIJEV_OPTION_POOL_OWN_TOKENS=1|0 to override."""
     env = os.environ.get("RSIJEV_OPTION_POOL_OWN_TOKENS")
@@ -404,6 +428,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     ckpt = Path(ckpt)
     meta = json.loads((ckpt / "meta.json").read_text())
     spec = meta["spec"]
+    served_env = apply_serve_env(meta)
     # meta.json serving.pad_multiple: the numerics this release is defined on (serve/padded.py);
     # read before meta["serving"] is rebuilt below. RSIJEV_PAD_MULTIPLE overrides it at run time.
     pad_multiple = int((meta.get("serving") or {}).get("pad_multiple", 0) or 0)
@@ -434,10 +459,15 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
         if getattr(tc, "layer_types", None):
             tc.layer_types = list(tc.layer_types)[: int(exit_layer)]
         kw["config"] = bc
+    from rsijev.arch import _prefix_bidir_on
+    _sdpa = _prefix_bidir_on()   # the prefix-bidirectional mask needs sdpa attention
+    if _sdpa:
+        kw["attn_implementation"] = "sdpa"      # the prefix-bidir wrapper is an sdpa wrapper
     if local:
         from transformers import AutoConfig
         lm = AutoModelForCausalLM.from_config(kw.get("config") or AutoConfig.from_pretrained(src),
-                                              dtype=infer_dtype or torch.float32)
+                                              dtype=infer_dtype or torch.float32,
+                                              **({"attn_implementation": "sdpa"} if _sdpa else {}))
     else:
         lm = AutoModelForCausalLM.from_pretrained(meta["base_model"],
                                                   dtype=infer_dtype or torch.float32, **kw)
@@ -454,6 +484,9 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
         raise RuntimeError(f"checkpoint does not match {meta['base_model']}: "
                            f"missing {bad[:5]}, unexpected {list(unexpected)[:5]}")
     cfg = getattr(lm.config, "text_config", None) or lm.config
+    if _prefix_bidir_on() and getattr(cfg, "_attn_implementation", None) != "sdpa":
+        raise RuntimeError(f"RSIJEV_PREFIX_BIDIR=1 needs sdpa attention, the tower loaded "
+                           f"{getattr(cfg, '_attn_implementation', None)!r}")
     arch = ArchConfig(readout=spec["readout"], readout_layer=spec["readout_layer"],
                       max_options=spec["max_options"], freeze_base=True,
                       option_pool=spec["option_pool"], residual=spec["residual"],
@@ -513,6 +546,8 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     meta["serving"] = {"max_length": cap, "truncate": policy,
                        "exit_layer": arch.exit_layer, "adaptive": served_ada,
                        "option_pool_own_tokens": enc.option_pool_own_tokens}
+    if served_env:
+        meta["serving"]["serve_env"] = served_env
     if pad_multiple:
         from serve.padded import pad_multiple as _pm
         meta["serving"]["pad_multiple"] = pad_multiple
