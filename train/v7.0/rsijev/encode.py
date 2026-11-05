@@ -228,7 +228,7 @@ def pool_own_tokens(cfg: EncodeConfig) -> bool:
 
 
 def own_token_spans(tokenizer, spans, keys) -> list[tuple[int, int]]:
-    """Drop each block's leading '\\n- key:' tokens from its [start, end) span (releasev2 gold1_test.py B)."""
+    """Drop each block's leading '\\n- key:' tokens from its [start, end) span."""
     out = []
     for (a, b), key in zip(spans, keys):
         k = len(tokenizer("\n- " + key + ":", add_special_tokens=False)["input_ids"])

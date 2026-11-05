@@ -96,7 +96,7 @@ class FitConfig:
     autocast_bf16: bool = False
     rl: RLConfig = field(default_factory=RLConfig)
     log_every: int = 50
-    # Length-bucketed batches, OFF by default (0): see rsi-jev-internal eval-accel fit.py.
+    # Length-bucketed batches, OFF by default (0). 
     length_bucket: int = 0
     # ---- mmlu-keep-1: knowledge retention while the tower trains ----------
     # (a) Retention KL(base || student) on the tower's NEXT-TOKEN distribution
@@ -185,7 +185,7 @@ class FitConfig:
     # truncated tower only. Needs arch exit_layer with exit_norm. Off = the
     # historical full-depth retention (targets and student at full depth).
     retention_at_exit: bool = False
-    # exit-reason rt2b (ped-jm-e12rt): full-depth retention with layers >= exit_layer frozen; pool from a text file.
+    # full-depth retention with layers >= exit_layer frozen; pool from a text file.
     retention_freeze_upper: bool = False
     retention_text_file: str = ""
     # ---- adaexit: deep supervision of the aux exits (arch aux_exits) ----
@@ -1143,8 +1143,8 @@ def fit(model, tokenizer, cases: Sequence[Case], enc: EncodeConfig, cfg: FitConf
     from dataclasses import replace as _dc_replace
     canon_pref = tuple(x for x in (cfg.canonical_order_sources or "").split(",") if x)
     enc_canon = _dc_replace(enc, option_order="canonical") if canon_pref else enc
-    # ped-jm-e12mxp: perm_kl + aux heads allowed (perm_kl reads the main exit only: logits = exits[exit_layer], ref = model() main exit)
-    # ped-jm-e12mxrt-pv: perm_kl allowed with vision: applied per row to text rows only (image rows weight 0, see the loop)
+    # perm_kl + aux heads allowed (perm_kl reads the main exit only: logits = exits[exit_layer], ref = model() main exit)
+    # perm_kl allowed with vision: applied per row to text rows only (image rows weight 0, see the loop)
     if cfg.perm_kl and (cfg.prior_kl or cfg.ism_weight
                         or cfg.rtb_weight or cfg.ref_kl or enc.option_order == "canonical"):
         raise ValueError("perm_kl: main exit (aux heads ok), no prior/ref KL, ism/rtb, shuffled/reversed order")
