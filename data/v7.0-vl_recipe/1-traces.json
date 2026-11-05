@@ -1,0 +1,23 @@
+{
+ "stage": "greedy CoT traces from the base model",
+ "script": "train/v7.0/retention/trace_gen.py",
+ "base": "Qwen/Qwen3.5-4B",
+ "engine": "vLLM 0.30.0 (max_model_len 4096, gpu_memory_utilization 0.85, enable_prefix_caching, max_num_seqs 256, seed 0, image/video inputs off)",
+ "prompt": "Question: {q}\nPlease reason step by step, and put the letter of your final answer within \\boxed{{}}.\nAnswer:",
+ "prompt_rendering": "raw text, no chat template; {q} = state + instructions + lettered options (A..H)",
+ "sampling": {"temperature": 0.0, "max_tokens": 1536, "stop": ["\nQuestion:", "\n\nQuestion"]},
+ "max_prompt_tokens": 2560,
+ "smoke": {"limit": 2000, "rule": "tvrep.py: boxed rate < 0.50 -> stop before the full run"},
+ "gpu": "1x H100 80GB",
+ "report": {
+  "traces": 397420,
+  "skipped_long_prompt": 687,
+  "boxed_rate": 0.754,
+  "trunc_rate": 0.3972,
+  "acc": 0.4543,
+  "think_tag_rate": 0.2921,
+  "clean": 169361,
+  "median_chars_clean": 1248,
+  "median_ntok": 680.0
+ }
+}

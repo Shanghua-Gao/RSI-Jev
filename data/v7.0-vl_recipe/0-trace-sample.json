@@ -1,0 +1,21 @@
+{
+ "stage": "retention trace sample",
+ "script": "train/v7.0/retention/mk_tvsample_v2i.py",
+ "args": ["<sample_spec.json>", "<corpus_dir>", "<train_drop_file>", "<k1_drop_file>", 398101, "<trace_sample_dir>"],
+ "population": "choice questions with 2..8 options of TRAIN cases (sha256(case_id) % 10 != 0) of the spec's sources; never a (case_id, key) pair on the train drop list or the K1 screen list; rows carrying an image field skipped (trace generation is text-only)",
+ "sampler": "random.Random(0).shuffle over the eligible (source, line, key) list, first N",
+ "n_requested": 398101,
+ "n_requested_rule": "200,003 x 36,149 / 18,161 (the earlier text-only pool's sample size, scaled by the training steps)",
+ "receipt": {
+  "eligible_questions": 1554698,
+  "sampled": 398107,
+  "sources": 503,
+  "seed": 0,
+  "skipped_holdout_rows": 173322,
+  "skipped_drop_pairs": 6203,
+  "skipped_k1_pairs": 0,
+  "skipped_image_rows": 1295495,
+  "max_options": 8
+ },
+ "note": "sampled counts questions after rows are written back (398,107 for N 398,101). The sample spec lists the same 977 sources as 3-train.json."
+}
