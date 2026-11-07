@@ -345,7 +345,25 @@ print("ok")
 
 
 # ------------------------------------------------------------------------------- smaller builds
-def test_quantized_vision_and_heads_equal_their_effective_package(v7, tmp_path):
+@pytest.fixture
+def dense_matmul(monkeypatch):
+    """Quantized linears multiply the dequantized matrix. mx.quantized_matmul accumulates in
+    reduced precision on CPU, which test_8bit_equals_torch_with_the_mlx_weights bounds; these
+    tests check that a build holds the right weights, so they compare without that rounding."""
+    from rsijev.mlx.text import Linear
+    plain = Linear.__call__
+
+    def call(self, x):
+        if self.scales is None:
+            return plain(self, x)
+        w = mx.dequantize(self.w, self.scales, self.biases, group_size=self.group, bits=self.bits)
+        y = x @ w.astype(x.dtype).T
+        return y if self.b is None else y + self.b
+
+    monkeypatch.setattr(Linear, "__call__", call)
+
+
+def test_quantized_vision_and_heads_equal_their_effective_package(v7, tmp_path, dense_matmul):
     """8-bit vision tower and heads: the MLX build answers as the PyTorch package holding the
     same weights, images included; a mixed-width codes file loads; no vision = text only."""
     from serve.decider import Decider
@@ -360,10 +378,10 @@ def test_quantized_vision_and_heads_equal_their_effective_package(v7, tmp_path):
                        capture_output=True, text=True)
     assert p.returncode == 0, p.stderr[-2000:]
     t, m = Decider(str(eff), device="cpu", dtype="fp32"), Decider(str(out), backend="mlx", dtype="fp32")
-    _same(_ask(t, TEXT_STATE, QUESTIONS, "high"), _ask(m, TEXT_STATE, QUESTIONS, "high"), tol=5e-3)
+    _same(_ask(t, TEXT_STATE, QUESTIONS, "high"), _ask(m, TEXT_STATE, QUESTIONS, "high"), tol=1e-3)
     state, n = IMAGE_STATES[1]
     ims = _images()[:n]
-    _same(t.request(state, QUESTIONS, images=ims), m.request(state, QUESTIONS, images=ims), tol=5e-2)
+    _same(t.request(state, QUESTIONS, images=ims), m.request(state, QUESTIONS, images=ims), tol=5e-3)
     noimg = tmp_path / "text"
     convert(pkg, noimg, bits=8, group=32, vision=False, log=lambda *a: None)
     assert not (noimg / "visual.safetensors").exists()
@@ -371,7 +389,7 @@ def test_quantized_vision_and_heads_equal_their_effective_package(v7, tmp_path):
     assert d.served.model.visual is None and d.request("A state.", {"a": QUESTIONS["a"]})["answers"]
 
 
-def test_pq_embeddings(v7, tmp_path):
+def test_pq_embeddings(v7, tmp_path, dense_matmul):
     """Product-quantized embeddings: the lookup returns the decoded table exactly, the MLX build
     answers as the PyTorch package holding that table, and the file holds no dense table."""
     from safetensors.torch import load_file
@@ -394,4 +412,4 @@ def test_pq_embeddings(v7, tmp_path):
                        capture_output=True, text=True)
     assert p.returncode == 0, p.stderr[-2000:]
     t, d = Decider(str(eff), device="cpu", dtype="fp32"), Decider(str(out), backend="mlx", dtype="fp32")
-    _same(_ask(t, TEXT_STATE, QUESTIONS, "high"), _ask(d, TEXT_STATE, QUESTIONS, "high"), tol=5e-3)
+    _same(_ask(t, TEXT_STATE, QUESTIONS, "high"), _ask(d, TEXT_STATE, QUESTIONS, "high"), tol=1e-3)
