@@ -69,7 +69,7 @@ The first run downloads the checkpoint and its base model into the standard
 Hugging Face cache. You can name the model three ways:
 
 - a Hugging Face id, such as `shgao/rsi-jev-v7.0-vl-4b`;
-- an alias: `v7.0-vl-4b`, `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
+- an alias: `v7.0-vl-4b`, `v7.0-vl-3b`, `v6.1-vl-27b`, `v6.1-vl-4b`, `v6.0-vl-4b`, `v5.0-vl-3b`, `v4.0-vl-2b`, `v3.0-2b`, `v2.1-2b`, `v2.0-2b`, `v1.0-2b` or `v1.0-0.8b`;
   on a Mac, the MLX builds `v6.1-vl-4b-mlx-8bit` and `v6.1-vl-4b-mlx-4bit` with `--backend mlx` ([`mac.md`](mac.md));
 - a local directory.
 
@@ -309,6 +309,21 @@ changes how sums round, so two processes could answer about 1% of questions diff
 early exit. With the fix, fresh processes gave bitwise identical outputs on the RTX PRO 6000 and
 the H200. `RSIJEV_TUNE_PIN=0` restores stock autotuning; a pinned configuration that does not fit a
 GPU falls back to autotuning for that kernel and says so at startup.
+
+### v7.0-VL 3B: v7.0-VL 4B cut at layer 20
+
+v7.0-VL 3B is v7.0-VL 4B's first 20 decoder layers with its layer-20 head as the main head and its
+layer-16 head as an early exit, no retraining (3.30B parameters, 6.8 GB, self-contained). It answers
+exactly as v7.0-VL 4B at `--effort medium`; `medium` and `high` both stop at layer 20, `low` at 16,
+and `auto` at 16 when the calibrated top probability reaches 0.80, else at 20. Serving is v7.0-VL's
+(the same `serve_env`). Over a full Decision Index run on one RTX PRO 6000 its median latency is
+19.6 ms, against 29.4 ms for the 4B.
+
+```json
+{"cal_mode": "temp",
+ "exits": {"16": {"cal_mode": "temp", "logT": 0.28}},
+ "main_logT": 0.22}
+```
 
 ### v6.1-VL 4B: two fine-tunes averaged
 

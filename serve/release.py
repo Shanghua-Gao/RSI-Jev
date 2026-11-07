@@ -26,6 +26,7 @@ from rsijev.encode import EncodeConfig
 # Keyed by release, because a key that means "the 2B one" stops being useful the
 # moment there are two of them.
 REPOS = {"v7.0-vl-4b": "shgao/rsi-jev-v7.0-vl-4b",
+         "v7.0-vl-3b": "shgao/rsi-jev-v7.0-vl-3b",
          "v6.1-vl-27b": "shgao/rsi-jev-v6.1-vl-27b",
          "v6.1-vl-4b": "shgao/rsi-jev-v6.1-vl-4b",
          # MLX builds of v6.1-VL 4B (Apple silicon): serve with --backend mlx

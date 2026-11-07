@@ -13,7 +13,7 @@
   <a href="https://huggingface.co/shgao">🤗 Models</a> ·
   <a href="docs/inference.md">Docs</a> ·
   <a href="EXPLORE.md">Every experiment</a> ·
-  <a href="versions/v7.0-vl.md">Release notes</a>
+  <a href="versions/v7.0-vl-3b.md">Release notes</a>
 </p>
 
 <p align="center">
@@ -31,6 +31,7 @@ experiment that failed on the way, is published with its numbers. The loop is th
 - **801 experiments**, every one written up, failures included: [EXPLORE.md](EXPLORE.md).
 - **v6.1-VL 27B has the highest score on the Decision Index 0.3 public set: 65.64**, with `--effort auto`. The official score is pending.
 - **v7.0-VL 4B scores 60.63 on the public Decision Index 0.3**, up from 50.98 for v6.1-VL 4B.
+- **v7.0-VL 3B**, the 4B cut at layer 20, scores 60.01 at two thirds of its latency.
 
 <p align="center">
   <picture>
@@ -55,6 +56,7 @@ how many layers a request uses:
 | `high` | 32 | 42 / 117 ms | knowledge, multi-step reasoning, code |
 | `auto` | 16, 20 or 32 | 41 / 85 ms | mixed traffic: stops at the first layer that is confident enough |
 
+v7.0-VL 3B is the same model cut at layer 20: `low` stops at 16, `medium` and `high` at 20.
 v6.1-VL 27B has the same levels at layers 48, 56 and 64.
 
 Fast when it's easy, deep when it's hard. Which tasks need which depth:
@@ -73,7 +75,7 @@ pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
 rsi-jev serve v7.0-vl-4b --effort auto --port 8000
 ```
 
-On a 96 GB GPU, `rsi-jev serve v6.1-vl-27b --effort auto` serves the 27B.
+`rsi-jev serve v7.0-vl-3b` serves the 3B (6.8 GB). On a 96 GB GPU, `rsi-jev serve v6.1-vl-27b --effort auto` serves the 27B.
 
 On a Mac with Apple silicon, the MLX builds of the 4B (8-bit, lossless; 4-bit, smaller) run with
 `pip install "rsi-jev[mlx,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"` and
@@ -107,6 +109,7 @@ response reports which layer answered and how confident it was. Options and limi
 | Model | Input | Decision Index 0.3 | Decision Index 0.2.1 | Held-out set | |
 |---|---|---|---|---|---|
 | **v7.0-VL-4B** | text, images | 60.63 | 59.63 | **0.811** | [🤗](https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b) |
+| v7.0-VL-3B | text, images | 60.01 | 58.84 | 0.797 | [🤗](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b) |
 | v6.1-VL-27B, `auto` | text, images | **65.64** | **64.92** | 0.808 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-27b) |
 | v6.1-VL-4B | text, images | 50.98 | 50.74 | 0.729 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.1-vl-4b) |
 | v6.0-VL-4B | text, images | 46.23 | 46.24 | 0.698 | [🤗](https://huggingface.co/shgao/rsi-jev-v6.0-vl-4b) |
@@ -125,9 +128,10 @@ is our zero-shot check: no release trained on it. The 4B and smaller are fine-tu
 Base; v6.0-VL and v6.1-VL 4B run the whole Qwen3.5-4B-Base and can answer at layer 16, 20 or 32
 of it. v7.0-VL 4B starts from the instruction-tuned Qwen3.5-4B, repeats the options and reads
 them with attention that runs both ways over the prompt; it answers at layer 16, 20 or 32 the same
-way. v6.1-VL 27B is fine-tuned from Qwen3.8-27B and answers at layer 48, 56 or 64. Every
+way. v7.0-VL 3B is v7.0-VL 4B cut at layer 20, with no retraining. v6.1-VL 27B is fine-tuned from Qwen3.8-27B and answers at layer 48, 56 or 64. Every
 number, caveat and per-benchmark score is in the [release records](versions/).
 
+- **2026-11-06 · v7.0-VL 3B** is v7.0-VL 4B cut at layer 20, no retraining: the 4B's answers at `medium`, 3.30B parameters. Decision Index 0.3 60.01.
 - **2026-11-05 · v7.0-VL 4B** reads the options in a new way (option echo, prefix-bidirectional attention) and is trained once on 2.76M examples. Decision Index 0.3 50.98 → 60.63.
 - **2026-10-08 · v6.1-VL 27B** brings the same method to Qwen3.8-27B. Decision Index 0.3 public set 65.64 with `auto`.
 - **2026-10-07 · v6.1-VL 4B** averages v6.0-VL with a second fine-tune of the same base. Decision Index 0.3 46.23 → 50.98.
@@ -189,6 +193,7 @@ with why each failed, are in [EXPLORE.md](EXPLORE.md); the reinforcement-learnin
 | start from the instruction-tuned model, keep the base model's reasoning traces as a training signal | held level at 4B, +1.78 at 2B | reasoning stays a training-time teacher; nothing is generated at inference |
 | data rounds 7 to 12: each round's weakest families get training data built from public train splits | Decision Index 0.3 53.06 → 60.62 | targeted data moves its targets and dilutes the rest; rounds are judged per benchmark |
 | **v7.0-VL** | Decision Index 0.3 **60.63**, held-out **0.811** | **4B: option echo and prefix-bidirectional attention, instruction-tuned start, one end-to-end run** |
+| **v7.0-VL 3B** | Decision Index 0.3 **60.01**, held-out **0.797**, median latency 19.6 ms against 29.4 ms | **3B: v7.0-VL 4B cut at layer 20, no retraining** |
 
 </details>
 
