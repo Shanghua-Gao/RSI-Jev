@@ -5,7 +5,8 @@ A release with aux exits (spec.arch_extra.aux_exits) and a tuned policy (meta.js
 release already has; no other weights are involved:
 
   low       the shallowest aux exit for every question (v6.0-VL: layer 16)
-  medium    the deepest aux exit for every question (v6.0-VL: layer 20)
+  medium    the deepest aux exit for every question (v6.0-VL: layer 20); with a single aux
+            exit, the main exit, so that medium is never the same depth as low (v7.0-VL 3B: 20)
   high      the main exit, all layers, for every question (v6.0-VL: layer 32), i.e. --adaptive off
   auto      the release's confidence cascade (exit to exit, stop at the first whose
             calibrated top-1 probability reaches tau) for every text request, a single
@@ -102,6 +103,8 @@ def resolve(model, effort, conf_threshold, images: bool) -> tuple[str | None, fl
     check_supported(model, effort)
     if conf_threshold == 1.0:
         return "high", None
+    if effort == "medium" and len(model.effort_base.exits) == 2:
+        return "high", conf_threshold      # one aux exit (v7.0-VL 3B): medium is the main exit, not low's layer
     if isinstance(conf_threshold, dict):
         # a partial object fills the other exits from effort auto's default; 1.0 = never there
         taus = auto_taus(model)

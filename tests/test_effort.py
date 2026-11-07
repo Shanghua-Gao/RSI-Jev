@@ -421,3 +421,12 @@ def test_the_route_takes_a_threshold_object():
     assert c.post("/v1/systemone", json=_body(effort="auto", confidence_threshold={"16": 0.7})).status_code == 200
     assert c.post("/v1/systemone", json=_body(confidence_threshold=0.5)).status_code == 200
     assert c.post("/v1/systemone", json=_body(confidence_threshold={"16": 2})).status_code == 422
+
+
+# -- medium on a one-aux-exit release (v7.0-VL 3B: exits 16, 20) is the main exit --
+@pytest.mark.parametrize("exits,want", [([16, 20], "high"), ([16, 20, 32], "medium")])
+def test_medium_with_one_aux_exit_is_the_main_exit(exits, want):
+    from types import SimpleNamespace
+    m = SimpleNamespace(effort_base=SimpleNamespace(exits=exits))
+    assert E.resolve(m, "medium", None, images=False) == (want, None)
+    assert E.resolve(m, "low", None, images=False) == ("low", None)
