@@ -65,6 +65,7 @@ def main(argv=None) -> int:
                 s, b = T[name + ".scales"], T[name + ".biases"]
                 emb = key == "embed_tokens.weight"
                 bits, g = (eb["bits"], eb["group_size"]) if emb else (tb["bits"], tb["group_size"])
+                bits = w.shape[-1] * 32 // (s.shape[-1] * g)         # per matrix: a build may mix widths
                 deq = f32(mx.dequantize(w, s, b, group_size=g, bits=bits))
                 if not emb and codes:
                     q = codes[name + ".q"]

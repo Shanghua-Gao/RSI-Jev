@@ -137,8 +137,9 @@ def token_budget_batches(lengths, tok_budget, batch_size):
 
 def encoder(pkg_or_ckpt: Path):
     from rsijev.encode import EncodeConfig
-    from serve.release import own_token_pool, serving_encoder
+    from serve.release import apply_serve_env, own_token_pool, serving_encoder
     meta = json.loads((pkg_or_ckpt / "meta.json").read_text())
+    apply_serve_env(meta)           # before the EncodeConfig: it reads RSIJEV_OPTION_ECHO
     spec = meta["spec"]
     cap, policy = serving_encoder(spec)
     return EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
@@ -166,7 +167,8 @@ def run_mlx(a):
     if a.cpu:
         mx.set_default_device(mx.cpu)
     ck, data = Path(a.ckpt), Path(a.data)
-    model = MLXDecisionModel(ck, vision=not a.text_only)
+    model = MLXDecisionModel(ck, vision=not a.text_only,
+                             dtype={"bf16": mx.bfloat16, "fp32": mx.float32}[a.dtype])
     tok = AutoTokenizer.from_pretrained(str(ck))
     enc = encoder(ck)
     log("loaded", ck.name, "device", mx.default_device(), "exits", model.exit_indices(),
@@ -258,7 +260,7 @@ def run_torch(a):
     dev = a.device
     keep_fused_kernels_off(dev)
     pkg, data = Path(a.pkg), Path(a.data)
-    model, tok, enc, meta = load_release(pkg, dev, infer_dtype=torch.bfloat16)
+    model, tok, enc, meta = load_release(pkg, dev, infer_dtype={"bf16": torch.bfloat16, "fp32": torch.float32}[a.dtype])
     model.cal_mode = "none"
     enc.option_order = "canonical"
     if a.qdq:
@@ -278,6 +280,8 @@ def run_torch(a):
     if a.limit:
         text = [r for t in sorted({r[2] for r in text}) for r in [x for x in text if x[2] == t][: a.limit]]
         vis = vis[: a.limit]
+    if a.text_only:
+        vis = []
     tags = [t for *_, t in text] + [f"vis.{b}" for *_, b in vis]
     y = [gold_index(c, q) for c, q, _ in text] + [gold_index(c, q) for c, q, _, _ in vis]
     exits = model.exit_indices()
@@ -290,6 +294,9 @@ def run_torch(a):
             for L, z in model.forward_exits(**b).items():
                 Z[L][ix] = unpermute_logits(z.float(), b["option_perm"], b["option_mask"]).cpu().numpy()
         log("text done")
+        if a.text_only:
+            _save(a.out, Z, y, tags)
+            return
         prep = ImagePrep(meta["weights_source"], VisionConfig(image_token_budget=1024),
                          revision=(meta.get("vision") or {}).get("revision"))
         import dataclasses
@@ -489,6 +496,7 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--text-only", action="store_true")
+    p.add_argument("--dtype", choices=("bf16", "fp32"), default="bf16", help="tower dtype")
     p.add_argument("--cpu", action="store_true")
     p.add_argument("--shard", default=None, help="K/N: every N-th batch from the K-th (merge with `merge`)")
     p.add_argument("--tok-budget", type=int, default=65536)
@@ -503,6 +511,8 @@ def main(argv=None):
     p.add_argument("--data", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--qdq", default=None, help="bits:group, e.g. 8:64")
+    p.add_argument("--text-only", action="store_true")
+    p.add_argument("--dtype", choices=("bf16", "fp32"), default="bf16", help="tower dtype")
     p.add_argument("--device", default="cuda")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--autocast", action=argparse.BooleanOptionalAction, default=True,

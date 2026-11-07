@@ -24,6 +24,8 @@ from typing import Sequence
 import mlx.core as mx
 import numpy as np
 
+from .text import Linear
+
 F32 = mx.float32
 
 
@@ -45,7 +47,7 @@ def _rotate_half(x):
 
 
 class VisionTower:
-    def __init__(self, cfg: dict, params: dict, dtype=mx.bfloat16):
+    def __init__(self, cfg: dict, params: dict, dtype=mx.bfloat16, group: int | None = None):
         vc = cfg["vision_config"]
         self.dtype = dtype
         self.hidden = vc["hidden_size"]
@@ -60,6 +62,15 @@ class VisionTower:
         spatial = hd // 2
         self.inv_freq = 1.0 / (theta ** (mx.arange(0, spatial, 2, dtype=F32) / spatial))
         g = lambda k: params[k].astype(dtype)                           # noqa: E731
+
+        def lin(name):
+            """A block's linear, plain in `dtype` or MLX affine-quantized (`group` from mlx.json)."""
+            m = Linear.from_params(params, name, group)
+            m.b = m.b.astype(dtype)
+            if not m.quantized:
+                m.w = m.w.astype(dtype)
+            return m
+
         pw = params["patch_embed.proj.weight"]                          # (O, C, T, P, P)
         self.patch_w = pw.reshape(pw.shape[0], -1).astype(dtype)
         self.patch_b = g("patch_embed.proj.bias")
@@ -67,14 +78,12 @@ class VisionTower:
         self.blocks = []
         for i in range(self.depth):
             p = f"blocks.{i}."
-            self.blocks.append({k: g(p + k) for k in (
-                "norm1.weight", "norm1.bias", "norm2.weight", "norm2.bias", "attn.qkv.weight",
-                "attn.qkv.bias", "attn.proj.weight", "attn.proj.bias", "mlp.linear_fc1.weight",
-                "mlp.linear_fc1.bias", "mlp.linear_fc2.weight", "mlp.linear_fc2.bias")})
-        self.merger = {k: g("merger." + k) for k in (
-            "norm.weight", "norm.bias", "linear_fc1.weight", "linear_fc1.bias",
-            "linear_fc2.weight", "linear_fc2.bias")}
-        self.out_hidden = self.merger["linear_fc2.weight"].shape[0]
+            blk = {k: g(p + k) for k in ("norm1.weight", "norm1.bias", "norm2.weight", "norm2.bias")}
+            blk.update({k: lin(p + k) for k in ("attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2")})
+            self.blocks.append(blk)
+        self.merger = {k: g("merger." + k) for k in ("norm.weight", "norm.bias")}
+        self.merger.update({k: lin("merger." + k) for k in ("linear_fc1", "linear_fc2")})
+        self.out_hidden = params["merger.linear_fc2.bias"].shape[0]
 
     # -- per-image geometry (numpy), as transformers.vision_utils computes it
     def _positions(self, grid: np.ndarray) -> np.ndarray:
@@ -137,7 +146,7 @@ class VisionTower:
         hd = self.hidden // self.heads
         for blk in self.blocks:
             h = _layer_norm(x, blk["norm1.weight"], blk["norm1.bias"])
-            qkv = (h @ blk["attn.qkv.weight"].T + blk["attn.qkv.bias"]).reshape(N, 3, self.heads, hd)
+            qkv = blk["attn.qkv"](h).reshape(N, 3, self.heads, hd)
             q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]
             qf, kf = q.astype(F32), k.astype(F32)
             q = (qf * cos + _rotate_half(qf) * sin).astype(self.dtype)
@@ -150,17 +159,17 @@ class VisionTower:
                 o = mx.fast.scaled_dot_product_attention(qi, ki, vi, scale=hd ** -0.5)
                 outs.append(o[0].transpose(1, 0, 2).reshape(b - a, self.hidden))
             o = outs[0] if len(outs) == 1 else mx.concatenate(outs, axis=0)
-            x = x + (o @ blk["attn.proj.weight"].T + blk["attn.proj.bias"])
+            x = x + blk["attn.proj"](o)
             h = _layer_norm(x, blk["norm2.weight"], blk["norm2.bias"])
-            h = _gelu_tanh((h @ blk["mlp.linear_fc1.weight"].T + blk["mlp.linear_fc1.bias"]).astype(F32)).astype(self.dtype)
-            x = x + (h @ blk["mlp.linear_fc2.weight"].T + blk["mlp.linear_fc2.bias"])
+            h = _gelu_tanh(blk["mlp.linear_fc1"](h).astype(F32)).astype(self.dtype)
+            x = x + blk["mlp.linear_fc2"](h)
             # one block at a time: a lazy graph over all blocks keeps every block's attention
             # scores alive (28 GB peak for one 1,024-token image)
             mx.eval(x)
         mg = self.merger
         h = _layer_norm(x, mg["norm.weight"], mg["norm.bias"]).reshape(-1, self.hidden * self.merge ** 2)
-        h = _gelu((h @ mg["linear_fc1.weight"].T + mg["linear_fc1.bias"]).astype(F32)).astype(self.dtype)
-        return h @ mg["linear_fc2.weight"].T + mg["linear_fc2.bias"]
+        h = _gelu(mg["linear_fc1"](h).astype(F32)).astype(self.dtype)
+        return mg["linear_fc2"](h)
 
 
 # ------------------------------------------------------------------------- preprocessing
@@ -259,4 +268,6 @@ def mrope_positions(input_ids: np.ndarray, attention_mask: np.ndarray, grid: np.
 def load_vision(path: str | Path, dtype=mx.bfloat16) -> VisionTower:
     path = Path(path)
     cfg = json.loads((path / "config.json").read_text())
-    return VisionTower(cfg, mx.load(str(path / "visual.safetensors")), dtype=dtype)
+    rec = json.loads((path / "mlx.json").read_text()) if (path / "mlx.json").exists() else {}
+    return VisionTower(cfg, mx.load(str(path / "visual.safetensors")), dtype=dtype,
+                       group=(rec.get("vision") or {}).get("group_size"))

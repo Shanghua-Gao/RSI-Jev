@@ -12,7 +12,8 @@ What runs where:
                 same batch size and token cap); "cached": the state read once
                 (MLXDecisionModel.encode_prefix) and every question continued from it, by
                 the same rule as PyTorch (shared prefix, >= 2 questions, (Q - 1) x prefix
-                >= RSIJEV_MIN_SAVED_TOKENS, default 480)
+                >= RSIJEV_MIN_SAVED_TOKENS, default 480). A release with
+                RSIJEV_PREFIX_BIDIR=1 is always "plain": every question is one full pass
   adaptive exit the release's policy (meta.json adaptive + calibration.json exits, as
                 serve.release.adaptive_policy builds it); unset effort = --adaptive (auto:
                 multi-question requests), effort low / medium / high / auto as
@@ -41,7 +42,7 @@ from rsijev.contract import Prediction, Question
 from rsijev.encode import EncodeConfig, encode_question
 
 from .collate import collate, softmax, suffixes, unpermute
-from .model import MLXDecisionModel, Policy
+from .model import MLXDecisionModel, Policy, prefix_bidir_on
 
 DEFAULT_MAX_OPTIONS = 80
 MIN_SAVED_TOKENS = 480
@@ -155,6 +156,8 @@ def plan_request(tokenizer, state: str, questions: Sequence[Question], enc: Enco
     else:
         encoded, lead = [encode_question(tokenizer, state, q, enc) for q in questions], None
     prefix = _shared_prefix(tokenizer, state, enc, encoded, ids=lead)
+    if prefix_bidir_on():
+        prefix = None              # no causal state prefix to cache; as serve.infer.plan_request
     if prefix is None or len(questions) < 2 or (len(questions) - 1) * len(prefix) < min_saved_tokens():
         path = "plain"
     else:
@@ -316,8 +319,8 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     in) or "fp32"; the heads are fp32 either way."""
     from transformers import AutoTokenizer
 
-    from serve.release import (checkpoint_name, own_token_pool, release_version, resolve_ckpt,
-                               serving_encoder)
+    from serve.release import (apply_serve_env, checkpoint_name, own_token_pool, release_version,
+                               resolve_ckpt, serving_encoder)
     from serve.server import Served
     from serve.wire import MAX_INPUT_TOKENS
     path = resolve_ckpt(ref, revision=revision)
@@ -325,6 +328,7 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
         raise SystemExit(f"{path} is not an MLX checkpoint (no mlx.json): convert the release "
                          f"first with scripts/convert_mlx.py PKG OUT --bits 8 --group 64")
     meta = json.loads((path / "meta.json").read_text())
+    served_env = apply_serve_env(meta)     # before any EncodeConfig: it reads RSIJEV_OPTION_ECHO
     spec = meta["spec"]
     vb = (meta.get("release") or {}).get("vision") or (spec.get("fit_extra") or {}).get("vision")
     dt = {None: mx.bfloat16, "bf16": mx.bfloat16, "fp32": mx.float32}.get(dtype)
@@ -349,6 +353,8 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     meta["serving"] = {"max_length": cap, "truncate": policy, "exit_layer": model.cfg.exit_layer,
                        "adaptive": served_ada, "option_pool_own_tokens": enc.option_pool_own_tokens,
                        "backend": "mlx", "mlx": model.mlx_record.get("tower")}
+    if served_env:
+        meta["serving"]["serve_env"] = served_env
     if why:
         meta["serving"]["adaptive_off"] = why
     explicit = (max_length is not None or truncate is not None

@@ -1,9 +1,10 @@
 """Check an MLX build on this Mac: answers vs the shipped references, latency per effort, peak memory.
 
-    python scripts/mac_check.py shgao/rsi-jev-v6.1-vl-4b-mlx-8bit          # or a local directory
-    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v6.1-vl-4b-mlx-8bit.json
+    python scripts/mac_check.py shgao/rsi-jev-v7.0-vl-3b-mlx-8bit          # or a local directory
+    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v7.0-vl-3b-mlx-8bit.json
 
-Runs the reference rows (200 questions: 180 text, 20 with images; public benchmarks) through
+First the latency of one short question per request, median and mean, at each effort. Then
+it runs the reference rows (200 questions: 180 text, 20 with images; public benchmarks) through
 the served MLX path, one question per request, at effort low / medium / high / auto, and
 prints per effort:
 
@@ -13,8 +14,8 @@ prints per effort:
     by MLX on Linux (CUDA backend), which is what the build was validated with
   * the mean exit depth (auto)
 
-then the peak memory MLX allocated over those rows (weights + activations), the load time,
-and peak memory and latency for one question on a long document (1k to 32k tokens, stopping
+then the peak memory MLX allocated over those rows (weights + activations), the process's
+peak resident memory, the load time, and peak memory and latency for one question on a long document (1k to 32k tokens, stopping
 before a length that would not fit). Pass --json to
 save everything (send that file back). Building references (maintainers): --backend torch
 or --backend mlx with --rows ROWS.json --write-ref OUT.json, then --merge-ref; --make-rows
@@ -134,7 +135,36 @@ def machine() -> dict:
     return info
 
 
+def peak_rss_gb():
+    """The process's peak resident memory (ru_maxrss: bytes on macOS, KiB on Linux)."""
+    import resource
+    v = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return round(v / 1e9 if sys.platform == "darwin" else v * 1024 / 1e9, 2)
+
+
 # ----------------------------------------------------------------------------- run
+def short_latency(scorer, efforts, n=50):
+    """Latency of one short text question per request, at each effort, after 3 warm-ups."""
+    from rsijev.contract import Question
+    state = "I was charged twice. Please refund."
+    q = [Question("refund", "noul", "Does the user request a refund?", ("false", "true"),
+                  {"false": "No.", "true": "Yes."})]
+    out = {}
+    for effort in efforts:
+        for _ in range(3):
+            scorer(state, q, None, effort)
+        ms = []
+        for _ in range(n):
+            t = time.perf_counter()
+            got = scorer(state, q, None, effort)
+            ms.append((time.perf_counter() - t) * 1e3)
+        out[effort] = {"n": n, "tokens": int(got[1]), "median": round(statistics.median(ms), 2),
+                       "mean": round(statistics.mean(ms), 2)}
+        print(f"  one short question, {effort:6s}: median {out[effort]['median']:8.1f} ms, "
+              f"mean {out[effort]['mean']:8.1f} ms", flush=True)
+    return out
+
+
 def run(model, rows, backend, efforts, cpu=False, batch_size=16):
     t0 = time.time()
     if backend == "mlx":
@@ -156,6 +186,8 @@ def run(model, rows, backend, efforts, cpu=False, batch_size=16):
         info["weights_gb_active_after_load"] = round((_mx_mem("get_active_memory") or 0) / 1e9, 2)
         _reset_peak()
     print(f"loaded {served.name} ({backend}, {info['device']}, {served.dtype_name}) in {load_s:.0f} s", flush=True)
+    if backend == "mlx":
+        info["short_question_ms"] = short_latency(scorer, efforts)
     qs = [_question(r["question"]) for r in rows]
     ims = [_images(r) for r in rows]
     for i in (0, len(rows) - 1):                                   # warm-up: one text, one image
@@ -176,6 +208,7 @@ def run(model, rows, backend, efforts, cpu=False, batch_size=16):
         print(f"  {effort:6s} median {statistics.median(ms):8.1f} ms", flush=True)
     if backend == "mlx":
         info["peak_memory_gb"] = round((_mx_mem("get_peak_memory") or 0) / 1e9, 2)
+        info["peak_rss_gb"] = peak_rss_gb()
         info["memory_by_length"] = memory_curve(scorer)
     return info, out
 
@@ -302,7 +335,10 @@ def main(argv=None) -> int:
             result["vs"][which] = compare(rows, got, out, efforts)
     print()
     print(f"{info['name']}: mlx {info.get('mlx')} on {info['device']}; load {info['load_s']} s; "
-          f"peak memory {info.get('peak_memory_gb')} GB (after load {info.get('weights_gb_active_after_load')} GB)")
+          f"peak memory {info.get('peak_memory_gb')} GB (after load {info.get('weights_gb_active_after_load')} GB), "
+          f"peak process memory {info.get('peak_rss_gb')} GB")
+    for e, x in (info.get("short_question_ms") or {}).items():
+        print(f"one short question ({x['tokens']} tokens), {e}: median {x['median']} ms, mean {x['mean']} ms")
     print(f"{'effort':7s} {'median ms':>9s} {'p90 ms':>8s} {'text ms':>8s} {'image ms':>9s} {'depth':>6s} {'acc':>6s}"
           + "".join(f" {'agree ' + w:>17s} {'|dp| ' + w:>16s}" for w in result["vs"]))
     for e in efforts:

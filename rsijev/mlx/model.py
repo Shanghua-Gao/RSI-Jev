@@ -12,25 +12,32 @@ from an MLX checkpoint directory (scripts/convert_mlx.py).
                           calibrated top-1 probability reaches that exit's tau and is answered
                           with that exit's calibration (rsijev.adaptive.staged_scores_fast +
                           serve/infer._adaptive_finalizer)
-  encode_prefix(ids)      a prefix cache for the "cached" path
+  encode_prefix(ids)      a prefix cache for the "cached" path (refused when the release
+                          runs prefix-bidirectional attention)
   image_embeds(pv, grid)  the vision tower's features
 
 and the attributes serve/effort.py and serve/infer.py read: cfg (exit_layer, aux_exits,
 option_pool, logit_cap, residual), effort_base, effort_auto_taus, adaptive_policy,
 adaptive_mode, cal_mode, image_token_id.
 
+A release's meta.json serve_env is applied at load, as serve.release.load_release does:
+RSIJEV_OPTION_ECHO changes the rows (rsijev.encode, read when an EncodeConfig is built) and
+RSIJEV_PREFIX_BIDIR the full-attention layers, for which every pass takes each row's prefix
+from the batch: P = the end of its last option span.
+
 Batches are numpy dicts from rsijev.mlx.collate.collate; logits come back as mx arrays.
 """
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import mlx.core as mx
 import numpy as np
 
-from .heads import Calibration, OptionScorer, cap_logits, calibrated_conf, exit_logt, pool
+from .heads import Calibration, OptionScorer, cap_logits, calibrated_conf, exit_logt, load_heads, pool
 from .text import PrefixCache, TextConfig, TextTower, rotary_cos_sin, text_positions
 
 F32 = mx.float32
@@ -65,6 +72,18 @@ class ServeCfg:
     max_options: int = 80
 
 
+def prefix_bidir_on() -> bool:
+    """rsijev.arch._prefix_bidir_on, without torch."""
+    return os.environ.get("RSIJEV_PREFIX_BIDIR", "0") == "1"
+
+
+def prefix_rows(batch: dict) -> mx.array:
+    """Each row's P as rsijev.arch._prefix_bidir_scope takes it: the end of its last option
+    span, at most the row's length."""
+    end = np.where(batch["option_mask"], batch["option_span_end"], 0).max(axis=1)
+    return mx.array(np.minimum(end, np.asarray(batch["attention_mask"]).sum(axis=1)).astype(np.int32))
+
+
 def _spec_cfg(spec: dict, n_layers: int) -> ServeCfg:
     extra = dict(spec.get("arch_extra") or {})
     if spec.get("readout") != "option_xattn":
@@ -92,6 +111,9 @@ class MLXDecisionModel:
         path = Path(path)
         self.path = path
         self.meta = json.loads((path / "meta.json").read_text())
+        from serve.release import apply_serve_env
+        self.serve_env = apply_serve_env(self.meta)
+        self.prefix_bidir = prefix_bidir_on()
         self.config = json.loads((path / "config.json").read_text())
         mj = path / "mlx.json"
         self.mlx_record = json.loads(mj.read_text()) if mj.exists() else {}
@@ -109,10 +131,11 @@ class MLXDecisionModel:
         del params
         kw = dict(heads=self.cfg.xattn_heads, combine=self.cfg.xattn_combine,
                   head_input_norm=self.cfg.head_input_norm)
-        self.scorer = OptionScorer(mx.load(str(path / "scorer.safetensors")), **kw)
+        head_group = (self.mlx_record.get("head_quant") or {}).get("group_size")
+        self.scorer = OptionScorer(load_heads(path / "scorer.safetensors", head_group), **kw)
         self.aux_scorers = {}
         if self.cfg.aux_exits:
-            flat = mx.load(str(path / "aux_scorers.safetensors"))
+            flat = load_heads(path / "aux_scorers.safetensors", head_group)
             for L in self.cfg.aux_exits:
                 sd = {k.split(".", 1)[1]: v for k, v in flat.items() if k.split(".", 1)[0] == str(L)}
                 self.aux_scorers[L] = OptionScorer(sd, **kw)
@@ -125,7 +148,8 @@ class MLXDecisionModel:
         self.visual = None
         if vision and (path / "visual.safetensors").exists():
             from .vision import VisionTower
-            self.visual = VisionTower(self.config, mx.load(str(path / "visual.safetensors")))
+            self.visual = VisionTower(self.config, mx.load(str(path / "visual.safetensors")),
+                                      group=(self.mlx_record.get("vision") or {}).get("group_size"))
         # set by rsijev.mlx.serve.attach_policy (as serve.release.adaptive_policy does)
         self.adaptive_policy = None
         self.adaptive_mode = "off"
@@ -177,21 +201,22 @@ class MLXDecisionModel:
         return cap_logits(z, self.cfg.logit_cap, mask), dh
 
     def _start(self, batch, cache: PrefixCache | None, image_embeds=None):
+        """(embeddings, rope, prefix rows or None) for one pass."""
         ids = np.asarray(batch["input_ids"])
         B, T = ids.shape
         h = self.embed(ids, image_embeds)
         rope = self._rope(batch, B, T, cache.length if cache is not None else 0)
-        return h, rope
+        return h, rope, prefix_rows(batch) if self.prefix_bidir else None
 
     # ------------------------------------------------------------------ passes
     def forward_exits(self, batch: dict, *, cache: PrefixCache | None = None,
                       image_embeds=None, calibrate: bool = True) -> dict:
         """{exit: logits (B, K)} from one pass (presented order, -inf where masked)."""
-        h, rope = self._start(batch, cache, image_embeds)
+        h, rope, prefix = self._start(batch, cache, image_embeds)
         mode = mx.array(batch["mode_id"])
         out, lo = {}, 0
         for L in self.exit_indices():
-            h = self.tower.run(h, lo, L, rope, cache=cache)
+            h = self.tower.run(h, lo, L, rope, cache=cache, prefix=prefix)
             z, dh = self._readout(self.exit_scorer(L), self.tower.norm(h), batch)
             out[L] = self.calibration.apply(z, dh, mode) if calibrate else z
             lo = L
@@ -199,8 +224,8 @@ class MLXDecisionModel:
 
     def forward(self, batch: dict, *, cache: PrefixCache | None = None, image_embeds=None):
         """The main exit's calibrated logits (B, K): the fixed-exit model."""
-        h, rope = self._start(batch, cache, image_embeds)
-        h = self.tower.run(h, 0, self.cfg.exit_layer, rope, cache=cache)
+        h, rope, prefix = self._start(batch, cache, image_embeds)
+        h = self.tower.run(h, 0, self.cfg.exit_layer, rope, cache=cache, prefix=prefix)
         z, dh = self._readout(self.scorer, self.tower.norm(h), batch)
         return self.calibration.apply(z, dh, mx.array(batch["mode_id"]))
 
@@ -223,7 +248,7 @@ class MLXDecisionModel:
         per = self.tcfg.layer_period()
         if any(L % per for L in exits[:-1]):
             raise ValueError(f"exits {exits} are not multiples of the layer-type period {per}")
-        h, rope = self._start(batch, cache)
+        h, rope, prefix = self._start(batch, cache)
         mode_all = np.asarray(batch["mode_id"])
         rows = np.arange(B)
         out: list = [None] * B
@@ -231,7 +256,7 @@ class MLXDecisionModel:
         lo = 0
         for i, L in enumerate(exits):
             last = i == len(exits) - 1
-            h = self.tower.run(h, lo, L, rope, cache=cache)
+            h = self.tower.run(h, lo, L, rope, cache=cache, prefix=prefix)
             z, dh = self._readout(self.exit_scorer(L), self.tower.norm(h), batch, rows)
             mode = mx.array(mode_all[rows])
             if stats is not None:
@@ -256,6 +281,8 @@ class MLXDecisionModel:
                 h = h[kk]
                 cos, sin = rope
                 rope = (cos[kk], sin[kk])
+                if prefix is not None:
+                    prefix = prefix[kk]
             lo = L
         return mx.stack(out), depth
 
@@ -263,6 +290,9 @@ class MLXDecisionModel:
                       cache: PrefixCache | None = None) -> PrefixCache:
         """Run a shared prefix (1, P) through every layer and keep its cache. With `cache`,
         continue that cache over `ids` (positions continue from cache.length unless given)."""
+        if self.prefix_bidir:
+            raise RuntimeError("RSIJEV_PREFIX_BIDIR=1: a causal prefix cache is not valid for a "
+                               "prefix-bidirectional model; serve every row as one full forward pass")
         ids = np.asarray(ids, dtype=np.int32).reshape(1, -1)
         start = cache.length if cache is not None else 0
         h = self.embed(ids, image_embeds)

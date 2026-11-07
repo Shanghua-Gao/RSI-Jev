@@ -33,6 +33,22 @@ def _rms(x):
     return x * mx.rsqrt((x * x).mean(-1, keepdims=True) + 1e-6)
 
 
+def load_heads(path, group: int | None = None) -> dict:
+    """A head file's tensors, 8-bit ones (`<key>` + `<key>.scales` / `.biases`) dequantized:
+    heads are computed in fp32, so only the file gets smaller."""
+    p = mx.load(str(path))
+    out = {}
+    for k, v in p.items():
+        if k.endswith((".scales", ".biases")):
+            continue
+        if k + ".scales" not in p:
+            out[k] = v
+            continue
+        s, b = p[k + ".scales"], p[k + ".biases"]
+        out[k] = mx.dequantize(v, s, b, group_size=group, bits=v.shape[-1] * 32 // (s.shape[-1] * group))
+    return out
+
+
 class OptionScorer:
     """rsijev.arch.OptionScorer for readout option_xattn, from its state dict (fp32)."""
 
