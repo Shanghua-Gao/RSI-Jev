@@ -4,7 +4,7 @@
   <img src="../assets/loop-social.gif" width="900" alt="The champion line climbs from v1.0 (0.622) to v2.0 (0.709), v2.1 (0.736) and v3.0 (0.756) on the 15-benchmark suite, one evaluator for every release; grey dots are the experiments tried in between that did not clear it. Below: propose, experiment, learn; at the gate most become published negatives and one becomes a release, which becomes the bar to clear">
 </p>
 
-**v7.0-VL**, the current release, ships at 4B. **It reads the options in a new way**: the option
+**v7.0-VL**, the current release, ships at 4B and 3B. **It reads the options in a new way**: the option
 list is repeated once and the readout reads the second copy, and the prompt and the options attend
 to each other in both directions. It starts from the instruction-tuned Qwen3.5-4B and was trained
 once, end to end, on 2.76M examples that the data loop built round by round from the families the
@@ -13,6 +13,13 @@ only, never generated. At layer 32 it leads v6.1-VL 4B on the suite (0.798 vs 0.
 held-out set (0.811 vs 0.728) and MMLU-Pro (0.502 vs 0.462), with better calibration (final ECE
 0.039 vs 0.048), and scores 60.63 on the public Decision Index 0.3 (v6.1-VL 4B 50.98).
 [`versions/v7.0-vl.md`](../versions/v7.0-vl.md) is its record.
+
+**v7.0-VL 3B** (2026-11-06) is v7.0-VL 4B cut at layer 20: the first 20 decoder layers, the
+layer-20 head as the main head and the layer-16 head as an early exit, with no retraining. It gives
+the 4B's answers at `medium`, bitwise. It scores 60.01 on the public Decision Index 0.3 (4B: 60.61
+on the same code) with a median latency of 19.6 ms against 29.4 ms, and reads 0.791 on the suite
+and 0.797 on the held-out set. 3.30B parameters.
+[`versions/v7.0-vl-3b.md`](../versions/v7.0-vl-3b.md) is its record.
 
 <details>
 <summary>the eight releases behind it</summary>
@@ -135,6 +142,7 @@ ruling something out. (Arms are now counted one per run record, a rerun counting
 | start from the instruction-tuned model, keep the base model's reasoning traces as a training signal | held level at 4B, +1.78 at 2B | reasoning stays a training-time teacher; nothing is generated at inference |
 | data rounds 7 to 12: each round's weakest families get training data built from public train splits | Decision Index 0.3 53.06 → 60.62 | targeted data moves its targets and dilutes the rest; rounds are judged per benchmark |
 | **v7.0-VL** | Decision Index 0.3 **60.63**, held-out **0.811** | **4B: option echo and prefix-bidirectional attention, instruction-tuned start, one end-to-end run** |
+| **v7.0-VL 3B** | Decision Index 0.3 **60.01**, held-out **0.797**, median latency 19.6 ms against 29.4 ms | **3B: v7.0-VL 4B cut at layer 20, no retraining** |
 
 The animation covers the cycle through v1.0 · [`EXPLORE.md`](../EXPLORE.md) has every arm through v3.0
 and every arm on the v4.0-VL, v5.0-VL, v6.0-VL, v6.1-VL and v7.0-VL lines, with why each failed · [`versions/v1.0.md`](../versions/v1.0.md#10-how-it-got-here) has the trail before
