@@ -26,7 +26,7 @@ def main(argv=None) -> int:
     from safetensors import safe_open
     from safetensors.torch import save_file
 
-    from rsijev.mlx.quant import dequantize, unpack
+    from rsijev.mlx.quant import dequantize, pq_decode, unpack
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("mlx_dir")
@@ -39,7 +39,11 @@ def main(argv=None) -> int:
     with safe_open(str(src / "tower.safetensors"), "pt") as fh:
         keys = set(fh.keys())
         for k in sorted(keys):
-            if k.endswith((".scales", ".biases")):
+            if k.endswith((".scales", ".biases", ".pq_books")):
+                continue
+            if k == "embed_tokens.pq_codes":
+                td["embed_tokens.weight"] = pq_decode(fh.get_tensor(k), fh.get_tensor("embed_tokens.pq_books")).contiguous()
+                n += 1
                 continue
             name = k[: -len(".weight")] if k.endswith(".weight") else None
             if name and name + ".scales" in keys:

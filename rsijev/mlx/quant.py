@@ -119,3 +119,37 @@ def unpack(words: np.ndarray, bits: int, n: int) -> np.ndarray:
             v = v | (wg[..., k + 1] << np.uint64(32 - sh))
         out[..., i] = v & m
     return out.reshape(*w.shape[:-1], n).astype(np.uint8)
+
+
+def pq_train(w: torch.Tensor, m: int, k: int = 256, iters: int = 20, seed: int = 0, device: str = "cpu",
+             chunk: int = 1 << 17):
+    """Product quantization of a table w (N, D): D is cut into m equal sub-vectors, each coded by
+    its own k-means codebook of k entries. -> (codes uint8 (N, m), books bf16 (m, k, D // m))."""
+    N, D = w.shape
+    if D % m or k > 256:
+        raise ValueError(f"width {D} does not split into {m} sub-vectors, or k {k} > 256")
+    ds = D // m
+    x = w.float().to(device)
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    codes = torch.zeros((N, m), dtype=torch.uint8)
+    books = torch.zeros((m, k, ds), dtype=torch.float32)
+    for j in range(m):
+        xs = x[:, j * ds:(j + 1) * ds]
+        c = xs[torch.randperm(N, generator=g)[:k].to(xs.device)].clone()
+        for it in range(iters + 1):
+            a = torch.cat([torch.cdist(xs[i:i + chunk], c).argmin(1) for i in range(0, N, chunk)])
+            if it == iters:
+                break
+            n = torch.bincount(a, minlength=k).float()
+            t = torch.zeros_like(c).index_add_(0, a, xs)
+            c = torch.where(n[:, None] > 0, t / n.clamp(min=1)[:, None], c)
+        c = c.to(torch.bfloat16).float()          # assign against the books as stored
+        a = torch.cat([torch.cdist(xs[i:i + chunk], c).argmin(1) for i in range(0, N, chunk)])
+        codes[:, j] = a.to(torch.uint8).cpu()
+        books[j] = c.cpu()
+    return codes, books.to(torch.bfloat16)
+
+
+def pq_decode(codes: torch.Tensor, books: torch.Tensor) -> torch.Tensor:
+    """(N, m) codes, (m, k, ds) books -> the table (N, m * ds) in the books' dtype."""
+    return books[torch.arange(books.shape[0]), codes.long()].reshape(codes.shape[0], -1)

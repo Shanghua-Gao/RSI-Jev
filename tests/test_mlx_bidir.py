@@ -215,9 +215,9 @@ def test_decider_matches_torch(deciders, effort, which):
     qs = {"a": QUESTIONS["a"]} if which == "one" else QUESTIONS
     rt, rm = _ask(t, TEXT_STATE, qs, effort), _ask(m, TEXT_STATE, qs, effort)
     _same(rt, rm)
-    if effort in ("low", "medium"):
+    if effort == "low":
         assert set(rm["usage"]["depth"].values()) == {AUX}
-    if effort == "high":
+    if effort in ("medium", "high"):                # one aux exit: medium is the main exit
         assert set(rm["usage"]["depth"].values()) == {N_LAYERS}
 
 
@@ -369,3 +369,29 @@ def test_quantized_vision_and_heads_equal_their_effective_package(v7, tmp_path):
     assert not (noimg / "visual.safetensors").exists()
     d = Decider(str(noimg), backend="mlx", dtype="fp32")
     assert d.served.model.visual is None and d.request("A state.", {"a": QUESTIONS["a"]})["answers"]
+
+
+def test_pq_embeddings(v7, tmp_path):
+    """Product-quantized embeddings: the lookup returns the decoded table exactly, the MLX build
+    answers as the PyTorch package holding that table, and the file holds no dense table."""
+    from safetensors.torch import load_file
+    from serve.decider import Decider
+    from rsijev.mlx.convert import convert
+    from rsijev.mlx.model import MLXDecisionModel
+    from rsijev.mlx.quant import pq_decode
+    out = tmp_path / "pq"
+    rec = convert(v7[0], out, bits=8, group=32, embed_pq=(4, 16), log=lambda *a: None)
+    assert rec["embed_tokens"]["pq"] == {"m": 4, "k": 16}
+    sd = load_file(str(out / "tower.safetensors"))
+    assert "embed_tokens.weight" not in sd
+    table = pq_decode(sd["embed_tokens.pq_codes"], sd["embed_tokens.pq_books"])
+    m = MLXDecisionModel(out, dtype=mx.float32)
+    ids = np.array([[0, 1, 5], [7, 2, 9]])
+    got = np.array(m.tower.embed(mx.array(ids)).astype(mx.float32))
+    assert np.array_equal(got, table[torch.from_numpy(ids)].float().numpy())
+    eff = tmp_path / "rsi-jev-tiny-pq-eff"
+    p = subprocess.run([sys.executable, str(ROOT / "scripts" / "mlx_effective_pkg.py"), str(out), str(eff)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr[-2000:]
+    t, d = Decider(str(eff), device="cpu", dtype="fp32"), Decider(str(out), backend="mlx", dtype="fp32")
+    _same(_ask(t, TEXT_STATE, QUESTIONS, "high"), _ask(d, TEXT_STATE, QUESTIONS, "high"), tol=5e-3)

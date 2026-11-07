@@ -37,6 +37,8 @@ bf16 (they are still computed in fp32); calibration.safetensors stays fp32.
 --vision-bits quantizes the vision tower's linears (not the patch projection or position table) by
 round-to-nearest at --vision-group; they run through quantized matmuls. --heads-bits stores the
 heads' 2-D weights in fewer bits (`<key>` + `<key>.scales` / `.biases`), dequantized to fp32 at load.
+--embed-pq M:K stores embed_tokens as product-quantized codes (`embed_tokens.pq_codes` uint8,
+`embed_tokens.pq_books` bf16), M sub-vectors of K entries; a lookup reads M book rows.
 --no-vision leaves the vision tower out: a text-only build. With --codes each matrix is packed at
 the narrowest width holding its codes, so a codes file may mix widths per layer.
 
@@ -141,7 +143,8 @@ def load_codes(path: str | Path) -> tuple[dict, int, int]:
 
 def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
             embed_bits: int | None = None, embed_group: int = 64, codes: str | Path | None = None,
-            heads_dtype: str = "fp32", overrides: dict | None = None, vision_bits: int | None = None,
+            embed_pq: tuple | None = None, heads_dtype: str = "fp32", overrides: dict | None = None,
+            vision_bits: int | None = None,
             vision_group: int = 64, heads_bits: int | None = None, heads_group: int = 64,
             vision: bool = True, log=print) -> dict:
     """Write the MLX checkpoint for `pkg` into `out`; returns the mlx.json record."""
@@ -187,6 +190,14 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
                 continue
             w = fh.get_tensor(key)
             bytes_in += w.numel() * w.element_size()
+            if key == "embed_tokens.weight" and embed_pq:
+                from .quant import pq_train
+                pc, pb = pq_train(w, embed_pq[0], embed_pq[1],
+                                  device="cuda" if torch.cuda.is_available() else "cpu")
+                tensors["embed_tokens.pq_codes"], tensors["embed_tokens.pq_books"] = pc.contiguous(), pb.contiguous()
+                bytes_out += pc.numel() + pb.numel() * 2
+                n_kept += 1
+                continue
             b, g = None, group
             if from_codes and is_quantized_linear(key) and key not in overrides:
                 raise SystemExit(f"--codes has no entry for {key}: every tower linear must come "
@@ -254,12 +265,15 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
         "source": pkg.resolve().name,
         "source_tower_sha256": _tower_sha(pkg),
         "tower": {"bits": bits, "group_size": group if bits < 16 else None, "mode": "affine",
-                  "quantized": f"{n_q - (1 if embed_bits else 0)} decoder-layer linears" if bits < 16 else "none (bf16)",
+                  "quantized": f"{n_q - (1 if embed_bits and not embed_pq else 0)} decoder-layer linears"
+                  if bits < 16 else "none (bf16)",
                   "method": ("precomputed codes (packed as is)" if from_codes else "round-to-nearest (mx.quantize)")
                   if bits < 16 else None,
                   "codes_sha256": codes_sha, "scales_dtype": "bfloat16"},
-        "embed_tokens": {"bits": embed_bits, "group_size": embed_group if embed_bits else None,
-                         "method": "round-to-nearest (mx.quantize)" if embed_bits else None},
+        "embed_tokens": ({"bits": None, "group_size": None, "method": "product quantization (k-means)",
+                          "pq": {"m": embed_pq[0], "k": embed_pq[1]}} if embed_pq else
+                         {"bits": embed_bits, "group_size": embed_group if embed_bits else None,
+                          "method": "round-to-nearest (mx.quantize)" if embed_bits else None}),
         "vision": ({"bits": vision_bits, "group_size": vision_group} if vision_bits else {"bits": 16})
         if vision else None,
         "heads": (f"scorer and aux_scorers weights {heads_bits}-bit (dequantized to fp32 at load)" if heads_bits else

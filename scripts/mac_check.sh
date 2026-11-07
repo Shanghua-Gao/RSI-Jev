@@ -43,7 +43,7 @@ if [ ! -x .venv-mac-check/bin/python ]; then
   "$PY" -m venv .venv-mac-check
   .venv-mac-check/bin/pip install -q --upgrade pip
 fi
-.venv-mac-check/bin/pip install -q -e ".[mlx,vision]"
+.venv-mac-check/bin/pip install -q -e ".[mlx,vision]" "mlx==0.32.3"   # the version the builds were checked with
 if [ $# -gt 0 ]; then MODELS=("$@"); else MODELS=(shgao/rsi-jev-v7.0-vl-3b-mlx-8bit); fi
 .venv-mac-check/bin/python -c "import mlx.core as mx; print('mlx', mx.__version__, mx.default_device())"
 sysctl -n machdep.cpu.brand_string hw.memsize 2>/dev/null | paste -sd' ' - || true

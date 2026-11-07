@@ -323,10 +323,12 @@ class Linear:
 
 
 class Embedding:
-    __slots__ = ("w", "scales", "biases", "group", "bits", "dtype")
+    __slots__ = ("w", "scales", "biases", "group", "bits", "dtype", "books", "sub")
 
     def __init__(self, p: dict, group: int | None, dtype):
-        self.w = p["embed_tokens.weight"]
+        self.books = p.get("embed_tokens.pq_books")
+        self.sub = None if self.books is None else mx.arange(self.books.shape[0])
+        self.w = p["embed_tokens.pq_codes" if self.books is not None else "embed_tokens.weight"]
         self.scales = p.get("embed_tokens.scales")
         self.biases = p.get("embed_tokens.biases")
         self.group, self.dtype = group, dtype
@@ -335,6 +337,9 @@ class Embedding:
             self.bits = self.w.shape[-1] * 32 // (self.scales.shape[-1] * group)
 
     def __call__(self, ids: mx.array) -> mx.array:
+        if self.books is not None:                     # one book row per sub-vector
+            v = self.books[self.sub, self.w[ids].astype(mx.int32)]
+            return v.reshape(*ids.shape, -1).astype(self.dtype)
         if self.scales is None:
             return self.w[ids].astype(self.dtype)
         return mx.dequantize(self.w[ids], self.scales[ids], self.biases[ids],
