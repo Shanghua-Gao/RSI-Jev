@@ -414,7 +414,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
       <li><a class="v" href="#v5">v5.0-VL</a><span class="d">Oct 2</span><span class="f">20 of 32 layers</span></li>
       <li><a class="v" href="#v6">v6.0-VL</a><span class="d">Oct 6</span><span class="f">Chooses its depth</span></li>
       <li><a class="v" href="#v61-27b">v6.1-VL</a><span class="d">Oct 7–8</span><span class="f">Averages two fine-tunes, at 4B and 27B</span></li>
-      <li class="now"><a class="v" href="#v70">v7.0-VL</a><span class="d">Nov 5</span><span class="f">Reads the options both ways</span></li>
+      <li class="now"><a class="v" href="#v70">v7.0-VL</a><span class="d">Nov 5–6</span><span class="f">Reads the options both ways, at 4B and 3B</span></li>
     </ol>
   </div>
 </section>
@@ -473,7 +473,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
     </div>
     <p class="cap">Decision Index: public index, full run, effort unset (the released files read 60.61). The rest at 32 layers, on the same evaluation sets with the same code. Better calibrated (final ECE 0.039, against 0.048); KoBBQ is lower (0.903, against 0.937). The same request gets the same answer on every run.</p>
   </div>
-  <p class="links2"><a href="https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b">The model on Hugging Face</a><a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v7.0-vl.md">How it was made</a></p>
+  <p class="links2"><a href="https://huggingface.co/shgao/rsi-jev-v7.0-vl-4b">The model on Hugging Face</a><a href="https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b">The 3B cut, at layer 20</a><a href="https://github.com/Shanghua-Gao/RSI-Jev/blob/main/versions/v7.0-vl.md">How it was made</a></p>
 </section>
 
 <section id="v61-27b">
@@ -676,7 +676,7 @@ footer p a { color: var(--muted); text-decoration: underline; text-underline-off
 <section id="start">
   <p class="eyebrow">Get started</p>
   <h2>Three commands.</h2>
-  <p class="sub">Install it, serve v7.0-VL on your own GPU, and ask. On a 96 GB GPU, serve <code>v6.1-vl-27b --effort auto</code> for the 27B.</p>
+  <p class="sub">Install it, serve v7.0-VL on your own GPU, and ask. Serve <code>v7.0-vl-3b</code> for the 3B, the 4B cut at layer 20; on a 96 GB GPU, <code>v6.1-vl-27b --effort auto</code> for the 27B.</p>
   <div class="visual cmds">
     <div class="cmd"><span class="k">1</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>pip install "rsi-jev[fast,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"</code></pre></div></div>
     <div class="cmd"><span class="k">2</span><div class="codebox"><button class="copy" type="button">Copy</button><pre><code>rsi-jev serve v7.0-vl-4b --effort auto</code></pre></div></div>
