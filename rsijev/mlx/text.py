@@ -41,6 +41,7 @@ import mlx.core as mx
 F32 = mx.float32
 # queries per attention block on long inputs (Attention); bounds the score memory
 ATTN_BLOCK = 1024
+LONG_INPUT = 4096   # tokens; above this the forward pass frees MLX's buffer cache after each layer
 
 
 @dataclass
@@ -188,12 +189,34 @@ def _unit_lower_inverse(S: mx.array) -> mx.array:
     return inv[..., 0, :, :]
 
 
-def chunk_gated_delta(q, k, v, g, beta, state=None, chunk: int = 64):
+DELTA_SEGMENT = 4096   # tokens per piece of a long input (a multiple of the chunk size)
+
+
+def chunk_gated_delta(q, k, v, g, beta, state=None, chunk: int = 64, segment: int = DELTA_SEGMENT):
     """transformers' torch_chunk_gated_delta_rule (use_qk_l2norm_in_kernel=True) in MLX.
 
     q, k (B, T, H, Dk), v (B, T, H, Dv) in the tower dtype, heads already repeated to H;
     g (B, T, H) fp32 log-decay; beta (B, T, H). state (B, H, Dk, Dv) fp32 or None.
-    Returns (out (B, T, H, Dv) in q's dtype, final state (B, H, Dk, Dv) fp32)."""
+    Returns (out (B, T, H, Dv) in q's dtype, final state (B, H, Dk, Dv) fp32).
+
+    Inputs longer than `segment` tokens run piece by piece, the state carried across: every
+    quantity is local to its chunk except the state, so the result is the same, and the fp32
+    intermediates exist for one piece at a time (one layer at 32k tokens: 6.7 GB in one piece)."""
+    T = k.shape[1]
+    if segment and T > segment:
+        if segment % chunk:
+            raise ValueError(f"segment {segment} is not a multiple of chunk {chunk}")
+        outs = []
+        for s0 in range(0, T, segment):
+            sl = slice(s0, min(T, s0 + segment))
+            o, state = _chunk_gated_delta(q[:, sl], k[:, sl], v[:, sl], g[:, sl], beta[:, sl], state, chunk)
+            mx.eval(o, state)
+            outs.append(o)
+        return mx.concatenate(outs, axis=1), state
+    return _chunk_gated_delta(q, k, v, g, beta, state, chunk)
+
+
+def _chunk_gated_delta(q, k, v, g, beta, state, chunk):
     in_dtype = q.dtype
     B, T, H, Dk = k.shape
     Dv = v.shape[-1]
@@ -573,6 +596,10 @@ class TextTower:
             # one layer at a time: a lazy graph over many layers keeps every layer's fp32
             # intermediates (the chunked delta rule's) alive at once (19 GB at 8k tokens)
             mx.eval(h)
+            if h.shape[1] > LONG_INPUT:
+                # MLX keeps freed buffers for reuse; on a long input that cache reached 18 GB
+                # at 32k tokens and pushed a busy Mac into swap (one layer: 46 s instead of 4 s)
+                mx.clear_cache()
         if record is not None:
             record.length = h.shape[1] + (cache.length if cache is not None else 0)
         return h

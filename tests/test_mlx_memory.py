@@ -1,4 +1,4 @@
-"""8-bit heads kept quantized (QuantWeight) score exactly as heads dequantized once at load."""
+"""MLX memory savings that keep the arithmetic: quantized heads, segmented delta rule."""
 import numpy as np
 import pytest
 
@@ -37,3 +37,16 @@ def test_quantized_heads_equal_heads_dequantized_at_load(tmp_path):
     mask = mx.array(np.array([[1, 1, 1, 0, 0], [1, 1, 1, 1, 1], [1, 1, 0, 0, 0]], bool))
     za, zb = np.array(a(dh, oh, mask)), np.array(b(dh, oh, mask))
     assert np.array_equal(za, zb)
+
+
+def test_segmented_delta_rule_equals_one_piece():
+    from rsijev.mlx.text import chunk_gated_delta
+    rng = np.random.default_rng(1)
+    B, T, H, D = 1, 300, 2, 16
+    a = lambda *s: mx.array(rng.standard_normal(s).astype(np.float32))  # noqa: E731
+    q, k, v = a(B, T, H, D), a(B, T, H, D), a(B, T, H, D)
+    g = -mx.abs(a(B, T, H)) * 0.1
+    beta = mx.sigmoid(a(B, T, H))
+    o1, s1 = chunk_gated_delta(q, k, v, g, beta, segment=0)
+    o2, s2 = chunk_gated_delta(q, k, v, g, beta, segment=128)
+    assert np.array_equal(np.array(o1), np.array(o2)) and np.array_equal(np.array(s1), np.array(s2))
