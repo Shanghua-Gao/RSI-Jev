@@ -33,9 +33,39 @@ def _rms(x):
     return x * mx.rsqrt((x * x).mean(-1, keepdims=True) + 1e-6)
 
 
+class QuantWeight:
+    """An 8-bit head matrix kept as codes/scales/biases and dequantized to fp32 at each use
+    (`.T`), so it holds a quarter of the fp32 memory; the arithmetic is the same as
+    dequantizing once at load. Row slices (`w[:d]`) slice the codes."""
+    __slots__ = ("w", "scales", "biases", "group", "bits")
+
+    def __init__(self, w, scales, biases, group, bits):
+        self.w, self.scales, self.biases, self.group, self.bits = w, scales, biases, group, bits
+
+    def astype(self, dtype):
+        if dtype != F32:
+            raise TypeError("QuantWeight dequantizes to fp32 only")
+        return self
+
+    def __getitem__(self, rows):
+        return QuantWeight(self.w[rows], self.scales[rows], self.biases[rows], self.group, self.bits)
+
+    @property
+    def shape(self):
+        return (self.w.shape[0], self.scales.shape[-1] * self.group)
+
+    def dense(self):
+        return mx.dequantize(self.w, self.scales, self.biases, group_size=self.group,
+                             bits=self.bits).astype(F32)
+
+    @property
+    def T(self):
+        return self.dense().T
+
+
 def load_heads(path, group: int | None = None) -> dict:
-    """A head file's tensors, 8-bit ones (`<key>` + `<key>.scales` / `.biases`) dequantized:
-    heads are computed in fp32, so only the file gets smaller."""
+    """A head file's tensors; 8-bit ones (`<key>` + `<key>.scales` / `.biases`) as
+    QuantWeight: heads are computed in fp32 from weights dequantized at each use."""
     p = mx.load(str(path))
     out = {}
     for k, v in p.items():
@@ -45,7 +75,7 @@ def load_heads(path, group: int | None = None) -> dict:
             out[k] = v
             continue
         s, b = p[k + ".scales"], p[k + ".biases"]
-        out[k] = mx.dequantize(v, s, b, group_size=group, bits=v.shape[-1] * 32 // (s.shape[-1] * group))
+        out[k] = QuantWeight(v, s, b, group, v.shape[-1] * 32 // (s.shape[-1] * group))
     return out
 
 
