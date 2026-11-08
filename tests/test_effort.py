@@ -172,8 +172,10 @@ def test_the_runner_resolves_validates_and_does_not_pool(models):
     ad = _ada(models, 0.9)
     r = _runner(ad)
     assert "effort" not in r.plan(STATES[0], QS)           # unchanged when unset
-    p = r.plan(STATES[0], QS, effort="medium")
-    assert p["effort"] == "medium" and not r.poolable(p)
+    p = r.plan(STATES[0], QS, effort="low")
+    assert p["effort"] == "low" and not r.poolable(p)
+    # this model has one aux exit (4) below the main one (8), as v7.0-VL 3B: medium runs the main exit
+    assert r.plan(STATES[0], QS, effort="medium")["effort"] == "high"
     assert r.poolable(r.plan(STATES[0], QS, effort="high")) == r.poolable(r.plan(STATES[0], QS))
     with pytest.raises(RequestError, match="effort must be one of"):
         r.plan(STATES[0], QS, effort="fast")

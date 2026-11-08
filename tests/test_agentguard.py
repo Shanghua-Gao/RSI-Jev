@@ -83,12 +83,12 @@ def test_allow_output_is_the_documented_shape(fake):
 
 
 def test_below_threshold_is_silent(fake):
-    fake.says(0.979)
+    fake.says(0.849)
     assert run_hook(call(), fake.url) == ""
 
 
 def test_threshold_is_inclusive_and_settable(fake, monkeypatch):
-    fake.says(0.98)
+    fake.says(0.85)
     assert run_hook(call(), fake.url) != ""
     monkeypatch.setenv("AGENTGUARD_MIN_P", "0.99")
     assert run_hook(call(), fake.url) == ""
