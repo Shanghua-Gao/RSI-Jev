@@ -45,10 +45,16 @@ so these seeds were not used to choose it:
 | player | mean score | sd | min | max | runs finished (750) |
 |---|---|---|---|---|---|
 | model | 384.8 | 230.5 | 77 | 750 | 3 of 20 |
+| model, 4-bit weights of the 1.9 GB MLX build | 330.5 | 243.0 | 74 | 750 | 3 of 20 |
 | random | 67.5 | 17.6 | 42 | 103 | 0 |
 | always stay | 61.1 | 11.8 | 42 | 78 | 0 |
 
-Median answer time 31 ms on that GPU, inside the 133 ms a live game would allow.
+The 4-bit row runs that build's weights in PyTorch on the same GPU; the gap to bf16 is well
+inside the spread between seeds. Median answer time 31 ms on that GPU, inside the 133 ms a live
+game would allow. On an M2 Max the MLX build takes about 0.9 s a move, so there the game is only
+played lockstep, and one wrong move ends a run: its scores on single seeds differ from the GPU's
+(seed 20: 242 on the Mac, 520 on the GPU) though it picks the same move on all 413 labelled
+frames we checked.
 
 A scripted player that reads the game's internal state finishes the 40 seeds tried, so the game
 can be won. That player is only a check on the game, and is not a score to compare with.
