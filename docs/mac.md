@@ -1,5 +1,47 @@
 # RSI-Jev on a Mac (MLX)
 
+## v7.0-VL 3B: about 2 GB
+
+Two 4-bit builds of [v7.0-VL 3B](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b), the first 20
+layers of the 4B. Same API, effort levels and calibration as the PyTorch release.
+
+| build | download | images | Decision Index 0.2.1, 16k sample | same answer as the bf16 release, on the Mac |
+|---|---|---|---|---|
+| [4-bit](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b-mlx-4bit) | 1.91 GB | yes | 58.50 | 96.5% (`low`), 97.5% (`medium`, `high`, `auto`) |
+| [4-bit, text only](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b-mlx-4bit-text) | 1.70 GB | no | – | the 4-bit build's text weights, byte for byte |
+| [bf16 release](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b) (reference) | 6.8 GB | yes | 59.15 | – |
+
+The Decision Index reads use the 4-bit build's weights in PyTorch, on the same rows and GPU type
+as the bf16 read. Agreement is on 200 questions (180 text, 20 with images) run by MLX on an M2 Max;
+the 20 image questions all agree.
+
+```bash
+pip install "rsi-jev[mlx,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"
+rsi-jev serve v7.0-vl-3b-mlx-4bit --backend mlx          # or v7.0-vl-3b-mlx-4bit-text
+```
+
+Measured on an M2 Max (34 GB) with `scripts/mac_check.sh`:
+
+| | 4-bit |
+|---|---|
+| one short question | 69 ms (`low`), 72 ms (`auto`), 84 ms (`medium`, `high`) |
+| memory for the weights | 1.7 GB text only, about 1.9 GB with images |
+| peak memory, 1k-token document | 3.05 GB, 1.4 s |
+| peak memory, 8k-token document | 3.59 GB, 14 s |
+| peak memory, 32k-token document | 5.55 GB, 60 s |
+
+| part | 4-bit build |
+|---|---|
+| decoder layers 1–20, every linear layer | 4-bit, groups of 32, GPTQ |
+| token embeddings | 2-bit, groups of 64, round to nearest |
+| vision tower | 4-bit, groups of 32 (none in the text-only build) |
+| decision heads (layers 16, 20) | 8-bit, groups of 64, computed in fp32 |
+
+Inputs longer than 4,096 tokens run through each DeltaNet layer in 4,096-token pieces with the
+state carried over, which keeps the 32k case at 5.55 GB.
+
+## v6.1-VL 4B
+
 RSI-Jev v6.1-VL 4B runs on Apple silicon through [MLX](https://github.com/ml-explore/mlx). There
 are two builds. Both have the same API, effort levels and image support as the PyTorch release;
 they store the weights in fewer bits.

@@ -77,9 +77,9 @@ rsi-jev serve v7.0-vl-4b --effort auto --port 8000
 
 `rsi-jev serve v7.0-vl-3b` serves the 3B (6.8 GB). On a 96 GB GPU, `rsi-jev serve v6.1-vl-27b --effort auto` serves the 27B.
 
-On a Mac with Apple silicon, the MLX builds of the 4B (8-bit, lossless; 4-bit, smaller) run with
-`pip install "rsi-jev[mlx,vision] @ git+https://github.com/Shanghua-Gao/RSI-Jev"` and
-`rsi-jev serve v6.1-vl-4b-mlx-8bit --backend mlx`: [`docs/mac.md`](docs/mac.md).
+On a Mac with Apple silicon, the 3B runs in about 2 GB: `pip install "rsi-jev[mlx,vision] @
+git+https://github.com/Shanghua-Gao/RSI-Jev"` and `rsi-jev serve v7.0-vl-3b-mlx-4bit --backend mlx`
+([`docs/mac.md`](docs/mac.md), with the 4B builds).
 
 ```bash
 curl localhost:8000/v1/systemone -H 'Content-Type: application/json' -d '{

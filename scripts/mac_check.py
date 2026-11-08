@@ -1,7 +1,7 @@
 """Check an MLX build on this Mac: answers vs the shipped references, latency per effort, peak memory.
 
-    python scripts/mac_check.py shgao/rsi-jev-v7.0-vl-3b-mlx-8bit          # or a local directory
-    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v7.0-vl-3b-mlx-8bit.json
+    python scripts/mac_check.py shgao/rsi-jev-v7.0-vl-3b-mlx-4bit          # or a local directory
+    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v7.0-vl-3b-mlx-4bit.json
 
 First the latency of one short question per request, median and mean, at each effort. Then
 it runs the reference rows (200 questions: 180 text, 20 with images; public benchmarks) through
@@ -291,9 +291,10 @@ def main(argv=None) -> int:
         rows_file = Path(out).parent / "rows.json"         # the rows (with images) once, beside the refs
         if not rows_file.exists() or json.loads(rows_file.read_text())["rows"] != t["rows"]:
             rows_file.write_text(json.dumps({"rows": t["rows"]}))
+        second = os.environ.get("MAC_CHECK_SECOND", "mlx_linux")     # or torch_build
         Path(out).write_text(json.dumps({"rows": rows_file.name, "torch_bf16": slim(t["outputs"]),
-                                         "mlx_linux": slim(m["outputs"]),
-                                         "info": {"torch_bf16": t["info"], "mlx_linux": m["info"]}}))
+                                         second: slim(m["outputs"]),
+                                         "info": {"torch_bf16": t["info"], second: m["info"]}}))
         print(f"wrote {out}: {Path(out).stat().st_size / 1e6:.1f} MB")
         return 0
     if not a.model:
@@ -329,7 +330,8 @@ def main(argv=None) -> int:
                                    "median_images": round(statistics.median(im), 1) if im else None,
                                    "mean_depth": round(float(np.mean([x["depth"] for x in got[e]
                                                                       if x["depth"] is not None] or [0])), 2)}
-    for which, title in (("torch_bf16", "bf16 PyTorch release (GPU)"), ("mlx_linux", "this build, MLX on Linux")):
+    for which, title in (("torch_bf16", "bf16 PyTorch release (GPU)"), ("mlx_linux", "this build, MLX on Linux"),
+                         ("torch_build", "this build's weights, PyTorch (GPU)")):
         if ref and which in ref:
             out = {e: v[: len(rows)] for e, v in ref[which].items()}
             result["vs"][which] = compare(rows, got, out, efforts)
