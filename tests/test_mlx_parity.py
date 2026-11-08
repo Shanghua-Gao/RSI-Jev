@@ -170,6 +170,21 @@ def test_text_tower_layer_by_layer(hf_tower):
     assert err < 1e-4 * max(1.0, float(out.last_hidden_state.abs().max()))
 
 
+def test_long_inputs_in_pieces_equal_one_pass(hf_tower, monkeypatch):
+    """Inputs above LONG_INPUT tokens run DeltaNet layers in pieces (conv window and state
+    carried), MLPs in pieces and the delta rule in segments: the same hidden states up to fp32
+    rounding (different matmul shapes)."""
+    _, tw = hf_tower
+    ids = mx.array(np.random.default_rng(3).integers(0, 300, (1, 333)))
+    rope = tw.rotary(T.text_positions(1, 333))
+    one = _np(tw.run(tw.embed(ids), 0, N_LAYERS, rope))
+    monkeypatch.setattr(T, "LONG_INPUT", 64)
+    monkeypatch.setattr(T, "DELTA_SEGMENT", 128)
+    monkeypatch.setattr(T.chunk_gated_delta, "__defaults__", (None, 64, 128))
+    pieces = _np(tw.run(tw.embed(ids), 0, N_LAYERS, rope))
+    err = np.abs(pieces - one).max() / max(1.0, float(np.abs(one).max()))
+    assert err < 1e-5, err            # the bar used against PyTorch; fp32 matmul shapes differ
+
 def test_right_padding_and_prefix_cache(hf_tower):
     """A short row padded to a long one reads what it reads alone; a prefix cache plus the
     suffix reads what the whole sequence reads (fp32)."""

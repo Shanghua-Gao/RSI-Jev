@@ -545,13 +545,38 @@ class DecoderLayer:
         self.eps = cfg.rms_norm_eps
 
     def __call__(self, x, cos, sin, cache=None, record=None, prefix=None):
+        T = x.shape[1]
+        if self.linear and T > LONG_INPUT and cache is None and record is None:
+            return self._pieces(x)
         h = rms_norm(x, self.ln1, self.eps)
         if self.linear:
             h = self.mixer(h, cache, record)
         else:
             h = self.mixer(h, cos, sin, cache, record, prefix)
         x = x + h
-        return x + self.mlp(rms_norm(x, self.ln2, self.eps))
+        if T > LONG_INPUT:
+            return mx.concatenate([self._mlp_res(x[:, s0:s0 + LONG_INPUT]) for s0 in range(0, T, LONG_INPUT)], axis=1)
+        return self._mlp_res(x)
+
+    def _mlp_res(self, x):
+        out = x + self.mlp(rms_norm(x, self.ln2, self.eps))
+        if x.shape[1] == LONG_INPUT:
+            mx.eval(out)
+        return out
+
+    def _pieces(self, x):
+        """A DeltaNet layer on a long input, LONG_INPUT tokens at a time: everything but the
+        recurrence is per token, and the conv window and state carry over in a LayerCache, as
+        a prefix cache would. Same result up to fp32 rounding; the projections' and the MLP's
+        activations exist for one piece at a time."""
+        c, outs = LayerCache(), []
+        for s0 in range(0, x.shape[1], LONG_INPUT):
+            xp = x[:, s0:s0 + LONG_INPUT]
+            xp = xp + self.mixer(rms_norm(xp, self.ln1, self.eps), c, c)
+            xp = xp + self.mlp(rms_norm(xp, self.ln2, self.eps))
+            mx.eval(xp, c.conv, c.state)
+            outs.append(xp)
+        return mx.concatenate(outs, axis=1)
 
 
 class TextTower:
