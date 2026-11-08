@@ -39,6 +39,7 @@ mlx = ["mlx>=0.32", "numpy", "pillow"]
 
 [project.scripts]
 rsi-jev = "serve.cli:main"
+decide = "serve.decide_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Shanghua-Gao/RSI-Jev"
