@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_URL = "http://127.0.0.1:8000"
-DEFAULT_THRESHOLD = 0.98
+DEFAULT_THRESHOLD = 0.85
 TIMEOUT_S = 3.0
 EFFORT = "high"
 MAX_STATE_CHARS = 6000          # past this the model would judge a cut-off call: ask

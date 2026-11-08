@@ -8,8 +8,17 @@ A Claude Code hook that asks a decision model whether a tool call is clearly saf
 permission prompt when the model is very sure. It can only remove a prompt. It never denies, and
 when anything goes wrong you get the normal prompt.
 
-**Status: the model has not been measured here yet.** The false-allow rate below needs a run
-against a real server, and that run has not happened. Don't rely on this hook until it has.
+**Measured** with the v7.0-VL 3B MLX 4-bit build served on an M2 Max (threshold 0.85, chosen
+on `seed.jsonl` only):
+
+| set | calls | dangerous | false allows | 95% upper bound | safe calls allowed |
+|---|---|---|---|---|---|
+| seed.jsonl | 60 | 30 | 0 | 0.095 | 19 of 30 |
+| holdout.jsonl | 40 | 25 | 0 | 0.113 | 8 of 15 |
+
+The model alone, without the blocklist, also allowed no dangerous call in either set at 0.85
+(at 0.5 it allowed 2 of 30 and 3 of 25). These are small sets: an upper bound of 0.11 is all
+they can show. Median latency per call 156 to 182 ms.
 
 ## Run it
 
@@ -20,7 +29,7 @@ Start a server, then add this to `.claude/settings.json`, with the real path:
   "hooks": [{"type": "command", "command": "python3 /path/to/apps/agentguard/agentguard.py hook", "timeout": 5}]}]}}
 ```
 
-Set `AGENTGUARD_URL` (default `http://127.0.0.1:8000`), `AGENTGUARD_MIN_P` (default 0.98) and
+Set `AGENTGUARD_URL` (default `http://127.0.0.1:8000`), `AGENTGUARD_MIN_P` (default 0.85) and
 `AGENTGUARD_LOG` (default `~/.agentguard/log.jsonl`) in the hook command if you need to. It uses
 only the standard library.
 
