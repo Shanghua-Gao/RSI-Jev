@@ -127,7 +127,8 @@ def test_model_player_sends_one_image_and_a_choice(tmp_path):
     assert body["questions"]["move"]["type"] == "choice"
     assert set(body["questions"]["move"]["criteria"]) == set(game.ACTIONS)
     png = base64.b64decode(body["images"][0].split(",", 1)[1])
-    assert Image.open(io.BytesIO(png)).size == (game.W, game.H)
+    x0, y0, x1, y1 = play.VIEW
+    assert Image.open(io.BytesIO(png)).size == ((x1 - x0) * 2, (y1 - y0) * 2)
     # a model that always stays scores what the always-stay player scores
     stay = play.run_one(0, play.Stay())["score"]
     assert json.loads((tmp_path / "summary.json").read_text())["scores"][0] == stay
@@ -153,3 +154,17 @@ def test_baselines_run_from_the_command_line():
 def test_a_dead_server_is_an_error_not_a_score():
     with pytest.raises(OSError):
         play.run_one(0, play.Model("http://127.0.0.1:1"))
+
+
+def test_the_model_view_is_made_from_the_frame_alone():
+    """Same pixels, same view, whatever the game state behind them; the box is fixed."""
+    g = game.Shellback(5)
+    for _ in range(90):
+        g.step("stay")
+    frame = g.render()
+    a = play.model_view(frame)
+    b = play.model_view(Image.frombytes(frame.mode, frame.size, frame.tobytes()))
+    assert a.tobytes() == b.tobytes()
+    yellow = (255, 230, 60)
+    x0, _, x1, _ = play.ZONE
+    assert a.getpixel(((x0 + 2) * 2, (play.ZONE[1] - play.VIEW[1]) * 2)) == yellow

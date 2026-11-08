@@ -20,7 +20,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from game import ACTIONS, MAX_TICKS, TICKS_PER_ACTION, TICKS_PER_SECOND, H, Shellback, W   # noqa: E402
+from game import (ACTIONS, CRAB_W, CRAB_X, GROUND, MAX_TICKS, TICKS_PER_ACTION,  # noqa: E402
+                  TICKS_PER_SECOND, H, Shellback, W)
 
 from PIL import Image, ImageDraw                        # noqa: E402
 
@@ -29,13 +30,34 @@ BUDGET_MS = 1000 / REPLAY_FPS
 STATE = "A side-view frame from a game. A hermit crab on the left walks to the right. <image>"
 QUESTION = {
     "type": "choice",
-    "instructions": "What should the crab do right now to avoid being hit?",
+    "instructions": "What should the crab do right now?",
     "criteria": {
-        "jump": "A spiky purple urchin on the sand is close in front of the crab",
-        "duck": "A pink jellyfish is close in front of the crab",
-        "stay": "Nothing is close in front of the crab",
+        "jump": "Part of a spiky purple urchin is inside the yellow dotted box",
+        "duck": "Part of a pink jellyfish is inside the yellow dotted box",
+        "stay": "The yellow dotted box holds only the crab, sand and water",
     },
 }
+# The model's view: a fixed dotted box over the crab and the stretch just ahead of it (where an
+# urchin means "jump now" and a jellyfish "duck now"), and the left half of the frame, enlarged
+# twice. The box never moves and shows no game state; it is how the frame tells the player
+# where to look. Without it, and at full size, the model times jumps badly: on labelled frames
+# it picked a safe move on 45% of the urchin frames where a move could kill, 95% with this view.
+ZONE = (CRAB_X, 60, CRAB_X + CRAB_W + 30, GROUND)
+VIEW = (0, 40, 240, H)
+
+
+def model_view(frame: Image.Image) -> Image.Image:
+    im = frame.copy()
+    d = ImageDraw.Draw(im)
+    x0, y0, x1, y1 = ZONE
+    for x in range(x0, x1, 8):
+        d.line((x, y0, min(x + 4, x1), y0), fill=(255, 230, 60), width=2)
+        d.line((x, y1 - 1, min(x + 4, x1), y1 - 1), fill=(255, 230, 60), width=2)
+    for y in range(y0, y1, 8):
+        d.line((x0, y, x0, min(y + 4, y1)), fill=(255, 230, 60), width=2)
+        d.line((x1, y, x1, min(y + 4, y1)), fill=(255, 230, 60), width=2)
+    x0, y0, x1, y1 = VIEW
+    return im.crop(VIEW).resize(((x1 - x0) * 2, (y1 - y0) * 2), Image.NEAREST)
 
 
 def frame_url(im: Image.Image) -> str:
@@ -58,8 +80,8 @@ class Random:
 
 
 class Model:
-    """Pixels in, the model's top option out. Nothing else about the game reaches it, and
-    nothing about the game changes its answer."""
+    """Pixels in (model_view of the frame), the model's top option out. Nothing else about the
+    game reaches it, and nothing about the game changes its answer."""
 
     def __init__(self, url, timeout=60.0):
         import urllib.request
@@ -68,7 +90,7 @@ class Model:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def act(self, frame):
-        body = {"model": "jev-latest", "state": STATE, "images": [frame_url(frame)],
+        body = {"model": "jev-latest", "state": STATE, "images": [frame_url(model_view(frame))],
                 "questions": {"move": QUESTION}}
         req = self.request.Request(self.url, data=json.dumps(body).encode(), method="POST",
                                    headers={"Content-Type": "application/json"})

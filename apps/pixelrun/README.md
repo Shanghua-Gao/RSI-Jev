@@ -7,11 +7,15 @@ python apps/pixelrun/play.py watch --seed 3
 A hermit crab carries a letter along the sea floor. Urchins sit on the sand, so the crab jumps.
 Jellyfish drift at shell height, so it ducks. A decision model plays from screenshots alone.
 
-**Status: the model has not played yet.** Only the baselines below have been run.
+The model gets one PNG and a `choice` question: jump, duck or stay. It answers, the game takes
+that answer, and the world moves on. There is no physics planner, no labelled state and no
+assisted override. Its top option is the move.
 
-The model gets one PNG of the frame and a `choice` question: jump, duck or stay. It answers, the
-game takes that answer, and the world moves on. There is no physics planner, no labelled state and
-no assisted override. Its top option is the move. That is the point of the game.
+The PNG is the left half of the frame, enlarged twice, with a fixed yellow dotted box over the
+crab and the 30 pixels ahead of it. The question asks what is inside the box. The box never moves
+and shows no game state, but its width was set from the game's jump physics, so it carries one
+piece of knowledge: where to react. With the plain full frame the model timed jumps badly and
+scored about the same as random (69.2 over seeds 0 to 19).
 
 The probabilities on screen are drawn on a separate copy for you. The model never sees them.
 
@@ -35,12 +39,16 @@ the game waits for each answer, so latency cannot change a score. At the game's 
 playing live would need an answer within 133 ms. `score` reports measured latency beside that
 figure.
 
-Baselines over seeds 0 to 19:
+Seeds 20 to 39, the v7.0-VL 3B (bf16, PyTorch on one GPU). The view was chosen on seeds 0 to 19,
+so these seeds were not used to choose it:
 
-| player | mean score | sd | min | max |
-|---|---|---|---|---|
-| always stay | 60.9 | 10.3 | 44 | 78 |
-| random | 67.2 | 15.9 | 46 | 111 |
+| player | mean score | sd | min | max | runs finished (750) |
+|---|---|---|---|---|---|
+| model | 384.8 | 230.5 | 77 | 750 | 3 of 20 |
+| random | 67.5 | 17.6 | 42 | 103 | 0 |
+| always stay | 61.1 | 11.8 | 42 | 78 | 0 |
+
+Median answer time 31 ms on that GPU, inside the 133 ms a live game would allow.
 
 A scripted player that reads the game's internal state finishes the 40 seeds tried, so the game
 can be won. That player is only a check on the game, and is not a score to compare with.
