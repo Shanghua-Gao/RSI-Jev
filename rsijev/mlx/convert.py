@@ -36,7 +36,7 @@ bf16 (they are still computed in fp32); calibration.safetensors stays fp32.
 
 --vision-bits quantizes the vision tower's linears (not the patch projection or position table) by
 round-to-nearest at --vision-group; they run through quantized matmuls. --heads-bits stores the
-heads' 2-D weights in fewer bits (`<key>` + `<key>.scales` / `.biases`), dequantized to fp32 at load.
+heads' 2-D weights in fewer bits (`<key>` + `<key>.scales` / `.biases`), dequantized to fp32 at each use.
 --embed-pq M:K stores embed_tokens as product-quantized codes (`embed_tokens.pq_codes` uint8,
 `embed_tokens.pq_books` bf16), M sub-vectors of K entries; a lookup reads M book rows.
 --no-vision leaves the vision tower out: a text-only build. With --codes each matrix is packed at
@@ -276,7 +276,7 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
                           "method": "round-to-nearest (mx.quantize)" if embed_bits else None}),
         "vision": ({"bits": vision_bits, "group_size": vision_group} if vision_bits else {"bits": 16})
         if vision else None,
-        "heads": (f"scorer and aux_scorers weights {heads_bits}-bit (dequantized to fp32 at load)" if heads_bits else
+        "heads": (f"scorer and aux_scorers weights {heads_bits}-bit (dequantized to fp32 at each use)" if heads_bits else
                   "fp32 as shipped (scorer, aux_scorers, calibration)" if heads_dtype == "fp32" else
                   "scorer and aux_scorers weights bf16 (computed in fp32); calibration fp32 as shipped"),
         "head_quant": {"bits": heads_bits, "group_size": heads_group} if heads_bits else None,

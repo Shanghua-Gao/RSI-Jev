@@ -304,6 +304,31 @@ def score_image_planned(model, tokenizer, plan: dict, *, max_options, batch_size
 
 
 # ----------------------------------------------------------------------------- loading
+def _arrays(obj, seen=None) -> list:
+    """Every mx.array reachable from obj (attributes, __slots__, lists, tuples, dicts)."""
+    seen = set() if seen is None else seen
+    if id(obj) in seen:
+        return []
+    seen.add(id(obj))
+    if isinstance(obj, mx.array):
+        return [obj]
+    if isinstance(obj, dict):
+        items = list(obj.values())
+    elif isinstance(obj, (list, tuple)):
+        items = list(obj)
+    elif isinstance(obj, (str, bytes, int, float, bool, type(None))) or not hasattr(obj, "__class__"):
+        return []
+    else:
+        items = list(getattr(obj, "__dict__", {}).values())
+        for cls in type(obj).__mro__:
+            items += [getattr(obj, n) for n in getattr(cls, "__slots__", ()) if hasattr(obj, n)]
+    out = []
+    for v in items:
+        if isinstance(v, (mx.array, dict, list, tuple)) or type(v).__module__.startswith("rsijev"):
+            out += _arrays(v, seen)
+    return out
+
+
 def serving_stream():
     """A stream on the default device that any thread may run (MLX's thread-unsafe stream;
     the default stream where MLX has no per-thread streams)."""
@@ -341,6 +366,10 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     mx.set_default_stream(stream)
     model = MLXDecisionModel(path, vision=bool(vb) and vision is not False, dtype=dt)
     model.serving_stream = stream
+    # mx.load is lazy, and its reads run on the loading thread's CPU stream: read every
+    # weight here, or the server's worker thread fails on its first request ("There is no
+    # Stream(cpu, 1) in current thread")
+    mx.eval(_arrays(model))
     tok = AutoTokenizer.from_pretrained(str(path))
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],

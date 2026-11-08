@@ -50,3 +50,4 @@ def test_segmented_delta_rule_equals_one_piece():
     o1, s1 = chunk_gated_delta(q, k, v, g, beta, segment=0)
     o2, s2 = chunk_gated_delta(q, k, v, g, beta, segment=128)
     assert np.array_equal(np.array(o1), np.array(o2)) and np.array_equal(np.array(s1), np.array(s2))
+
