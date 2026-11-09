@@ -342,8 +342,9 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
 
     `dtype`: the compute dtype of the tower, "bf16" (default, what the weights are stored
     in) or "fp32"; the heads are fp32 either way."""
-    from transformers import AutoTokenizer
-
+    from rsijev.frozen_tok import load_tokenizer
+    if os.environ.get("RSIJEV_MLX_DEVICE") == "cpu":
+        mx.set_default_device(mx.cpu)
     from serve.release import (apply_serve_env, checkpoint_name, own_token_pool, release_version,
                                resolve_ckpt, serving_encoder)
     from serve.server import Served
@@ -370,7 +371,7 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     # weight here, or the server's worker thread fails on its first request ("There is no
     # Stream(cpu, 1) in current thread")
     mx.eval(_arrays(model))
-    tok = AutoTokenizer.from_pretrained(str(path))
+    tok = load_tokenizer(path)
     cap, policy = serving_encoder(spec, max_length, truncate)
     enc = EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
                        option_order="canonical", max_length=cap, truncate=policy,

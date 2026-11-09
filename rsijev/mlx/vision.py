@@ -6,9 +6,10 @@
     image, 2-D rotary in fp32, attention within each image, LayerNorm, GELU (tanh) MLP,
     merger LayerNorm -> 4096 -> GELU -> text width. What rsijev.vision.load_visual runs.
   * `ImagePrep`: rsijev.vision.ImagePrep without torch: the release's own image processor
-    config (transformers' Qwen2-VL processor; the torchvision backend when torchvision is
-    installed, so pixels match the PyTorch path exactly, else the PIL backend), the same
-    per-request token budget split evenly over the images, numpy out.
+    config (transformers' Qwen2-VL processor with the torchvision backend when torchvision
+    is installed, so pixels match the PyTorch path exactly, else `NativeProcessor`, Pillow and
+    numpy, equal to transformers' PIL backend), the same per-request token budget split
+    evenly over the images, numpy out.
   * `mrope_positions`: transformers' Qwen3_5Model.get_rope_index in numpy: text tokens count
     up, an image's tokens take (t, h, w) from its merged grid starting at the running
     position, and the text after it continues from the grid's larger side.
@@ -208,25 +209,78 @@ class ImagePrep:
         return pv, grid, [int(np.prod(g)) // (m * m) for g in grid]
 
 
+class NativeProcessor:
+    """Qwen2VLImageProcessorPil of transformers 5.17 in Pillow and numpy: bicubic resize to
+    multiples of patch x merge, scale to [0, 1], normalize, one temporal copy per patch."""
+
+    def __init__(self, config: dict, size: dict | None = None):
+        size = size or config["size"]
+        self.min_pixels, self.max_pixels = int(size["shortest_edge"]), int(size["longest_edge"])
+        self.patch_size, self.merge_size = int(config["patch_size"]), int(config["merge_size"])
+        self.temporal_patch_size = int(config["temporal_patch_size"])
+        self.mean = np.array(config["image_mean"], dtype=np.float32)[:, None, None]
+        self.std = np.array(config["image_std"], dtype=np.float32)[:, None, None]
+        self.config = config
+
+    @classmethod
+    def from_pretrained(cls, src: str, size: dict | None = None) -> "NativeProcessor":
+        return cls(json.loads((Path(src) / "preprocessor_config.json").read_text()), size)
+
+    def _resized(self, height: int, width: int) -> tuple[int, int]:
+        """transformers' smart_resize."""
+        if max(height, width) / min(height, width) > 200:
+            raise ValueError(f"absolute aspect ratio must be smaller than 200, got "
+                             f"{max(height, width) / min(height, width)}")
+        factor = self.patch_size * self.merge_size
+        h, w = round(height / factor) * factor, round(width / factor) * factor
+        if h * w > self.max_pixels:
+            beta = math.sqrt((height * width) / self.max_pixels)
+            h = max(factor, math.floor(height / beta / factor) * factor)
+            w = max(factor, math.floor(width / beta / factor) * factor)
+        elif h * w < self.min_pixels:
+            beta = math.sqrt(self.min_pixels / (height * width))
+            h, w = math.ceil(height * beta / factor) * factor, math.ceil(width * beta / factor) * factor
+        return h, w
+
+    def __call__(self, images: Sequence, return_tensors: str = "np") -> dict:
+        from PIL import Image
+        patches, grids = [], []
+        p, m, t = self.patch_size, self.merge_size, self.temporal_patch_size
+        for im in images:
+            h, w = self._resized(im.height, im.width)
+            a = np.asarray(im.resize((w, h), resample=Image.Resampling.BICUBIC)).transpose(2, 0, 1)
+            a = (a.astype(np.float64) * (1 / 255)).astype(np.float32)
+            a = (a - self.mean) / self.std
+            gh, gw = h // p, w // p
+            x = a.reshape(3, gh // m, m, p, gw // m, m, p).transpose(1, 4, 2, 5, 0, 3, 6)
+            x = np.broadcast_to(x[:, :, :, :, :, None, :, :], (*x.shape[:5], t, *x.shape[5:]))
+            patches.append(x.reshape(gh * gw, 3 * t * p * p))
+            grids.append([1, gh, gw])
+        return {"pixel_values": np.concatenate(patches, axis=0),
+                "image_grid_thw": np.array(grids, dtype=np.int64)}
+
+
 def _processor_class(backend: str | None = None):
-    """Qwen2-VL's image processor: the torchvision backend (what the PyTorch path serves
-    with, so pixels are identical) when torch and torchvision are installed, else the PIL
-    backend (numpy; resizes with PIL's bicubic, which differs from torchvision's by a
-    rounding step: see docs/inference.md "On a Mac (MLX)")."""
+    """The torchvision backend of Qwen2-VL's image processor (what the PyTorch path serves
+    with, so pixels are identical) when torch and torchvision are installed, else
+    NativeProcessor, which resizes with PIL's bicubic: that differs from torchvision's by a
+    rounding step (see docs/inference.md "On a Mac (MLX)"). "pil" is transformers' PIL backend."""
     if backend is None:
         try:
             import torch  # noqa: F401
             import torchvision  # noqa: F401
             backend = "torchvision"
         except ImportError:
-            backend = "pil"
+            backend = "native"
+    if backend == "native":
+        return NativeProcessor
     if backend == "torchvision":
         from transformers.models.qwen2_vl.image_processing_qwen2_vl import Qwen2VLImageProcessor
         return Qwen2VLImageProcessor
     if backend == "pil":
         from transformers.models.qwen2_vl.image_processing_pil_qwen2_vl import Qwen2VLImageProcessorPil
         return Qwen2VLImageProcessorPil
-    raise ValueError(f"image processor backend must be torchvision or pil, got {backend!r}")
+    raise ValueError(f"image processor backend must be native, torchvision or pil, got {backend!r}")
 
 
 def mrope_positions(input_ids: np.ndarray, attention_mask: np.ndarray, grid: np.ndarray,

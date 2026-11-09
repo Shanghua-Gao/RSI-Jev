@@ -139,6 +139,17 @@ def read_state(has_images: bool) -> str:
     return data
 
 
+def ask(a: argparse.Namespace, body: dict, *, vision: bool) -> dict:
+    """A named server if there is one, else the local model, started when needed."""
+    from serve import autostart
+    if a.url or not autostart.available():
+        return post(a.url or DEFAULT_URL, body, timeout=a.timeout, api_key=os.environ.get("RSIJEV_API_KEY"))
+    try:
+        return autostart.ask(body, vision=vision, timeout=a.timeout)
+    except autostart.Unavailable as e:
+        raise Failure(str(e)) from e
+
+
 def _min_p(text: str) -> float:
     v = float(text)
     if not 0.0 <= v <= 1.0:          # NaN fails this too
@@ -148,7 +159,7 @@ def _min_p(text: str) -> float:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="decide", description=(
-        "Read a state from stdin, ask a running model one question. "
+        "Read a state from stdin, ask the model one question. "
         "Exit 0 if the probability reaches --min-p, 1 if not, 2 on any error."))
     ap.add_argument("question")
     ap.add_argument("--min-p", type=_min_p, default=0.5, help="default 0.5")
@@ -156,8 +167,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--image", action="append", default=[], metavar="PATH",
                     help=f"repeatable, at most {MAX_IMAGES}")
     ap.add_argument("--effort", choices=("low", "medium", "high", "auto"))
-    ap.add_argument("--url", default=os.environ.get("DECIDE_URL", DEFAULT_URL),
-                    help=f"default $DECIDE_URL or {DEFAULT_URL}")
+    ap.add_argument("--url", default=os.environ.get("DECIDE_URL"),
+                    help="a running server (default $DECIDE_URL); on Apple Silicon the model "
+                         f"otherwise starts by itself, elsewhere the default is {DEFAULT_URL}")
     ap.add_argument("--timeout", type=float, default=60.0, help="seconds, default 60")
     ap.add_argument("--json", action="store_true", help="one JSON object on stdout")
     return ap
@@ -171,7 +183,7 @@ def judge(a: argparse.Namespace) -> dict:
     state = read_state(bool(images))
     t0 = time.perf_counter()
     body = build_request(a.question, state, options=options, images=images, effort=a.effort)
-    response = post(a.url, body, timeout=a.timeout, api_key=os.environ.get("RSIJEV_API_KEY"))
+    response = ask(a, body, vision=bool(images))
     ms = (time.perf_counter() - t0) * 1000
     p, choice = read_answer(response, options)
     usage = response.get("usage")

@@ -259,6 +259,13 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
         else:
             shutil.copy2(src, out / name)
         copied.append(name)
+    if "tokenizer.json" in copied:                  # what the MLX path tokenizes with
+        from rsijev.frozen_tok import FROZEN, freeze
+        try:
+            freeze(pkg, out)
+            copied.append(FROZEN)
+        except Exception as e:                      # the package then loads through transformers
+            log(f"no {FROZEN}: {type(e).__name__}: {e}")
 
     record = {
         "format": FORMAT, "format_version": FORMAT_VERSION,

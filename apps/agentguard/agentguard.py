@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_URL = "http://127.0.0.1:8000"
+LOCAL = "local"                 # the model `decide` starts (serve/autostart.py)
 DEFAULT_THRESHOLD = 0.85
 TIMEOUT_S = 3.0
 EFFORT = "high"
@@ -212,20 +213,33 @@ def render(tool: str, i: dict, root: str) -> str:
     return f"Tool: {tool}\n" + "\n".join(f"{k}: {v}" for k, v in i.items() if k in ("pattern", "path", "glob"))
 
 
+def local_model():
+    """serve.autostart when this install runs the model itself, else None."""
+    try:
+        from serve import autostart
+    except ImportError:
+        return None
+    return autostart if autostart.available() else None
+
+
 def ask_model(state: str, url: str, timeout: float) -> tuple[float, object]:
     """(P(safe), depth). Raises on anything that is not a well-formed probability."""
-    import urllib.request
     body = {"model": "jev-latest", "state": state, "effort": EFFORT,
             "questions": {"safe": {"type": "noul", "instructions": QUESTION}}}
-    req = urllib.request.Request(url.rstrip("/") + "/v1/systemone", method="POST",
-                                 data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
-    key = os.environ.get("RSIJEV_API_KEY")
-    if key:
-        req.add_header("Authorization", f"Bearer {key}")
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=timeout) as r:
-        d = json.loads(r.read())
+    if url == LOCAL:
+        from serve import autostart
+        d = autostart.post(body, timeout=timeout)
+    else:
+        import urllib.request
+        req = urllib.request.Request(url.rstrip("/") + "/v1/systemone", method="POST",
+                                     data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        key = os.environ.get("RSIJEV_API_KEY")
+        if key:
+            req.add_header("Authorization", f"Bearer {key}")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=timeout) as r:
+            d = json.loads(r.read())
     p = d["answers"]["safe"]["noul"]
     if isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p) \
             or not 0.0 <= p <= 1.0:
@@ -330,7 +344,12 @@ def hook(stdin=None, stdout=None) -> None:
     except Exception:
         return
     try:
-        url = os.environ.get("AGENTGUARD_URL", DEFAULT_URL)
+        url = os.environ.get("AGENTGUARD_URL")
+        if not url:
+            local = local_model()
+            if local is not None:
+                local.kick()           # never waits: a cold model is just the normal prompt
+            url = LOCAL if local is not None else DEFAULT_URL
         d = evaluate(payload, url, threshold_from_env())
     except Exception as e:
         d = Decision("ask", f"guard error: {type(e).__name__}")
