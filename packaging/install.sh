@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install RSI-Jev on an Apple Silicon Mac. Nothing else needs to be installed first.
 #   curl -fsSL https://github.com/Shanghua-Gao/RSI-Jev/releases/latest/download/install.sh | sh
-# Remove it with: rm -rf ~/.rsi-jev ~/.local/bin/decide ~/.local/bin/agentguard ~/.local/bin/rsi-jev
+# Remove it with: rm -rf ~/.rsi-jev ~/.local/bin/decide ~/.local/bin/decideit ~/.local/bin/agentguard ~/.local/bin/rsi-jev
 set -eu
 
 main() {
@@ -29,7 +29,7 @@ main() {
     [ ! -e "$app" ] || mv "$app" "$app.old"
     mv "$tmp/$name" "$app"
     rm -rf "$app.old"
-    for c in decide agentguard rsi-jev; do ln -sf "$app/bin/$c" "$bin/$c"; done
+    for c in decide decideit agentguard rsi-jev; do ln -sf "$app/bin/$c" "$bin/$c"; done
 
     case ":$PATH:" in
         *":$bin:"*) ;;

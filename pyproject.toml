@@ -47,6 +47,7 @@ mlx = ["mlx>=0.32", "numpy", "pillow"]
 [project.scripts]
 rsi-jev = "serve.cli:main"
 decide = "serve.decide_cli:main"
+decideit = "serve.decide_cli:main"
 agentguard = "agentguard.agentguard:main"
 
 [project.urls]

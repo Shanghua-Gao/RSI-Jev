@@ -8,7 +8,7 @@ On an Apple Silicon Mac with macOS 14 or newer. Nothing else needs to be install
 curl -fsSL https://github.com/Shanghua-Gao/RSI-Jev/releases/latest/download/install.sh | sh
 ```
 
-or `brew install shanghua-gao/tap/rsi-jev`, or `pip install rsi-jev` if you use Python. None of them installs
+or `brew install shanghua-gao/tap/decideit`, or `pip install decideit` if you use Python. None of them installs
 PyTorch. The app is 84 MB; the model (1.7 GB) downloads the first time you use it, and images add
 0.2 GB the first time you send one.
 

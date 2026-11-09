@@ -191,4 +191,6 @@ def test_client_path_imports_no_torch():
 
 
 def test_console_script_is_declared():
-    assert 'decide = "serve.decide_cli:main"' in (ROOT / "pyproject.toml").read_text()
+    text = (ROOT / "pyproject.toml").read_text()
+    assert 'decide = "serve.decide_cli:main"' in text
+    assert 'decideit = "serve.decide_cli:main"' in text

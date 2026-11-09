@@ -48,6 +48,7 @@ WRAPPER
     chmod +x "$APP/bin/$1"
 }
 wrap decide serve.decide_cli
+wrap decideit serve.decide_cli
 wrap rsi-jev serve.cli
 wrap agentguard agentguard.agentguard
 
