@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_MODEL = "shgao/rsi-jev-v7.0-vl-3b-mlx"
+DEFAULT_MODEL = "shgao/rsi-jev-v7.0-vl-3b-mlx-4bit"
 START_TIMEOUT = 300.0        # a busy Mac can take minutes to page 2 GB in
 STOP_TIMEOUT = 15.0
 

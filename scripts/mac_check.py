@@ -1,7 +1,7 @@
 """Check an MLX build on this Mac: answers vs the shipped references, latency per effort, peak memory.
 
-    python scripts/mac_check.py shgao/rsi-jev-v7.0-vl-3b-mlx          # or a local directory
-    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v7.0-vl-3b-mlx.json
+    python scripts/mac_check.py shgao/rsi-jev-v7.0-vl-3b-mlx-4bit          # or a local directory
+    python scripts/mac_check.py PKG --ref scripts/mac_check_ref/rsi-jev-v7.0-vl-3b-mlx-4bit.json
 
 First the latency of one short question per request, median and mean, at each effort. Then
 it runs the reference rows (200 questions: 180 text, 20 with images; public benchmarks) through
