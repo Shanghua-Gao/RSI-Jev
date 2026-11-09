@@ -4,6 +4,7 @@ class Decideit < Formula
   desc "Local judgment model for your shell: decide, agentguard"
   homepage "https://github.com/Shanghua-Gao/RSI-Jev"
   url "https://github.com/Shanghua-Gao/RSI-Jev/releases/download/v7.0.0/rsi-jev-7.0.0-macos-arm64.tar.gz"
+  version "7.0.0"
   sha256 "@SHA256@"
   license "MIT"
 
@@ -15,6 +16,8 @@ class Decideit < Formula
 
   def install
     libexec.install Dir["*"]
+    # so the first decide does not spend seconds compiling; a file that will not compile is harmless
+    quiet_system libexec/"python/bin/python3", "-I", "-m", "compileall", "-q", libexec/"python/lib/python3.12"
     %w[decide decideit agentguard rsi-jev].each { |c| bin.install_symlink libexec/"bin"/c }
   end
 

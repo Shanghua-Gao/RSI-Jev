@@ -29,6 +29,8 @@ main() {
     [ ! -e "$app" ] || mv "$app" "$app.old"
     mv "$tmp/$name" "$app"
     rm -rf "$app.old"
+    # So the first decide does not spend seconds compiling.
+    "$app/python/bin/python3" -I -m compileall -q "$app/python/lib/python3.12" >/dev/null 2>&1 || true
     for c in decide decideit agentguard rsi-jev; do ln -sf "$app/bin/$c" "$bin/$c"; done
 
     case ":$PATH:" in
