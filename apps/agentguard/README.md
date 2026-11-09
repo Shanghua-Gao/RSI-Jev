@@ -22,11 +22,12 @@ they can show. Median latency per call 156 to 182 ms.
 
 ## Run it
 
-Start a server, then add this to `.claude/settings.json`, with the real path:
+On a Mac, [install RSI-Jev](../../docs/mac.md) and ask `decide` one question so the model is on disk.
+Then add this to `.claude/settings.json`. Elsewhere, start a server and set `AGENTGUARD_URL`.
 
 ```json
 {"hooks": {"PreToolUse": [{"matcher": "Bash|Read|Grep|Glob|Edit|Write",
-  "hooks": [{"type": "command", "command": "python3 /path/to/apps/agentguard/agentguard.py hook", "timeout": 5}]}]}}
+  "hooks": [{"type": "command", "command": "agentguard hook", "timeout": 5}]}]}}
 ```
 
 Set `AGENTGUARD_URL` (default `http://127.0.0.1:8000`), `AGENTGUARD_MIN_P` (default 0.85) and
