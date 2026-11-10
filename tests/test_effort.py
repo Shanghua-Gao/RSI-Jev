@@ -172,8 +172,10 @@ def test_the_runner_resolves_validates_and_does_not_pool(models):
     ad = _ada(models, 0.9)
     r = _runner(ad)
     assert "effort" not in r.plan(STATES[0], QS)           # unchanged when unset
-    p = r.plan(STATES[0], QS, effort="medium")
-    assert p["effort"] == "medium" and not r.poolable(p)
+    p = r.plan(STATES[0], QS, effort="low")
+    assert p["effort"] == "low" and not r.poolable(p)
+    # this model has one aux exit (4) below the main one (8), as v7.0-VL 3B: medium runs the main exit
+    assert r.plan(STATES[0], QS, effort="medium")["effort"] == "high"
     assert r.poolable(r.plan(STATES[0], QS, effort="high")) == r.poolable(r.plan(STATES[0], QS))
     with pytest.raises(RequestError, match="effort must be one of"):
         r.plan(STATES[0], QS, effort="fast")
@@ -421,3 +423,12 @@ def test_the_route_takes_a_threshold_object():
     assert c.post("/v1/systemone", json=_body(effort="auto", confidence_threshold={"16": 0.7})).status_code == 200
     assert c.post("/v1/systemone", json=_body(confidence_threshold=0.5)).status_code == 200
     assert c.post("/v1/systemone", json=_body(confidence_threshold={"16": 2})).status_code == 422
+
+
+# -- medium on a one-aux-exit release (v7.0-VL 3B: exits 16, 20) is the main exit --
+@pytest.mark.parametrize("exits,want", [([16, 20], "high"), ([16, 20, 32], "medium")])
+def test_medium_with_one_aux_exit_is_the_main_exit(exits, want):
+    from types import SimpleNamespace
+    m = SimpleNamespace(effort_base=SimpleNamespace(exits=exits))
+    assert E.resolve(m, "medium", None, images=False) == (want, None)
+    assert E.resolve(m, "low", None, images=False) == ("low", None)

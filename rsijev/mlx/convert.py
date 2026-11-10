@@ -2,6 +2,7 @@
 
     python scripts/convert_mlx.py PKG OUT --bits 8 --group 64 [--embed-bits 8] [--heads-dtype bf16]
     python scripts/convert_mlx.py PKG OUT --codes gptq4g32.safetensors [--embed-bits 8]
+    ... [--vision-bits 8] [--heads-bits 8] [--no-vision]
 
 PKG is a self-contained release (config.json next to meta.json: v5.0-VL on). OUT gets:
 
@@ -33,6 +34,14 @@ single matrices.
 may differ from the tower's group. --heads-dtype bf16 stores the scorer and exit-head weights in
 bf16 (they are still computed in fp32); calibration.safetensors stays fp32.
 
+--vision-bits quantizes the vision tower's linears (not the patch projection or position table) by
+round-to-nearest at --vision-group; they run through quantized matmuls. --heads-bits stores the
+heads' 2-D weights in fewer bits (`<key>` + `<key>.scales` / `.biases`), dequantized to fp32 at each use.
+--embed-pq M:K stores embed_tokens as product-quantized codes (`embed_tokens.pq_codes` uint8,
+`embed_tokens.pq_books` bf16), M sub-vectors of K entries; a lookup reads M book rows.
+--no-vision leaves the vision tower out: a text-only build. With --codes each matrix is packed at
+the narrowest width holding its codes, so a codes file may mix widths per layer.
+
 The output also gets SHA256SUMS (every file) and a size line in mlx.json.
 """
 from __future__ import annotations
@@ -51,6 +60,7 @@ FORMAT_VERSION = 1
 LINEAR_NAMES = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a", "out_proj",
                 "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
 _LINEAR = re.compile(r"^layers\.\d+\.(linear_attn|self_attn|mlp)\.(" + "|".join(LINEAR_NAMES) + r")\.weight$")
+_VISION_LINEAR = re.compile(r"^(blocks\.\d+\.(attn\.(qkv|proj)|mlp\.linear_fc[12])|merger\.linear_fc[12])\.weight$")
 
 COPY = ("meta.json", "config.json", "tokenizer.json", "tokenizer_config.json", "vocab.json",
         "merges.txt", "special_tokens_map.json", "added_tokens.json", "chat_template.jinja",
@@ -64,6 +74,34 @@ HEAD_FILES = ("scorer.safetensors", "aux_scorers.safetensors")
 
 def is_quantized_linear(key: str) -> bool:
     return bool(_LINEAR.match(key))
+
+
+def narrowest_bits(q) -> int:
+    qmax = int(q.max())
+    return next(b for b in (2, 3, 4, 5, 6, 8) if qmax < (1 << b))
+
+
+def _quantize_file(src: Path, dst: Path, select, bits: int, group: int, torch, save_file, suffix: bool):
+    """Copy a safetensors file with the keys `select` picks quantized. suffix: `<name>.weight` +
+    `<name>.scales` / `.biases` (a quantized linear); else `<key>` + `<key>.scales` / `.biases`."""
+    from safetensors import safe_open
+
+    from .quant import pack, quantize
+    out, n = {}, 0
+    with safe_open(str(src), framework="pt") as fh:
+        meta = fh.metadata()
+        for key in fh.keys():
+            w = fh.get_tensor(key)
+            if not select(key, w) or w.shape[-1] % group:
+                out[key] = w.contiguous()
+                continue
+            q, s, z = quantize(w.to(torch.bfloat16), bits, group)
+            name = key[: -len(".weight")] if suffix else key
+            out[key] = torch.from_numpy(pack(q.numpy(), bits).view("int32")).view(torch.uint32)
+            out[f"{name}.scales"], out[f"{name}.biases"] = s.to(torch.bfloat16).contiguous(), z.to(torch.bfloat16).contiguous()
+            n += 1
+    save_file(out, str(dst), metadata=meta)
+    return n
 
 
 def _layer_index(key: str) -> int | None:
@@ -105,7 +143,10 @@ def load_codes(path: str | Path) -> tuple[dict, int, int]:
 
 def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
             embed_bits: int | None = None, embed_group: int = 64, codes: str | Path | None = None,
-            heads_dtype: str = "fp32", overrides: dict | None = None, log=print) -> dict:
+            embed_pq: tuple | None = None, heads_dtype: str = "fp32", overrides: dict | None = None,
+            vision_bits: int | None = None,
+            vision_group: int = 64, heads_bits: int | None = None, heads_group: int = 64,
+            vision: bool = True, log=print) -> dict:
     """Write the MLX checkpoint for `pkg` into `out`; returns the mlx.json record."""
     import torch
     from safetensors import safe_open
@@ -149,6 +190,14 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
                 continue
             w = fh.get_tensor(key)
             bytes_in += w.numel() * w.element_size()
+            if key == "embed_tokens.weight" and embed_pq:
+                from .quant import pq_train
+                pc, pb = pq_train(w, embed_pq[0], embed_pq[1],
+                                  device="cuda" if torch.cuda.is_available() else "cpu")
+                tensors["embed_tokens.pq_codes"], tensors["embed_tokens.pq_books"] = pc.contiguous(), pb.contiguous()
+                bytes_out += pc.numel() + pb.numel() * 2
+                n_kept += 1
+                continue
             b, g = None, group
             if from_codes and is_quantized_linear(key) and key not in overrides:
                 raise SystemExit(f"--codes has no entry for {key}: every tower linear must come "
@@ -173,6 +222,7 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
                     raise SystemExit(f"{key}: codes {tuple(q.shape)} g{q.shape[-1] // s.shape[-1]} "
                                      f"vs weight {tuple(w.shape)} g{g}")
                 q = q.to(torch.uint8)
+                b = narrowest_bits(q)
             else:
                 q, s, z = quantize(w, b, g)
             name = key[: -len(".weight")]
@@ -190,9 +240,17 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
     copied = []
     for name in COPY:
         src = pkg / name
-        if not src.exists():
+        if not src.exists() or (name == "visual.safetensors" and not vision):
             continue
-        if heads_dtype == "bf16" and name in HEAD_FILES:
+        if name == "visual.safetensors" and vision_bits:
+            n = _quantize_file(src, out / name, lambda k, w: bool(_VISION_LINEAR.match(k)), vision_bits,
+                               vision_group, torch, save_file, True)
+            log(f"vision tower: {n} linears at {vision_bits}-bit g{vision_group}")
+        elif heads_bits and name in HEAD_FILES:
+            n = _quantize_file(src, out / name, lambda k, w: w.is_floating_point() and w.ndim == 2 and w.shape[-1] >= heads_group,
+                               heads_bits, heads_group, torch, save_file, False)
+            log(f"{name}: {n} matrices at {heads_bits}-bit g{heads_group}")
+        elif heads_dtype == "bf16" and name in HEAD_FILES:
             from safetensors.torch import load_file
             sd = load_file(str(src))
             meta_st = safe_open(str(src), framework="pt").metadata()
@@ -201,21 +259,34 @@ def convert(pkg: str | Path, out: str | Path, *, bits: int = 8, group: int = 64,
         else:
             shutil.copy2(src, out / name)
         copied.append(name)
+    if "tokenizer.json" in copied:                  # what the MLX path tokenizes with
+        from rsijev.frozen_tok import FROZEN, freeze
+        try:
+            freeze(pkg, out)
+            copied.append(FROZEN)
+        except Exception as e:                      # the package then loads through transformers
+            log(f"no {FROZEN}: {type(e).__name__}: {e}")
 
     record = {
         "format": FORMAT, "format_version": FORMAT_VERSION,
         "source": pkg.resolve().name,
         "source_tower_sha256": _tower_sha(pkg),
         "tower": {"bits": bits, "group_size": group if bits < 16 else None, "mode": "affine",
-                  "quantized": f"{n_q - (1 if embed_bits else 0)} decoder-layer linears" if bits < 16 else "none (bf16)",
+                  "quantized": f"{n_q - (1 if embed_bits and not embed_pq else 0)} decoder-layer linears"
+                  if bits < 16 else "none (bf16)",
                   "method": ("precomputed codes (packed as is)" if from_codes else "round-to-nearest (mx.quantize)")
                   if bits < 16 else None,
                   "codes_sha256": codes_sha, "scales_dtype": "bfloat16"},
-        "embed_tokens": {"bits": embed_bits, "group_size": embed_group if embed_bits else None,
-                         "method": "round-to-nearest (mx.quantize)" if embed_bits else None},
-        "vision": {"bits": 16},
-        "heads": ("fp32 as shipped (scorer, aux_scorers, calibration)" if heads_dtype == "fp32" else
+        "embed_tokens": ({"bits": None, "group_size": None, "method": "product quantization (k-means)",
+                          "pq": {"m": embed_pq[0], "k": embed_pq[1]}} if embed_pq else
+                         {"bits": embed_bits, "group_size": embed_group if embed_bits else None,
+                          "method": "round-to-nearest (mx.quantize)" if embed_bits else None}),
+        "vision": ({"bits": vision_bits, "group_size": vision_group} if vision_bits else {"bits": 16})
+        if vision else None,
+        "heads": (f"scorer and aux_scorers weights {heads_bits}-bit (dequantized to fp32 at each use)" if heads_bits else
+                  "fp32 as shipped (scorer, aux_scorers, calibration)" if heads_dtype == "fp32" else
                   "scorer and aux_scorers weights bf16 (computed in fp32); calibration fp32 as shipped"),
+        "head_quant": {"bits": heads_bits, "group_size": heads_group} if heads_bits else None,
         "not_quantized": skipped,
         "exit_layer": exit_layer, "layers_dropped": n_dropped,
         "tower_bytes": {"source": bytes_in, "mlx": bytes_out},

@@ -60,11 +60,18 @@ def main(argv=None) -> int:
         src_keys = set(fh.keys())
         for key in sorted(src_keys):
             name = key[: -len(".weight")] if key.endswith(".weight") else None
-            if name and name + ".scales" in T:
+            if key == "embed_tokens.weight" and "embed_tokens.pq_codes" in T:
+                wt = fh.get_tensor(key)
+                ct, bt = T["embed_tokens.pq_codes"], T["embed_tokens.pq_books"]
+                if ct.shape[0] != wt.shape[0] or ct.shape[1] * bt.shape[2] != wt.shape[1]:
+                    fail(key, f"pq shape {ct.shape} {bt.shape}")
+                res["kinds"]["pq"] = 1
+            elif name and name + ".scales" in T:
                 w = T[key]
                 s, b = T[name + ".scales"], T[name + ".biases"]
                 emb = key == "embed_tokens.weight"
                 bits, g = (eb["bits"], eb["group_size"]) if emb else (tb["bits"], tb["group_size"])
+                bits = w.shape[-1] * 32 // (s.shape[-1] * g)         # per matrix: a build may mix widths
                 deq = f32(mx.dequantize(w, s, b, group_size=g, bits=bits))
                 if not emb and codes:
                     q = codes[name + ".q"]
@@ -98,7 +105,7 @@ def main(argv=None) -> int:
                 res["kinds"]["dropped"] = res["kinds"].get("dropped", 0) + 1
                 continue
             res["checked"] += 1
-    extra = {k for k in T if not k.endswith((".scales", ".biases"))} - src_keys
+    extra = {k for k in T if not k.endswith((".scales", ".biases", ".pq_codes", ".pq_books"))} - src_keys
     if extra:
         fail("tower", f"keys not in the package: {sorted(extra)[:5]}")
     if codes:
@@ -107,8 +114,9 @@ def main(argv=None) -> int:
         if missing:
             fail("codes", f"{len(missing)} matrices of the codes file not quantized in the tower")
     bf16_heads = "bf16" in rec.get("heads", "")
+    head_q = (rec.get("head_quant") or {}).get("bits")
     for f in HEAD_FILES + ("calibration.safetensors",):
-        if not (pkg / f).exists():
+        if not (pkg / f).exists() or (head_q and f in HEAD_FILES):
             continue
         A, B = load_file(str(pkg / f)), load_file(str(out / f))
         want_bf16 = bf16_heads and f in HEAD_FILES

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rsi-jev"
-version = "3.0.0"
+version = "7.0.0"
 description = "RSI-Jev typed-decision models: a Jev-compatible server, a Python API and the training code"
 readme = "README.md"
 license = "MIT"
@@ -13,8 +13,13 @@ requires-python = ">=3.10"
 # from a clone. The torch floor is the first version clear of all published torch
 # advisories, and the one the test suite is run against.
 dependencies = [
-    "torch>=2.13",
-    "transformers>=5.17,<5.18",  # 5.18 changes the Qwen3.5 pre-tokenizer (adds \p{M}); the releases were trained and verified on 5.17
+    "torch>=2.13; sys_platform != 'darwin' or platform_machine != 'arm64'",
+    "transformers>=5.17,<5.18; sys_platform != 'darwin' or platform_machine != 'arm64'",  # 5.18 changes the Qwen3.5 pre-tokenizer (adds \p{M}); the releases were trained and verified on 5.17
+    # Apple Silicon runs the MLX builds: no torch, no transformers (tokenizer.frozen.json)
+    "mlx>=0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "tokenizers>=0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "numpy; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "pillow; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "safetensors",
     "huggingface_hub",
     "fastapi",
@@ -33,19 +38,25 @@ vision = ["pillow", "torchvision"]
 # httptools on its own when they are installed. Same answers, same API.
 http = ["orjson>=3.10", "uvloop>=0.21; sys_platform != 'win32'", "httptools>=0.6"]
 test = ["pytest", "httpx"]
+# The PyTorch backend on Apple Silicon, where it is not installed by default.
+torch = ["torch>=2.13", "transformers>=5.17,<5.18"]
 # Apple Silicon: serve an MLX checkpoint (scripts/convert_mlx.py) with --backend mlx.
 # mlx-lm is optional (its Metal gated-delta kernel, RSIJEV_MLX_DELTA=kernel).
 mlx = ["mlx>=0.32", "numpy", "pillow"]
 
 [project.scripts]
 rsi-jev = "serve.cli:main"
+decide = "serve.decide_cli:main"
+decideit = "serve.decide_cli:main"
+agentguard = "agentguard.agentguard:main"
 
 [project.urls]
 Homepage = "https://github.com/Shanghua-Gao/RSI-Jev"
 Weights = "https://huggingface.co/shgao"
 
 [tool.setuptools]
-packages = ["rsijev", "rsijev.mlx", "serve"]
+packages = ["rsijev", "rsijev.mlx", "serve", "agentguard"]
+package-dir = {"agentguard" = "apps/agentguard", "" = "."}
 
 [tool.setuptools.package-data]
 serve = ["ui.html", "examples.json"]

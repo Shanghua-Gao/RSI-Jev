@@ -1,5 +1,64 @@
 # RSI-Jev on a Mac (MLX)
 
+## Install
+
+On an Apple Silicon Mac with macOS 14 or newer. Nothing else needs to be installed first:
+
+```bash
+curl -fsSL https://github.com/Shanghua-Gao/RSI-Jev/releases/latest/download/install.sh | sh
+```
+
+or `brew install shanghua-gao/tap/decideit`, or `pip install decideit` if you use Python. None of them installs
+PyTorch. The app is 84 MB; the model (1.7 GB) downloads the first time you use it, and images add
+0.2 GB the first time you send one.
+
+```bash
+echo 'The build failed on line 3.' | decide 'Did the build pass?' && echo yes || echo no
+```
+
+The model starts by itself and quits after 10 idle minutes, which gives its memory back
+(`RSIJEV_IDLE_MINUTES` changes that).
+
+## v7.0-VL 3B: about 2 GB
+
+A 4-bit build of [v7.0-VL 3B](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b), the first 20
+layers of the 4B. Same API, effort levels and calibration as the PyTorch release.
+
+| build | download | Decision Index 0.2.1, 16k sample | same answer as the bf16 release, on the Mac |
+|---|---|---|---|
+| [4-bit](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b-mlx-4bit) | 1.70 GB, + 0.21 GB for images | 58.50 | 96.5% (`low`), 97.5% (`medium`, `high`, `auto`) |
+| [bf16 release](https://huggingface.co/shgao/rsi-jev-v7.0-vl-3b) (reference) | 6.8 GB | 59.15 | – |
+
+The Decision Index reads use the 4-bit build's weights in PyTorch, on the same rows and GPU type
+as the bf16 read. Agreement is on 200 questions (180 text, 20 with images) run by MLX on an M2 Max;
+the 20 image questions all agree.
+
+To run a server yourself: `rsi-jev serve v7.0-vl-3b-mlx-4bit`.
+
+Measured on an M2 Max (34 GB) with `scripts/mac_check.sh`:
+
+| | 4-bit |
+|---|---|
+| one short question | 67–68 ms (`low`), 68–74 ms (`auto`), 83–84 ms (`medium`, `high`) |
+| the first `decide` after installing | 4 s |
+| `decide` after the model has gone idle | 0.8–1.8 s, with the model files in the disk cache |
+| memory for the weights | 1.7 GB, about 1.9 GB with images |
+| peak memory, 1k-token document | 3.05 GB, 1.4–2.3 s |
+| peak memory, 8k-token document | 3.59 GB, 13 s |
+| peak memory, 32k-token document | 5.54 GB, 52 s |
+
+| part | 4-bit build |
+|---|---|
+| decoder layers 1–20, every linear layer | 4-bit, groups of 32, GPTQ |
+| token embeddings | 2-bit, groups of 64, round to nearest |
+| vision tower | 4-bit, groups of 32 |
+| decision heads (layers 16, 20) | 8-bit, groups of 64, computed in fp32 |
+
+Inputs longer than 4,096 tokens run through each DeltaNet layer in 4,096-token pieces with the
+state carried over, which keeps the 32k case at 5.54 GB.
+
+## v6.1-VL 4B
+
 RSI-Jev v6.1-VL 4B runs on Apple silicon through [MLX](https://github.com/ml-explore/mlx). There
 are two builds. Both have the same API, effort levels and image support as the PyTorch release;
 they store the weights in fewer bits.

@@ -26,18 +26,28 @@ def main(argv=None) -> int:
     ap.add_argument("--embed-bits", type=int, default=None,
                     help="also quantize embed_tokens at this many bits (default: keep bf16)")
     ap.add_argument("--embed-group", type=int, default=64, help="embed_tokens group size (default 64)")
+    ap.add_argument("--embed-pq", default=None, metavar="M:K",
+                    help="product-quantize embed_tokens: M sub-vectors, K (at most 256) entries each")
     ap.add_argument("--codes", default=None,
                     help="precomputed codes for every tower linear (<name>.q/.s/.b safetensors, e.g. "
                          "GPTQ): packed as is, bits and group read from the file")
     ap.add_argument("--heads-dtype", choices=("fp32", "bf16"), default="fp32",
                     help="store the scorer and exit-head weights in bf16 (computed in fp32 either way)")
+    ap.add_argument("--vision-bits", type=int, default=None, help="quantize the vision tower's linears")
+    ap.add_argument("--vision-group", type=int, default=64)
+    ap.add_argument("--heads-bits", type=int, default=None, help="store the heads' matrices in this many bits")
+    ap.add_argument("--heads-group", type=int, default=64)
+    ap.add_argument("--no-vision", action="store_true", help="leave the vision tower out (text-only build)")
     ap.add_argument("--revision", default=None, help="Hugging Face revision to download")
     a = ap.parse_args(argv)
     from serve.release import resolve_ckpt
     from rsijev.mlx.convert import checkpoint_bytes, convert
     pkg = resolve_ckpt(a.pkg, revision=a.revision)
     rec = convert(pkg, a.out, bits=a.bits, group=a.group, embed_bits=a.embed_bits,
-                  embed_group=a.embed_group, codes=a.codes, heads_dtype=a.heads_dtype)
+                  embed_group=a.embed_group, codes=a.codes,
+                  embed_pq=tuple(int(x) for x in a.embed_pq.split(":")) if a.embed_pq else None, heads_dtype=a.heads_dtype,
+                  vision_bits=a.vision_bits, vision_group=a.vision_group, heads_bits=a.heads_bits,
+                  heads_group=a.heads_group, vision=not a.no_vision)
     sizes = checkpoint_bytes(a.out)
     for k, v in sizes.items():
         print(f"  {k:28s} {v / 1e9:6.2f} GB")

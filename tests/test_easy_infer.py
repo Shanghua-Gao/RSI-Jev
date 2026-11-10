@@ -316,7 +316,8 @@ def test_requirements_and_package_agree_on_the_runtime():
     cfg = tomllib.loads((ROOT / "pyproject.toml").read_text())
     reqs = {line.split(";")[0].strip() for line in (ROOT / "requirements.txt").read_text().splitlines()
             if line.strip() and not line.startswith("#")}
-    assert set(cfg["project"]["dependencies"]) <= reqs
+    apple = "sys_platform == 'darwin'"            # the MLX runtime; requirements.txt is the PyTorch one
+    assert {d.split(";")[0].strip() for d in cfg["project"]["dependencies"] if apple not in d} <= reqs
     fast = cfg["project"]["optional-dependencies"]["fast"]
     assert any(d.startswith("flash-linear-attention") for d in fast)
     assert any(d.startswith("fla-core") for d in fast)

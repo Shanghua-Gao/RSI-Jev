@@ -214,6 +214,12 @@ def _env_float(name: str) -> float | None:
     return float(v) if v else None
 
 
+def _default_backend() -> str:
+    """MLX where it is what got installed (Apple Silicon has no torch by default)."""
+    from importlib.util import find_spec
+    return "mlx" if find_spec("torch") is None and find_spec("mlx") is not None else "torch"
+
+
 def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
     if positional:
         ap.add_argument("model", nargs="?", default=None,
@@ -279,7 +285,7 @@ def add_serve_args(ap: argparse.ArgumentParser, *, positional: bool) -> None:
     ap.add_argument("--version", default=None,
                     help="the release being served, as GET /v1/limits reports it. "
                          "Read off the checkpoint's own name when it carries one.")
-    ap.add_argument("--backend", default=os.environ.get("RSIJEV_BACKEND", "").strip().lower() or "torch",
+    ap.add_argument("--backend", default=os.environ.get("RSIJEV_BACKEND", "").strip().lower() or _default_backend(),
                     choices=["torch", "mlx"],
                     help="torch (default): the PyTorch path. mlx: Apple Silicon, an MLX checkpoint "
                          "made by scripts/convert_mlx.py (8-bit or bf16); same API and response "
@@ -377,6 +383,13 @@ def serve_mlx(a: argparse.Namespace, ref) -> int:
     """`serve` on the MLX backend (rsijev/mlx/serving.py): the same app, routes and response
     fields; one request at a time (no micro-batching), no document cache."""
     import uvicorn
+    app = build_mlx_app(a, ref)
+    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
+    return 0
+
+
+def build_mlx_app(a: argparse.Namespace, ref):
+    """The loaded model behind the HTTP app, ready to run. `a.vision` False skips the vision tower."""
     from serve.app import create_app
     from serve.effort import default_effort
     from rsijev.mlx.serving import load_for_serving as load_mlx, model_worker as mlx_worker
@@ -385,7 +398,7 @@ def serve_mlx(a: argparse.Namespace, ref) -> int:
     s = load_mlx(ref, revision=a.revision, max_length=getattr(a, "max_length", None),
                  truncate=getattr(a, "truncate", None),
                  fixed_exit=getattr(a, "fixed_exit", None) or None,
-                 adaptive=getattr(a, "adaptive", None), dtype=a.dtype)
+                 adaptive=getattr(a, "adaptive", None), dtype=a.dtype, vision=getattr(a, "vision", None))
     effort = default_effort(getattr(a, "effort", None))
     explicit_mode = (getattr(a, "adaptive", None) is not None) or bool(getattr(a, "fixed_exit", False))
     if effort is not None and explicit_mode:
@@ -423,8 +436,7 @@ def serve_mlx(a: argparse.Namespace, ref) -> int:
         print(f"images: off ({il['reason']})", flush=True)
     print(f"serving {ref} on MLX as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"calibration {s.meta.get('calibration', 'none')}", flush=True)
-    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
-    return 0
+    return app
 
 
 def main(argv: list[str] | None = None) -> int:

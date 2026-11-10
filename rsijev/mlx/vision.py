@@ -6,9 +6,10 @@
     image, 2-D rotary in fp32, attention within each image, LayerNorm, GELU (tanh) MLP,
     merger LayerNorm -> 4096 -> GELU -> text width. What rsijev.vision.load_visual runs.
   * `ImagePrep`: rsijev.vision.ImagePrep without torch: the release's own image processor
-    config (transformers' Qwen2-VL processor; the torchvision backend when torchvision is
-    installed, so pixels match the PyTorch path exactly, else the PIL backend), the same
-    per-request token budget split evenly over the images, numpy out.
+    config (transformers' Qwen2-VL processor with the torchvision backend when torchvision
+    is installed, so pixels match the PyTorch path exactly, else `NativeProcessor`, Pillow and
+    numpy, equal to transformers' PIL backend), the same per-request token budget split
+    evenly over the images, numpy out.
   * `mrope_positions`: transformers' Qwen3_5Model.get_rope_index in numpy: text tokens count
     up, an image's tokens take (t, h, w) from its merged grid starting at the running
     position, and the text after it continues from the grid's larger side.
@@ -23,6 +24,8 @@ from typing import Sequence
 
 import mlx.core as mx
 import numpy as np
+
+from .text import Linear
 
 F32 = mx.float32
 
@@ -45,7 +48,7 @@ def _rotate_half(x):
 
 
 class VisionTower:
-    def __init__(self, cfg: dict, params: dict, dtype=mx.bfloat16):
+    def __init__(self, cfg: dict, params: dict, dtype=mx.bfloat16, group: int | None = None):
         vc = cfg["vision_config"]
         self.dtype = dtype
         self.hidden = vc["hidden_size"]
@@ -60,6 +63,15 @@ class VisionTower:
         spatial = hd // 2
         self.inv_freq = 1.0 / (theta ** (mx.arange(0, spatial, 2, dtype=F32) / spatial))
         g = lambda k: params[k].astype(dtype)                           # noqa: E731
+
+        def lin(name):
+            """A block's linear, plain in `dtype` or MLX affine-quantized (`group` from mlx.json)."""
+            m = Linear.from_params(params, name, group)
+            m.b = m.b.astype(dtype)
+            if not m.quantized:
+                m.w = m.w.astype(dtype)
+            return m
+
         pw = params["patch_embed.proj.weight"]                          # (O, C, T, P, P)
         self.patch_w = pw.reshape(pw.shape[0], -1).astype(dtype)
         self.patch_b = g("patch_embed.proj.bias")
@@ -67,14 +79,12 @@ class VisionTower:
         self.blocks = []
         for i in range(self.depth):
             p = f"blocks.{i}."
-            self.blocks.append({k: g(p + k) for k in (
-                "norm1.weight", "norm1.bias", "norm2.weight", "norm2.bias", "attn.qkv.weight",
-                "attn.qkv.bias", "attn.proj.weight", "attn.proj.bias", "mlp.linear_fc1.weight",
-                "mlp.linear_fc1.bias", "mlp.linear_fc2.weight", "mlp.linear_fc2.bias")})
-        self.merger = {k: g("merger." + k) for k in (
-            "norm.weight", "norm.bias", "linear_fc1.weight", "linear_fc1.bias",
-            "linear_fc2.weight", "linear_fc2.bias")}
-        self.out_hidden = self.merger["linear_fc2.weight"].shape[0]
+            blk = {k: g(p + k) for k in ("norm1.weight", "norm1.bias", "norm2.weight", "norm2.bias")}
+            blk.update({k: lin(p + k) for k in ("attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2")})
+            self.blocks.append(blk)
+        self.merger = {k: g("merger." + k) for k in ("norm.weight", "norm.bias")}
+        self.merger.update({k: lin("merger." + k) for k in ("linear_fc1", "linear_fc2")})
+        self.out_hidden = params["merger.linear_fc2.bias"].shape[0]
 
     # -- per-image geometry (numpy), as transformers.vision_utils computes it
     def _positions(self, grid: np.ndarray) -> np.ndarray:
@@ -137,7 +147,7 @@ class VisionTower:
         hd = self.hidden // self.heads
         for blk in self.blocks:
             h = _layer_norm(x, blk["norm1.weight"], blk["norm1.bias"])
-            qkv = (h @ blk["attn.qkv.weight"].T + blk["attn.qkv.bias"]).reshape(N, 3, self.heads, hd)
+            qkv = blk["attn.qkv"](h).reshape(N, 3, self.heads, hd)
             q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]
             qf, kf = q.astype(F32), k.astype(F32)
             q = (qf * cos + _rotate_half(qf) * sin).astype(self.dtype)
@@ -150,17 +160,17 @@ class VisionTower:
                 o = mx.fast.scaled_dot_product_attention(qi, ki, vi, scale=hd ** -0.5)
                 outs.append(o[0].transpose(1, 0, 2).reshape(b - a, self.hidden))
             o = outs[0] if len(outs) == 1 else mx.concatenate(outs, axis=0)
-            x = x + (o @ blk["attn.proj.weight"].T + blk["attn.proj.bias"])
+            x = x + blk["attn.proj"](o)
             h = _layer_norm(x, blk["norm2.weight"], blk["norm2.bias"])
-            h = _gelu_tanh((h @ blk["mlp.linear_fc1.weight"].T + blk["mlp.linear_fc1.bias"]).astype(F32)).astype(self.dtype)
-            x = x + (h @ blk["mlp.linear_fc2.weight"].T + blk["mlp.linear_fc2.bias"])
+            h = _gelu_tanh(blk["mlp.linear_fc1"](h).astype(F32)).astype(self.dtype)
+            x = x + blk["mlp.linear_fc2"](h)
             # one block at a time: a lazy graph over all blocks keeps every block's attention
             # scores alive (28 GB peak for one 1,024-token image)
             mx.eval(x)
         mg = self.merger
         h = _layer_norm(x, mg["norm.weight"], mg["norm.bias"]).reshape(-1, self.hidden * self.merge ** 2)
-        h = _gelu((h @ mg["linear_fc1.weight"].T + mg["linear_fc1.bias"]).astype(F32)).astype(self.dtype)
-        return h @ mg["linear_fc2.weight"].T + mg["linear_fc2.bias"]
+        h = _gelu(mg["linear_fc1"](h).astype(F32)).astype(self.dtype)
+        return mg["linear_fc2"](h)
 
 
 # ------------------------------------------------------------------------- preprocessing
@@ -199,25 +209,78 @@ class ImagePrep:
         return pv, grid, [int(np.prod(g)) // (m * m) for g in grid]
 
 
+class NativeProcessor:
+    """Qwen2VLImageProcessorPil of transformers 5.17 in Pillow and numpy: bicubic resize to
+    multiples of patch x merge, scale to [0, 1], normalize, one temporal copy per patch."""
+
+    def __init__(self, config: dict, size: dict | None = None):
+        size = size or config["size"]
+        self.min_pixels, self.max_pixels = int(size["shortest_edge"]), int(size["longest_edge"])
+        self.patch_size, self.merge_size = int(config["patch_size"]), int(config["merge_size"])
+        self.temporal_patch_size = int(config["temporal_patch_size"])
+        self.mean = np.array(config["image_mean"], dtype=np.float32)[:, None, None]
+        self.std = np.array(config["image_std"], dtype=np.float32)[:, None, None]
+        self.config = config
+
+    @classmethod
+    def from_pretrained(cls, src: str, size: dict | None = None) -> "NativeProcessor":
+        return cls(json.loads((Path(src) / "preprocessor_config.json").read_text()), size)
+
+    def _resized(self, height: int, width: int) -> tuple[int, int]:
+        """transformers' smart_resize."""
+        if max(height, width) / min(height, width) > 200:
+            raise ValueError(f"absolute aspect ratio must be smaller than 200, got "
+                             f"{max(height, width) / min(height, width)}")
+        factor = self.patch_size * self.merge_size
+        h, w = round(height / factor) * factor, round(width / factor) * factor
+        if h * w > self.max_pixels:
+            beta = math.sqrt((height * width) / self.max_pixels)
+            h = max(factor, math.floor(height / beta / factor) * factor)
+            w = max(factor, math.floor(width / beta / factor) * factor)
+        elif h * w < self.min_pixels:
+            beta = math.sqrt(self.min_pixels / (height * width))
+            h, w = math.ceil(height * beta / factor) * factor, math.ceil(width * beta / factor) * factor
+        return h, w
+
+    def __call__(self, images: Sequence, return_tensors: str = "np") -> dict:
+        from PIL import Image
+        patches, grids = [], []
+        p, m, t = self.patch_size, self.merge_size, self.temporal_patch_size
+        for im in images:
+            h, w = self._resized(im.height, im.width)
+            a = np.asarray(im.resize((w, h), resample=Image.Resampling.BICUBIC)).transpose(2, 0, 1)
+            a = (a.astype(np.float64) * (1 / 255)).astype(np.float32)
+            a = (a - self.mean) / self.std
+            gh, gw = h // p, w // p
+            x = a.reshape(3, gh // m, m, p, gw // m, m, p).transpose(1, 4, 2, 5, 0, 3, 6)
+            x = np.broadcast_to(x[:, :, :, :, :, None, :, :], (*x.shape[:5], t, *x.shape[5:]))
+            patches.append(x.reshape(gh * gw, 3 * t * p * p))
+            grids.append([1, gh, gw])
+        return {"pixel_values": np.concatenate(patches, axis=0),
+                "image_grid_thw": np.array(grids, dtype=np.int64)}
+
+
 def _processor_class(backend: str | None = None):
-    """Qwen2-VL's image processor: the torchvision backend (what the PyTorch path serves
-    with, so pixels are identical) when torch and torchvision are installed, else the PIL
-    backend (numpy; resizes with PIL's bicubic, which differs from torchvision's by a
-    rounding step: see docs/inference.md "On a Mac (MLX)")."""
+    """The torchvision backend of Qwen2-VL's image processor (what the PyTorch path serves
+    with, so pixels are identical) when torch and torchvision are installed, else
+    NativeProcessor, which resizes with PIL's bicubic: that differs from torchvision's by a
+    rounding step (see docs/inference.md "On a Mac (MLX)"). "pil" is transformers' PIL backend."""
     if backend is None:
         try:
             import torch  # noqa: F401
             import torchvision  # noqa: F401
             backend = "torchvision"
         except ImportError:
-            backend = "pil"
+            backend = "native"
+    if backend == "native":
+        return NativeProcessor
     if backend == "torchvision":
         from transformers.models.qwen2_vl.image_processing_qwen2_vl import Qwen2VLImageProcessor
         return Qwen2VLImageProcessor
     if backend == "pil":
         from transformers.models.qwen2_vl.image_processing_pil_qwen2_vl import Qwen2VLImageProcessorPil
         return Qwen2VLImageProcessorPil
-    raise ValueError(f"image processor backend must be torchvision or pil, got {backend!r}")
+    raise ValueError(f"image processor backend must be native, torchvision or pil, got {backend!r}")
 
 
 def mrope_positions(input_ids: np.ndarray, attention_mask: np.ndarray, grid: np.ndarray,
@@ -259,4 +322,6 @@ def mrope_positions(input_ids: np.ndarray, attention_mask: np.ndarray, grid: np.
 def load_vision(path: str | Path, dtype=mx.bfloat16) -> VisionTower:
     path = Path(path)
     cfg = json.loads((path / "config.json").read_text())
-    return VisionTower(cfg, mx.load(str(path / "visual.safetensors")), dtype=dtype)
+    rec = json.loads((path / "mlx.json").read_text()) if (path / "mlx.json").exists() else {}
+    return VisionTower(cfg, mx.load(str(path / "visual.safetensors")), dtype=dtype,
+                       group=(rec.get("vision") or {}).get("group_size"))

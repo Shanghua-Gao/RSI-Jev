@@ -237,6 +237,24 @@ inference procedures despite receiving equivalent payloads."*
   `--fixed-exit`) for none; `RSIJEV_ADAPTIVE` and `meta.json` `adaptive.serving` set the
   same. Micro-batched requests and image requests always run the full exit.
 
+## `decide`
+
+```bash
+git diff | decide "Does this change touch authentication?" --min-p 0.9 && notify
+cat ticket.txt | decide "Who should handle this?" --choice billing,technical,other
+decide "Is the build green?" --image screenshot.png
+```
+
+On an Apple Silicon Mac the model downloads and starts by itself and quits when idle. Elsewhere, or with
+`--url` or `DECIDE_URL`, it asks the server you name.
+
+Grep for judgment. It reads the state from stdin, asks a running server one question and exits 0 if
+P(true) reaches `--min-p` (default 0.5), 1 if it does not, 2 on any error. An unreachable server is
+2, never 0, so a failed judgment does not read as yes. The probability goes to stderr. With
+`--choice` the winner and its probability go to stdout, and the exit follows that option's
+probability. `--json` puts one object on stdout. `--image` repeats up to 4 times; `--effort` and
+`--url` (or `DECIDE_URL`) are as for the server. It imports the standard library only.
+
 ## Speed
 
 **Install `fla`** (`pip install "rsi-jev[fast]"`, or `pip install -e ".[fast]"` in a
@@ -302,6 +320,8 @@ calibration moves by +0.0001.
 | `runtime.py` | device and precision choice, `--profile`, kernel and `[vision]` extra detection for the startup log |
 | `demo.py`, `ui.html`, `examples.json` | `rsi-jev demo`: the playground page on the served path, with image upload, drag-drop and paste when `/v1/limits` says the model takes images |
 | `demo_images.py` | draws the playground's image examples (chart, screenshot, receipt) |
+| `decide_cli.py` | the `decide` command, standard library only |
+| `autostart.py`, `daemon.py` | starting and stopping the local model behind `decide` |
 | `cli.py`, `bench.py` | the `rsi-jev` command: `serve`, `demo`, `bench`, `download`, `env` |
 | `../scripts/serve.py` | the same server from a clone, without installing |
 

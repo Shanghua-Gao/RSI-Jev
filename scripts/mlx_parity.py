@@ -137,8 +137,9 @@ def token_budget_batches(lengths, tok_budget, batch_size):
 
 def encoder(pkg_or_ckpt: Path):
     from rsijev.encode import EncodeConfig
-    from serve.release import own_token_pool, serving_encoder
+    from serve.release import apply_serve_env, own_token_pool, serving_encoder
     meta = json.loads((pkg_or_ckpt / "meta.json").read_text())
+    apply_serve_env(meta)           # before the EncodeConfig: it reads RSIJEV_OPTION_ECHO
     spec = meta["spec"]
     cap, policy = serving_encoder(spec)
     return EncodeConfig(layout=spec["layout"], option_pool=spec["option_pool"],
@@ -154,6 +155,8 @@ def _save(out, Z, y, tags, extra=None):
 
 # ------------------------------------------------------------------------------- MLX
 def run_mlx(a):
+    if a.no_torch:                  # the torch-free install: imports of torch and torchvision fail
+        sys.modules["torch"] = sys.modules["torchvision"] = None
     import mlx.core as mx
     from PIL import Image
     from transformers import AutoTokenizer
@@ -166,7 +169,8 @@ def run_mlx(a):
     if a.cpu:
         mx.set_default_device(mx.cpu)
     ck, data = Path(a.ckpt), Path(a.data)
-    model = MLXDecisionModel(ck, vision=not a.text_only)
+    model = MLXDecisionModel(ck, vision=not a.text_only,
+                             dtype={"bf16": mx.bfloat16, "fp32": mx.float32}[a.dtype])
     tok = AutoTokenizer.from_pretrained(str(ck))
     enc = encoder(ck)
     log("loaded", ck.name, "device", mx.default_device(), "exits", model.exit_indices(),
@@ -201,7 +205,7 @@ def run_mlx(a):
         if bi % 20 == 0:
             log(f"text batch {bi + 1}/{len(batches)}")
     if vis:
-        prep = ImagePrep(ck, budget=1024)
+        prep = ImagePrep(ck, budget=1024, backend=a.image_backend)
         log("image processor:", prep.backend)
         import dataclasses
         venc = dataclasses.replace(enc, max_length=max(enc.max_length, 1024 + 2048))
@@ -258,7 +262,7 @@ def run_torch(a):
     dev = a.device
     keep_fused_kernels_off(dev)
     pkg, data = Path(a.pkg), Path(a.data)
-    model, tok, enc, meta = load_release(pkg, dev, infer_dtype=torch.bfloat16)
+    model, tok, enc, meta = load_release(pkg, dev, infer_dtype={"bf16": torch.bfloat16, "fp32": torch.float32}[a.dtype])
     model.cal_mode = "none"
     enc.option_order = "canonical"
     if a.qdq:
@@ -278,6 +282,8 @@ def run_torch(a):
     if a.limit:
         text = [r for t in sorted({r[2] for r in text}) for r in [x for x in text if x[2] == t][: a.limit]]
         vis = vis[: a.limit]
+    if a.text_only:
+        vis = []
     tags = [t for *_, t in text] + [f"vis.{b}" for *_, b in vis]
     y = [gold_index(c, q) for c, q, _ in text] + [gold_index(c, q) for c, q, _, _ in vis]
     exits = model.exit_indices()
@@ -290,6 +296,9 @@ def run_torch(a):
             for L, z in model.forward_exits(**b).items():
                 Z[L][ix] = unpermute_logits(z.float(), b["option_perm"], b["option_mask"]).cpu().numpy()
         log("text done")
+        if a.text_only:
+            _save(a.out, Z, y, tags)
+            return
         prep = ImagePrep(meta["weights_source"], VisionConfig(image_token_budget=1024),
                          revision=(meta.get("vision") or {}).get("revision"))
         import dataclasses
@@ -339,7 +348,7 @@ def compare(A, B, y, tags, temps) -> dict:
               "vision": np.array([t.startswith("vis.") for t in tags]),
               "heldout": np.array([t == "heldout" for t in tags])}
     out = {}
-    for L in sorted(A):
+    for L in sorted(set(A) & set(B)):               # a build cut at a shallower exit has fewer
         pa, pb = softmax(A[L] / temps[L]), softmax(B[L] / temps[L])
         aa, ab = pa.argmax(-1), pb.argmax(-1)
         dp = np.abs(pa - pb).max(-1)
@@ -366,7 +375,7 @@ def run_compare(a):
     temps = temps_of(Path(a.pkg))
     res = compare(A, B, y, list(tags), temps)
     taus = (json.loads((Path(a.pkg) / "meta.json").read_text()).get("adaptive") or {}).get("auto_thresholds")
-    if taus:                        # effort auto: each side's own cascade over its own exits
+    if taus and set(A) == set(B):   # effort auto: each side's own cascade over its own exits
         exits = sorted(A)
         taus = {int(k): float(v) for k, v in taus.items()}
         ra, rb = cascade(A, temps, taus, exits), cascade(B, temps, taus, exits)
@@ -422,6 +431,7 @@ def run_effort(a):
     from rsijev.encode import encode_question
     from rsijev.mlx.collate import collate, unpermute
     from rsijev.mlx.serving import load_for_serving, policy_for
+    from serve.effort import resolve
     if a.cpu:
         mx.set_default_device(mx.cpu)
     ck, data = Path(a.ckpt), Path(a.data)
@@ -444,7 +454,8 @@ def run_effort(a):
     for effort in ("low", "medium", "high", "auto"):
         P = np.zeros((len(text), 160), dtype=np.float64)
         depth = np.zeros(len(text), dtype=int)
-        pol = policy_for(model, effort) if effort != "high" else None
+        ran = resolve(model, effort, None, False)[0]    # one aux exit: medium runs as high
+        pol = policy_for(model, ran) if ran != "high" else None
         for ix in batches:
             b = collate(tok, [encd[i] for i in ix], 160)
             if pol is None:
@@ -454,9 +465,9 @@ def run_effort(a):
             P[ix] = softmax(unpermute(np.array(z.astype(mx.float32)), b["option_perm"], b["option_mask"]))
             depth[ix] = d
         if effort in ("low", "medium", "high"):
-            L = {"low": exits[0], "medium": exits[-2], "high": exits[-1]}[effort]
+            L = {"low": exits[0], "medium": exits[-2], "high": exits[-1]}[ran]
             ref = softmax(Zx[L] / temps[L])
-            r = {"exit": L, "all_at_exit": bool((depth == L).all()),
+            r = {"ran_as": ran, "exit": L, "all_at_exit": bool((depth == L).all()),
                  "argmax_eq_forced": float((P.argmax(-1) == ref.argmax(-1)).mean()),
                  "max_abs_dp_vs_forced": float(np.abs(P - ref).max())}
         else:
@@ -489,6 +500,9 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--text-only", action="store_true")
+    p.add_argument("--dtype", choices=("bf16", "fp32"), default="bf16", help="tower dtype")
+    p.add_argument("--image-backend", choices=("torchvision", "pil"), default=None)
+    p.add_argument("--no-torch", action="store_true", help="fail if anything imports torch")
     p.add_argument("--cpu", action="store_true")
     p.add_argument("--shard", default=None, help="K/N: every N-th batch from the K-th (merge with `merge`)")
     p.add_argument("--tok-budget", type=int, default=65536)
@@ -503,6 +517,8 @@ def main(argv=None):
     p.add_argument("--data", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--qdq", default=None, help="bits:group, e.g. 8:64")
+    p.add_argument("--text-only", action="store_true")
+    p.add_argument("--dtype", choices=("bf16", "fp32"), default="bf16", help="tower dtype")
     p.add_argument("--device", default="cuda")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--autocast", action=argparse.BooleanOptionalAction, default=True,

@@ -13,11 +13,14 @@ bf16, op for op where precision is decided:
     tower dtype, applied in that dtype. Positions are (3, B, T): equal rows for text, the
     image grid for image tokens (`rsijev.mlx.vision.mrope_positions`)
   * SiLU in fp32, rounded once (what torch's bf16 silu does)
-  * attention: mx.fast.scaled_dot_product_attention (causal, grouped KV heads)
+  * attention: mx.fast.scaled_dot_product_attention (causal, grouped KV heads), or
+    prefix-bidirectional (`run(..., prefix=P)`, a release with RSIJEV_PREFIX_BIDIR=1)
 
 The layers run in stages (`run(h, lo, hi, ...)`), so exits 16 / 20 / 32 read the residual
-stream between stages; the shared final RMSNorm is `norm`. Rows are right-padded, so under
-the causal mask no pad token reaches a real one and no padding mask is needed.
+stream between stages; the shared final RMSNorm is `norm`. Rows are right-padded. Under the
+causal mask no pad token reaches a real one, so no padding mask is needed. The same holds
+under the prefix-bidirectional mask: P is at most the row's length, so a real query at i < P
+sees keys below P and one at i >= P sees keys up to i. DeltaNet layers are causal either way.
 
 `run(..., cache=PrefixCache)` continues every row from a shared prefix: per layer the
 attention keys/values and the DeltaNet conv window + recurrent state of the prefix, broadcast
@@ -38,6 +41,7 @@ import mlx.core as mx
 F32 = mx.float32
 # queries per attention block on long inputs (Attention); bounds the score memory
 ATTN_BLOCK = 1024
+LONG_INPUT = 4096   # tokens; above this the forward pass frees MLX's buffer cache after each layer
 
 
 @dataclass
@@ -185,12 +189,34 @@ def _unit_lower_inverse(S: mx.array) -> mx.array:
     return inv[..., 0, :, :]
 
 
-def chunk_gated_delta(q, k, v, g, beta, state=None, chunk: int = 64):
+DELTA_SEGMENT = 4096   # tokens per piece of a long input (a multiple of the chunk size)
+
+
+def chunk_gated_delta(q, k, v, g, beta, state=None, chunk: int = 64, segment: int = DELTA_SEGMENT):
     """transformers' torch_chunk_gated_delta_rule (use_qk_l2norm_in_kernel=True) in MLX.
 
     q, k (B, T, H, Dk), v (B, T, H, Dv) in the tower dtype, heads already repeated to H;
     g (B, T, H) fp32 log-decay; beta (B, T, H). state (B, H, Dk, Dv) fp32 or None.
-    Returns (out (B, T, H, Dv) in q's dtype, final state (B, H, Dk, Dv) fp32)."""
+    Returns (out (B, T, H, Dv) in q's dtype, final state (B, H, Dk, Dv) fp32).
+
+    Inputs longer than `segment` tokens run piece by piece, the state carried across: every
+    quantity is local to its chunk except the state, so the result is the same, and the fp32
+    intermediates exist for one piece at a time (one layer at 32k tokens: 6.7 GB in one piece)."""
+    T = k.shape[1]
+    if segment and T > segment:
+        if segment % chunk:
+            raise ValueError(f"segment {segment} is not a multiple of chunk {chunk}")
+        outs = []
+        for s0 in range(0, T, segment):
+            sl = slice(s0, min(T, s0 + segment))
+            o, state = _chunk_gated_delta(q[:, sl], k[:, sl], v[:, sl], g[:, sl], beta[:, sl], state, chunk)
+            mx.eval(o, state)
+            outs.append(o)
+        return mx.concatenate(outs, axis=1), state
+    return _chunk_gated_delta(q, k, v, g, beta, state, chunk)
+
+
+def _chunk_gated_delta(q, k, v, g, beta, state, chunk):
     in_dtype = q.dtype
     B, T, H, Dk = k.shape
     Dv = v.shape[-1]
@@ -276,6 +302,17 @@ def delta_backend() -> str:
     return want
 
 
+def prefix_bidir_mask(prefix: mx.array, s0: int, s1: int, keys: int) -> mx.array:
+    """The prefix-bidirectional attention mask for queries s0..s1-1 over keys 0..keys-1,
+    (B, 1, s1 - s0, keys), True = attend. `prefix` (B,) holds each row's P (rsijev/arch.py
+    _sdpa_e2): a query at i < P sees exactly the keys below P, a query at i >= P the keys up
+    to i. Pad queries fall under the second rule; nothing reads them."""
+    i = mx.arange(s0, s1)[None, :, None]
+    j = mx.arange(keys)[None, None, :]
+    p = prefix[:, None, None]
+    return (((i < p) & (j < p)) | ((i >= p) & (j <= i)))[:, None]
+
+
 # ------------------------------------------------------------------------------- weights
 class Linear:
     """y = x W^T (+ b); W either a plain array or MLX affine-quantized (codes/scales/biases)."""
@@ -309,10 +346,12 @@ class Linear:
 
 
 class Embedding:
-    __slots__ = ("w", "scales", "biases", "group", "bits", "dtype")
+    __slots__ = ("w", "scales", "biases", "group", "bits", "dtype", "books", "sub")
 
     def __init__(self, p: dict, group: int | None, dtype):
-        self.w = p["embed_tokens.weight"]
+        self.books = p.get("embed_tokens.pq_books")
+        self.sub = None if self.books is None else mx.arange(self.books.shape[0])
+        self.w = p["embed_tokens.pq_codes" if self.books is not None else "embed_tokens.weight"]
         self.scales = p.get("embed_tokens.scales")
         self.biases = p.get("embed_tokens.biases")
         self.group, self.dtype = group, dtype
@@ -321,6 +360,9 @@ class Embedding:
             self.bits = self.w.shape[-1] * 32 // (self.scales.shape[-1] * group)
 
     def __call__(self, ids: mx.array) -> mx.array:
+        if self.books is not None:                     # one book row per sub-vector
+            v = self.books[self.sub, self.w[ids].astype(mx.int32)]
+            return v.reshape(*ids.shape, -1).astype(self.dtype)
         if self.scales is None:
             return self.w[ids].astype(self.dtype)
         return mx.dequantize(self.w[ids], self.scales[ids], self.biases[ids],
@@ -426,7 +468,8 @@ class Attention:
         self.eps = cfg.rms_norm_eps
         self.scale = self.hd ** -0.5
 
-    def __call__(self, x, cos, sin, cache: LayerCache | None = None, record: LayerCache | None = None):
+    def __call__(self, x, cos, sin, cache: LayerCache | None = None, record: LayerCache | None = None,
+                 prefix: mx.array | None = None):
         B, T, _ = x.shape
         qg = self.q_proj(x).reshape(B, T, self.nh, 2 * self.hd)
         q, gate = qg[..., :self.hd], qg[..., self.hd:]
@@ -443,7 +486,22 @@ class Attention:
             P = cache.keys.shape[2]
             k = mx.concatenate([mx.broadcast_to(cache.keys, (B, self.nkv, P, self.hd)), k], axis=2)
             v = mx.concatenate([mx.broadcast_to(cache.values, (B, self.nkv, P, self.hd)), v], axis=2)
-        if T > ATTN_BLOCK:
+        if prefix is not None and T > ATTN_BLOCK:
+            # as below; a prefix query sees keys past its block, up to the longest prefix
+            pmax = int(prefix.max())
+            outs = []
+            for s0 in range(0, T, ATTN_BLOCK):
+                s1 = min(T, s0 + ATTN_BLOCK)
+                K = min(T, max(s1, pmax))
+                ob = mx.fast.scaled_dot_product_attention(q[:, :, s0:s1], k[:, :, :K], v[:, :, :K], scale=self.scale,
+                                                          mask=prefix_bidir_mask(prefix, s0, s1, K))
+                mx.eval(ob)
+                outs.append(ob)
+            o = mx.concatenate(outs, axis=2)
+        elif prefix is not None:
+            o = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale,
+                                                     mask=prefix_bidir_mask(prefix, 0, T, T))
+        elif T > ATTN_BLOCK:
             # long inputs: queries in blocks, each against the keys it can see, evaluated one
             # block at a time. Where no fused kernel covers this head size (256), attention
             # materializes the scores, (T x T x heads) fp32 in one piece: 57 GB at 30k tokens.
@@ -486,14 +544,39 @@ class DecoderLayer:
         self.ln2 = 1.0 + p[f"{pre}.post_attention_layernorm.weight"].astype(F32)
         self.eps = cfg.rms_norm_eps
 
-    def __call__(self, x, cos, sin, cache=None, record=None):
+    def __call__(self, x, cos, sin, cache=None, record=None, prefix=None):
+        T = x.shape[1]
+        if self.linear and T > LONG_INPUT and cache is None and record is None:
+            return self._pieces(x)
         h = rms_norm(x, self.ln1, self.eps)
         if self.linear:
             h = self.mixer(h, cache, record)
         else:
-            h = self.mixer(h, cos, sin, cache, record)
+            h = self.mixer(h, cos, sin, cache, record, prefix)
         x = x + h
-        return x + self.mlp(rms_norm(x, self.ln2, self.eps))
+        if T > LONG_INPUT:
+            return mx.concatenate([self._mlp_res(x[:, s0:s0 + LONG_INPUT]) for s0 in range(0, T, LONG_INPUT)], axis=1)
+        return self._mlp_res(x)
+
+    def _mlp_res(self, x):
+        out = x + self.mlp(rms_norm(x, self.ln2, self.eps))
+        if x.shape[1] == LONG_INPUT:
+            mx.eval(out)
+        return out
+
+    def _pieces(self, x):
+        """A DeltaNet layer on a long input, LONG_INPUT tokens at a time: everything but the
+        recurrence is per token, and the conv window and state carry over in a LayerCache, as
+        a prefix cache would. Same result up to fp32 rounding; the projections' and the MLP's
+        activations exist for one piece at a time."""
+        c, outs = LayerCache(), []
+        for s0 in range(0, x.shape[1], LONG_INPUT):
+            xp = x[:, s0:s0 + LONG_INPUT]
+            xp = xp + self.mixer(rms_norm(xp, self.ln1, self.eps), c, c)
+            xp = xp + self.mlp(rms_norm(xp, self.ln2, self.eps))
+            mx.eval(xp, c.conv, c.state)
+            outs.append(xp)
+        return mx.concatenate(outs, axis=1)
 
 
 class TextTower:
@@ -521,18 +604,27 @@ class TextTower:
         return rotary_cos_sin(positions, self.cfg, self.dtype)
 
     def run(self, h: mx.array, lo: int, hi: int, rope, *, cache: PrefixCache | None = None,
-            record: PrefixCache | None = None) -> mx.array:
-        """Decoder layers lo..hi-1 on h (B, T, D); un-normed output. `rope` = rotary(positions)."""
+            record: PrefixCache | None = None, prefix: mx.array | None = None) -> mx.array:
+        """Decoder layers lo..hi-1 on h (B, T, D); un-normed output. `rope` = rotary(positions).
+        `prefix` (B,): full-attention layers run prefix-bidirectional over each row's first P
+        tokens. A prefix cache holds causal state, so `prefix` refuses `cache` and `record`."""
+        if prefix is not None and (cache is not None or record is not None):
+            raise ValueError("prefix-bidirectional attention has no prefix cache: serve every "
+                             "row as one full forward pass")
         cos, sin = rope
         for i in range(lo, hi):
             c = cache.layers.get(i) if cache is not None else None
             r = None
             if record is not None:
                 r = record.layers.setdefault(i, LayerCache())
-            h = self.layers[i](h, cos, sin, c, r)
+            h = self.layers[i](h, cos, sin, c, r, prefix)
             # one layer at a time: a lazy graph over many layers keeps every layer's fp32
             # intermediates (the chunked delta rule's) alive at once (19 GB at 8k tokens)
             mx.eval(h)
+            if h.shape[1] > LONG_INPUT:
+                # MLX keeps freed buffers for reuse; on a long input that cache reached 18 GB
+                # at 32k tokens and pushed a busy Mac into swap (one layer: 46 s instead of 4 s)
+                mx.clear_cache()
         if record is not None:
             record.length = h.shape[1] + (cache.length if cache is not None else 0)
         return h

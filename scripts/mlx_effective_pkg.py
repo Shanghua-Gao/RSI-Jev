@@ -26,7 +26,7 @@ def main(argv=None) -> int:
     from safetensors import safe_open
     from safetensors.torch import save_file
 
-    from rsijev.mlx.quant import dequantize, unpack
+    from rsijev.mlx.quant import dequantize, pq_decode, unpack
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("mlx_dir")
@@ -39,23 +39,57 @@ def main(argv=None) -> int:
     with safe_open(str(src / "tower.safetensors"), "pt") as fh:
         keys = set(fh.keys())
         for k in sorted(keys):
-            if k.endswith((".scales", ".biases")):
+            if k.endswith((".scales", ".biases", ".pq_books")):
+                continue
+            if k == "embed_tokens.pq_codes":
+                td["embed_tokens.weight"] = pq_decode(fh.get_tensor(k), fh.get_tensor("embed_tokens.pq_books")).contiguous()
+                n += 1
                 continue
             name = k[: -len(".weight")] if k.endswith(".weight") else None
             if name and name + ".scales" in keys:
                 s, b = fh.get_tensor(name + ".scales"), fh.get_tensor(name + ".biases")
                 words = fh.get_tensor(k).view(torch.int32).numpy().view(np.uint32)
                 part = rec["embed_tokens"] if k == "embed_tokens.weight" else rec["tower"]
-                bits, g = part["bits"], part["group_size"]
+                g = part["group_size"]
                 n_in = s.shape[-1] * g
+                bits = words.shape[-1] * 32 // n_in             # per matrix: a build may mix widths
                 q = torch.from_numpy(unpack(words, bits, n_in))
                 td[k] = dequantize(q, s, b, g, torch.bfloat16).contiguous()
                 n += 1
             else:
                 td[k] = fh.get_tensor(k)
     save_file(td, str(out / "tower.safetensors"))
+
+    def expand(name, group, suffix):
+        """A dequantized bf16 copy of a quantized vision or head file."""
+        res = {}
+        with safe_open(str(src / name), "pt") as fh:
+            keys = set(fh.keys())
+            for k in keys:
+                if k.endswith((".scales", ".biases")):
+                    continue
+                base = k[: -len(".weight")] if suffix and k.endswith(".weight") else k
+                if base + ".scales" not in keys:
+                    res[k] = fh.get_tensor(k)
+                    continue
+                sc, bi = fh.get_tensor(base + ".scales"), fh.get_tensor(base + ".biases")
+                words = fh.get_tensor(k).view(torch.int32).numpy().view(np.uint32)
+                n_in = sc.shape[-1] * group
+                q = torch.from_numpy(unpack(words, words.shape[-1] * 32 // n_in, n_in))
+                res[k] = dequantize(q, sc, bi, group, torch.bfloat16).contiguous()
+        save_file(res, str(out / name))
+
+    made = {"tower.safetensors"}
+    vq, hq = rec.get("vision") or {}, rec.get("head_quant") or {}
+    if vq.get("group_size"):
+        expand("visual.safetensors", vq["group_size"], True)
+        made.add("visual.safetensors")
+    if hq.get("group_size"):
+        for f in ("scorer.safetensors", "aux_scorers.safetensors"):
+            expand(f, hq["group_size"], False)
+            made.add(f)
     for f in src.iterdir():
-        if f.name in ("tower.safetensors", "SHA256SUMS", "mlx.json") or not f.is_file():
+        if f.name in made or f.name in ("SHA256SUMS", "mlx.json") or not f.is_file():
             continue
         d = out / f.name
         if d.is_symlink() or d.exists():
