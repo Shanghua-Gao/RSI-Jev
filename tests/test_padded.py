@@ -256,3 +256,27 @@ def test_bidir_differs_from_causal(tok, models, forced, monkeypatch):
     monkeypatch.delenv("RSIJEV_PREFIX_BIDIR")
     c, _ = _score(padded, tok, STATES[0])
     assert max(abs(x - y) for pb, pc in zip(b, c) for x, y in zip(pb, pc)) > 1e-4
+
+
+def test_pad_max_rows_limits_padding_to_small_batches(monkeypatch):
+    monkeypatch.delenv(P.ENV_MAX_ROWS, raising=False)
+    assert P.max_rows(SimpleNamespace()) == 0
+    assert P.max_rows(SimpleNamespace(serving_pad_max_rows=1)) == 1
+    monkeypatch.setenv(P.ENV_MAX_ROWS, "2")
+    assert P.max_rows(SimpleNamespace(serving_pad_max_rows=1)) == 2
+    assert P.pads(2, 300, M) and P.pads(2, 300, M, 0)
+    assert P.pads(1, 300, M, 1) and not P.pads(2, 300, M, 1)
+    assert not P.pads(1, 769, M, 1)
+
+
+def test_load_release_reads_pad_max_rows(stub_lm, tmp_path, models, monkeypatch):
+    monkeypatch.delenv(P.ENV_MAX_ROWS, raising=False)
+    monkeypatch.delenv(P.ENV_PAD, raising=False)
+    from serve.release import load_release
+    _, _, ada, _ = models
+    d = _write_release(tmp_path / "rel", ada)
+    meta = json.loads((d / "meta.json").read_text())
+    meta["serving"] = {"pad_multiple": M, "pad_max_rows": 1}
+    (d / "meta.json").write_text(json.dumps(meta))
+    model, _, _, served = load_release(d, "cpu")
+    assert model.serving_pad_max_rows == 1 and served["serving"]["pad_max_rows"] == 1

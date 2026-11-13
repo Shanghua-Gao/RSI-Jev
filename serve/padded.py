@@ -65,6 +65,7 @@ import torch
 
 ENV_PAD = "RSIJEV_PAD_MULTIPLE"
 ENV_GRAPHS = "RSIJEV_CUDA_GRAPHS"
+ENV_MAX_ROWS = "RSIJEV_PAD_MAX_ROWS"
 PAD_MAX_TOKENS = int(os.environ.get("RSIJEV_PAD_MAX_TOKENS", "768"))
 GRAPH_MAX_TOKENS = int(os.environ.get("RSIJEV_GRAPH_MAX_TOKENS", str(PAD_MAX_TOKENS)))
 GRAPH_MAX = int(os.environ.get("RSIJEV_GRAPH_MAX", "1024"))
@@ -79,6 +80,17 @@ def pad_multiple(model) -> int:
     if raw:
         return max(0, int(raw))
     return int(getattr(model, "serving_pad_multiple", 0) or 0)
+
+
+def max_rows(model) -> int:
+    """Largest batch (rows) that runs padded: RSIJEV_PAD_MAX_ROWS if set, else meta.json
+    serving.pad_max_rows; 0 = no row limit (only PAD_MAX_TOKENS). 1 pads single-row batches
+    only: multi-row short batches stay on the eager path, where padding to the longest row
+    and new graph shapes cost more than they save."""
+    raw = os.environ.get(ENV_MAX_ROWS, "").strip()
+    if raw:
+        return max(0, int(raw))
+    return int(getattr(model, "serving_pad_max_rows", 0) or 0)
 
 
 def graphs_on() -> bool:
@@ -126,10 +138,12 @@ def bidir_prefix(st: dict) -> torch.Tensor | None:
     return torch.minimum(torch.where(om, end, torch.zeros_like(end)).max(dim=1).values, st["lengths"])
 
 
-def pads(n_rows: int, width: int, m: int) -> bool:
+def pads(n_rows: int, width: int, m: int, rows_cap: int = 0) -> bool:
     """Whether a plain text batch of n_rows rows, longest `width` tokens, runs padded (and
     graphed): rows x padded width <= PAD_MAX_TOKENS. A function of the batch shape only, so
     a request's numbers never depend on what ran before it."""
+    if rows_cap and int(n_rows) > rows_cap:
+        return False
     return m > 0 and int(n_rows) * ceil_to(width, m) <= PAD_MAX_TOKENS
 
 
