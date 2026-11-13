@@ -133,7 +133,7 @@ def run_rows(model, tokenizer, rows: Sequence[dict], *, max_options: int, device
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if trim_options else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
-        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m):
+        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m, P.max_rows(model)):
             z = P.runner(model).fixed(batch, [len(e["input_ids"]) for e in part], m, pad_id)
             logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature
             probs = F.softmax(logits, dim=-1).float().cpu()
@@ -640,7 +640,7 @@ def score_adaptive(model, tokenizer, plan: dict, *, max_options: int, device,
         part = [rows[i] for i in idx]
         width = max(ks[i] for i in idx) if opt["trim_options"] else max_options
         batch = collate(tokenizer, part, max_options=width, device=device, option_tokens=tokens)
-        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m):
+        if cache is None and P.pads(len(part), max(len(e["input_ids"]) for e in part), m, P.max_rows(model)):
             # padded (+ CUDA-graphed) staged exit, serve/padded.py
             z, d = P.runner(model).staged(policy, batch, [len(e["input_ids"]) for e in part], m, pad_id)
             logits = unpermute_logits(z, batch["option_perm"], batch["option_mask"]) / temperature

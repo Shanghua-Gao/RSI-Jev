@@ -185,3 +185,98 @@ def test_masks_match_transformers_on_real_positions(models):
     one = P.own_masks(T, lengths[:1], True, "cpu")
     assert one["full_attention"] is None                       # one row: is_causal, no mask
     assert P.own_masks(T, lengths, False, "cpu") == {"full_attention": None, "linear_attention": None}
+
+
+# -- prefix-bidirectional rows (RSIJEV_PREFIX_BIDIR=1, v7.0-VL) ------------------------------
+
+@pytest.fixture
+def bidir(monkeypatch):
+    monkeypatch.setenv("RSIJEV_PREFIX_BIDIR", "1")
+
+
+def test_bidir_mask_is_the_reference_rule():
+    """rsijev.arch._sdpa_e2: prefix queries see the prefix [0, P); later queries see [0, i]; no pad key."""
+    T, lengths, prefix = 2 * M, torch.tensor([M + 5, 2 * M - 9, 17, 9]), torch.tensor([40, 3, 17, 9])
+    got = P.own_masks(T, lengths, True, "cpu", prefix)["full_attention"]
+    for r, (L, Pr) in enumerate(zip(lengths.tolist(), prefix.tolist())):
+        for i in range(L):
+            want = [(j < Pr) if i < Pr else (j <= i) for j in range(T)]
+            assert got[r, 0, i].tolist() == [w and j < L for j, w in enumerate(want)]
+    one = P.own_masks(T, lengths[:1], False, "cpu", prefix[:1])
+    assert one["full_attention"] is not None and one["linear_attention"] is None   # one row is not causal
+
+
+def test_bidir_prefix_is_the_scope_rows(bidir):
+    st = {"option_span_end": torch.tensor([[7, 12, 0], [5, 9, 30]]),
+          "option_mask": torch.tensor([[True, True, False], [True, True, True]]),
+          "lengths": torch.tensor([20, 25])}
+    assert P.bidir_prefix(st).tolist() == [12, 25]                 # last real span end, capped at the length
+    assert P.bidir_prefix({**st, "option_mask": None}).tolist() == [12, 25]
+
+
+def test_no_bidir_prefix_without_the_flag(monkeypatch):
+    monkeypatch.delenv("RSIJEV_PREFIX_BIDIR", raising=False)
+    assert P.bidir_prefix({}) is None
+
+
+@pytest.mark.parametrize("calibrated", [False, True])
+def test_bidir_fixed_exit_padded_equals_eager(tok, models, forced, bidir, calibrated):
+    eager = _release(models, calibrated=calibrated)
+    padded = _release(models, calibrated=calibrated)
+    padded.serving_pad_multiple = M
+    for state in STATES:
+        for qs in (QS, QS[:1]):
+            want, _ = _score(eager, tok, state, qs)
+            got, _ = _score(padded, tok, state, qs)
+            _close(got, want)
+    assert P.runner(padded).stats["eager"] > 0
+
+
+@pytest.mark.parametrize("effort,tau", [("auto", 0.9), ("low", 0.9), ("high", 0.9), (None, 0.6)])
+def test_bidir_staged_exit_padded_equals_eager(tok, models, forced, bidir, effort, tau):
+    eager = _release(models, tau=tau)
+    padded = _release(models, tau=tau)
+    for m in (eager, padded):
+        m.effort_base = m.adaptive_policy
+    padded.serving_pad_multiple = M
+    for state in STATES:
+        want, dw = _score(eager, tok, state, effort=effort)
+        got, dg = _score(padded, tok, state, effort=effort)
+        assert dg == dw
+        _close(got, want)
+    assert P.runner(padded).stats["eager"] > 0
+
+
+def test_bidir_differs_from_causal(tok, models, forced, monkeypatch):
+    """The padded bidir pass really reads the prefix both ways (not the causal mask)."""
+    padded = _release(models)
+    padded.serving_pad_multiple = M
+    monkeypatch.setenv("RSIJEV_PREFIX_BIDIR", "1")
+    b, _ = _score(padded, tok, STATES[0])
+    monkeypatch.delenv("RSIJEV_PREFIX_BIDIR")
+    c, _ = _score(padded, tok, STATES[0])
+    assert max(abs(x - y) for pb, pc in zip(b, c) for x, y in zip(pb, pc)) > 1e-4
+
+
+def test_pad_max_rows_limits_padding_to_small_batches(monkeypatch):
+    monkeypatch.delenv(P.ENV_MAX_ROWS, raising=False)
+    assert P.max_rows(SimpleNamespace()) == 0
+    assert P.max_rows(SimpleNamespace(serving_pad_max_rows=1)) == 1
+    monkeypatch.setenv(P.ENV_MAX_ROWS, "2")
+    assert P.max_rows(SimpleNamespace(serving_pad_max_rows=1)) == 2
+    assert P.pads(2, 300, M) and P.pads(2, 300, M, 0)
+    assert P.pads(1, 300, M, 1) and not P.pads(2, 300, M, 1)
+    assert not P.pads(1, 769, M, 1)
+
+
+def test_load_release_reads_pad_max_rows(stub_lm, tmp_path, models, monkeypatch):
+    monkeypatch.delenv(P.ENV_MAX_ROWS, raising=False)
+    monkeypatch.delenv(P.ENV_PAD, raising=False)
+    from serve.release import load_release
+    _, _, ada, _ = models
+    d = _write_release(tmp_path / "rel", ada)
+    meta = json.loads((d / "meta.json").read_text())
+    meta["serving"] = {"pad_multiple": M, "pad_max_rows": 1}
+    (d / "meta.json").write_text(json.dumps(meta))
+    model, _, _, served = load_release(d, "cpu")
+    assert model.serving_pad_max_rows == 1 and served["serving"]["pad_max_rows"] == 1

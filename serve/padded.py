@@ -23,6 +23,12 @@ the pad limit), up to RSIJEV_GRAPH_MAX shapes (default 1024; the padded shapes n
 hundred: widths <= 768/rows x stages x option widths); a shape past the cap runs the same
 function eager (same bits).
 
+Prefix-bidirectional rows (RSIJEV_PREFIX_BIDIR=1, v7.0-VL). The full-attention mask is
+rsijev.arch._sdpa_e2's rule built on the device in one tensor (`own_masks` with `prefix`,
+`bidir_prefix`): the training wrapper splits each row into Python-level SDPA calls, which a
+graph cannot capture. Different SDPA kernels, so padded and eager agree to float rounding,
+not bitwise; a package opts in with serving.pad_multiple as for causal rows.
+
 Masks. Each row's length is known on the host, so the masks are built on the device from
 the lengths, without the host synchronisation (`padding_mask.all()`) that keeps
 transformers' own mask builder out of a graph. They are the masks transformers 5.17 builds
@@ -59,6 +65,7 @@ import torch
 
 ENV_PAD = "RSIJEV_PAD_MULTIPLE"
 ENV_GRAPHS = "RSIJEV_CUDA_GRAPHS"
+ENV_MAX_ROWS = "RSIJEV_PAD_MAX_ROWS"
 PAD_MAX_TOKENS = int(os.environ.get("RSIJEV_PAD_MAX_TOKENS", "768"))
 GRAPH_MAX_TOKENS = int(os.environ.get("RSIJEV_GRAPH_MAX_TOKENS", str(PAD_MAX_TOKENS)))
 GRAPH_MAX = int(os.environ.get("RSIJEV_GRAPH_MAX", "1024"))
@@ -73,6 +80,17 @@ def pad_multiple(model) -> int:
     if raw:
         return max(0, int(raw))
     return int(getattr(model, "serving_pad_multiple", 0) or 0)
+
+
+def max_rows(model) -> int:
+    """Largest batch (rows) that runs padded: RSIJEV_PAD_MAX_ROWS if set, else meta.json
+    serving.pad_max_rows; 0 = no row limit (only PAD_MAX_TOKENS). 1 pads single-row batches
+    only: multi-row short batches stay on the eager path, where padding to the longest row
+    and new graph shapes cost more than they save."""
+    raw = os.environ.get(ENV_MAX_ROWS, "").strip()
+    if raw:
+        return max(0, int(raw))
+    return int(getattr(model, "serving_pad_max_rows", 0) or 0)
 
 
 def graphs_on() -> bool:
@@ -99,8 +117,6 @@ def active(model, device) -> int:
     m = pad_multiple(model)
     if m <= 0 or torch.device(device).type != "cuda" or not supported(model):
         return 0
-    if _prefix_bidir_on():          # the padded / CUDA-graphed stage path is causal-only
-        return 0
     return m
 
 
@@ -109,10 +125,25 @@ def _prefix_bidir_on() -> bool:
     return on()
 
 
-def pads(n_rows: int, width: int, m: int) -> bool:
+def bidir_prefix(st: dict) -> torch.Tensor | None:
+    """Under RSIJEV_PREFIX_BIDIR=1 each row's bidirectional prefix length P = end of its last
+    real option span, capped at its length (rsijev.arch._prefix_bidir_scope's rows), computed on
+    the device from the batch tensors; None when the flag is unset."""
+    if not _prefix_bidir_on():
+        return None
+    end = st["option_span_end"]
+    om = st.get("option_mask")
+    if om is None:
+        om = torch.ones_like(end, dtype=torch.bool)
+    return torch.minimum(torch.where(om, end, torch.zeros_like(end)).max(dim=1).values, st["lengths"])
+
+
+def pads(n_rows: int, width: int, m: int, rows_cap: int = 0) -> bool:
     """Whether a plain text batch of n_rows rows, longest `width` tokens, runs padded (and
     graphed): rows x padded width <= PAD_MAX_TOKENS. A function of the batch shape only, so
     a request's numbers never depend on what ran before it."""
+    if rows_cap and int(n_rows) > rows_cap:
+        return False
     return m > 0 and int(n_rows) * ceil_to(width, m) <= PAD_MAX_TOKENS
 
 
@@ -140,16 +171,25 @@ def hf_masks(tm, x, lengths):
             "linear_attention": rec(**mk) if rec is not None else tm._update_linear_attn_mask(am, cache)}
 
 
-def own_masks(T: int, lengths: torch.Tensor, has_pad: bool, device):
+def own_masks(T: int, lengths: torch.Tensor, has_pad: bool, device, prefix: torch.Tensor | None = None):
     """Masks of a right-padded batch. One row: full attention takes no mask (SDPA
     is_causal, the flash kernel the unpadded one-row eager pass uses). For every real query
     position i < len that is the same mask as causal & key-padding (all keys <= i are real);
     the two differ only on pad queries, which nothing reads. The explicit mask there moved
     1-question answers 3-4/1000 (near-ties, max|dp| .082). Several rows: the
     explicit causal & key-padding mask, as transformers builds for the eager padded batch."""
+    t = torch.arange(T, device=device)
+    if prefix is not None:
+        # RSIJEV_PREFIX_BIDIR=1 (v7.0-VL): rsijev.arch._sdpa_e2's per-row split as one mask built on the device,
+        # so the pass can be graphed. Key j is visible to query i iff j < len and (i and j both lie in the
+        # prefix [0, P), or j <= i). Every row takes the explicit mask, one row included (it is not causal).
+        valid = t.view(1, -1) < lengths.view(-1, 1)
+        q, k = t.view(1, 1, -1, 1), t.view(1, 1, 1, -1)
+        P_ = prefix.view(-1, 1, 1, 1)
+        full = (((q < P_) & (k < P_)) | (k <= q)) & valid[:, None, None, :]
+        return {"full_attention": full, "linear_attention": valid.long() if has_pad else None}
     if not has_pad:
         return {"full_attention": None, "linear_attention": None}
-    t = torch.arange(T, device=device)
     valid = t.view(1, -1) < lengths.view(-1, 1)                                  # (n, T)
     if lengths.shape[0] == 1:
         return {"full_attention": None, "linear_attention": valid.long()}
@@ -184,7 +224,7 @@ class _Runner:
         tm, model = self.tm, self.model
         x = tm.embed_tokens(st["input_ids"]) if lo == 0 else st["x_in"]
         n, T = x.shape[0], x.shape[1]
-        masks = own_masks(T, st["lengths"], has_pad, x.device)
+        masks = own_masks(T, st["lengths"], has_pad, x.device, bidir_prefix(st))
         pos = torch.arange(T, device=x.device).view(1, 1, -1).expand(4, n, -1)
         tpos, rpos = pos[0], pos[1:]
         pe = tm.rotary_emb(x, rpos)

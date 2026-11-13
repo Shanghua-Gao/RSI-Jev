@@ -435,6 +435,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     # meta.json serving.pad_multiple: the numerics this release is defined on (serve/padded.py);
     # read before meta["serving"] is rebuilt below. RSIJEV_PAD_MULTIPLE overrides it at run time.
     pad_multiple = int((meta.get("serving") or {}).get("pad_multiple", 0) or 0)
+    pad_max_rows = int((meta.get("serving") or {}).get("pad_max_rows", 0) or 0)
     # A self-contained release (config.json next to meta.json) carries everything it
     # runs: the tokenizer, the image processor, the text tower with its embeddings and
     # the vision tower. It never touches the base model on the Hub. Older releases
@@ -545,6 +546,7 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
     ada, why = adaptive_policy(meta, ckpt, model, device, fixed_exit, adaptive)
     model.adaptive_policy = ada
     model.serving_pad_multiple = pad_multiple
+    model.serving_pad_max_rows = pad_max_rows
     served_ada = None if ada is None else {"exits": ada.exits, "tau": ada.tau, "mode": model.adaptive_mode}
     meta["serving"] = {"max_length": cap, "truncate": policy,
                        "exit_layer": arch.exit_layer, "adaptive": served_ada,
@@ -555,6 +557,8 @@ def load_release(ckpt: str | Path, device: str = "cuda", infer_dtype=None,
         from serve.padded import pad_multiple as _pm
         meta["serving"]["pad_multiple"] = pad_multiple
         meta["serving"]["pad_multiple_served"] = _pm(model)
+        if pad_max_rows:
+            meta["serving"]["pad_max_rows"] = pad_max_rows
     if why:
         meta["serving"]["adaptive_off"] = why
     return model, tok, enc, meta
