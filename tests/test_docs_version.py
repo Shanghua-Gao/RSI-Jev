@@ -24,7 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 # window and the rest describe the project, both of which outlive a version.
 RELEASE_DOCS = []
 PROJECT_DOCS = ["BENCHMARKS.md", "CONTRIBUTING.md", "README.md", "EXPLORE.md",
-                "rsijev/README.md", "serve/README.md", "docs/inference.md"]
+                "rsijev/README.md", "serve/README.md", "docs/inference.md", "docs/decideit.md"]
 DOCS = RELEASE_DOCS + PROJECT_DOCS
 # A release may carry a suffix naming what it adds: v4.0-VL, recorded as versions/v4.0-vl.md;
 # and a size when the same version ships at another size: v6.1-VL 27B, versions/v6.1-vl-27b.md.
