@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rsi-jev"
-version = "7.0.0"
+version = "7.0.1"
 description = "RSI-Jev typed-decision models: a Jev-compatible server, a Python API and the training code"
 readme = "README.md"
 license = "MIT"
