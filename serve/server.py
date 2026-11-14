@@ -302,8 +302,15 @@ def serve(a: argparse.Namespace) -> int:
     if getattr(a, "backend", "torch") == "mlx":
         return serve_mlx(a, ref)
 
-    import torch
     import uvicorn
+    app = build_torch_app(a, ref)
+    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
+    return 0
+
+
+def build_torch_app(a: argparse.Namespace, ref):
+    """The loaded PyTorch model behind the HTTP app, ready to run (`serve`, and the model behind `decide`)."""
+    import torch
     from serve.app import create_app
 
     s = load_for_serving(ref, device=a.device, dtype=a.dtype, revision=a.revision,
@@ -375,8 +382,7 @@ def serve(a: argparse.Namespace) -> int:
     print(f"serving {ref} as {name!r} (alias {a.alias!r}) on {a.host}:{a.port}; "
           f"base {s.meta['base_model']}, calibration {s.meta.get('calibration', 'none')}",
           flush=True)
-    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
-    return 0
+    return app
 
 
 def serve_mlx(a: argparse.Namespace, ref) -> int:

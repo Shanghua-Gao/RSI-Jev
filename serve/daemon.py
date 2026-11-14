@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from serve.autostart import home, model_ref
+from serve.autostart import backend, home, model_ref
 
 NOT_NEEDED = ["vocab.json", "merges.txt", "tokenizer.json", "video_preprocessor_config.json", "chat_template.jinja"]
 VISION_FILE = "visual.safetensors"
@@ -35,7 +35,10 @@ def fetch(vision: bool) -> Path:
         repo = repo_id_for(ref)
         if repo is None:
             raise SystemExit(f"{ref!r} is not a model directory or a Hugging Face repo")
-        path = Path(snapshot_download(repo, ignore_patterns=NOT_NEEDED + ([] if vision else [VISION_FILE])))
+        # The MLX build reads tokenizer.frozen.json and can leave its vision tower for later;
+        # the PyTorch release needs its tokenizer files and loads the vision tower with the model.
+        skip = (NOT_NEEDED + ([] if vision else [VISION_FILE])) if backend() == "mlx" else []
+        path = Path(snapshot_download(repo, ignore_patterns=skip))
     _write("model.json", {"ref": ref, "path": str(path), "vision": (path / VISION_FILE).is_file()})
     return path
 
@@ -62,13 +65,17 @@ class IdleWatch:
 
 def run(vision: bool) -> int:
     import uvicorn
-    from serve.server import add_serve_args, build_mlx_app
+    from serve.server import add_serve_args, build_mlx_app, build_torch_app
     model = json.loads((home() / "model.json").read_text())
     ap = argparse.ArgumentParser()
     add_serve_args(ap, positional=True)
-    a = ap.parse_args([model["path"], "--backend", "mlx", "--no-warmup", "--served-model-name", model["ref"]])
+    be = backend()
+    a = ap.parse_args([model["path"], "--backend", be, "--no-warmup", "--served-model-name", model["ref"]])
+    if be == "torch":                # the PyTorch release loads its vision tower with the model
+        vision = bool(model.get("vision"))
     a.vision = bool(vision)
-    watch = IdleWatch(build_mlx_app(a, model["path"]))
+    build = build_mlx_app if be == "mlx" else build_torch_app
+    watch = IdleWatch(build(a, model["path"]))
     sock = home() / "model.sock"
     server = uvicorn.Server(uvicorn.Config(watch, uds=str(sock), log_level="warning"))
     limit = float(os.environ.get("RSIJEV_IDLE_MINUTES") or 10) * 60

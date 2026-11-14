@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 DEFAULT_MODEL = "shgao/rsi-jev-v7.0-vl-3b-mlx-4bit"
+TORCH_MODEL = "shgao/rsi-jev-v7.0-vl-3b"     # elsewhere (the Linux installer sets RSIJEV_AUTOSTART=1)
 START_TIMEOUT = 300.0        # a busy Mac can take minutes to page 2 GB in
 STOP_TIMEOUT = 15.0
 
@@ -34,8 +35,17 @@ def home() -> Path:
     return h
 
 
+def backend() -> str:
+    """The model behind `decide` runs on MLX on Apple Silicon, on PyTorch elsewhere."""
+    chosen = os.environ.get("RSIJEV_BACKEND", "").strip().lower()
+    if chosen in ("mlx", "torch"):
+        return chosen
+    mac = sys.platform == "darwin" and platform.machine() == "arm64"
+    return "mlx" if mac and importlib.util.find_spec("mlx") is not None else "torch"
+
+
 def model_ref() -> str:
-    return os.environ.get("RSIJEV_DECIDE_MODEL") or DEFAULT_MODEL
+    return os.environ.get("RSIJEV_DECIDE_MODEL") or (DEFAULT_MODEL if backend() == "mlx" else TORCH_MODEL)
 
 
 def available() -> bool:
@@ -110,9 +120,11 @@ def _say(text: str) -> None:
 def _fetch(vision: bool) -> None:
     if _fetched(vision):
         return
-    print("decide: downloading the model, once "
-          + ("(about 0.2 GB more for images)" if _fetched(False) else "(about 1.7 GB)"),
-          file=sys.stderr, flush=True)
+    if backend() == "mlx":
+        size = "(about 0.2 GB more for images)" if _fetched(False) else "(about 1.7 GB)"
+    else:
+        size = "(about 6.8 GB)"
+    print(f"decide: downloading the model, once {size}", file=sys.stderr, flush=True)
     cmd = _python() + ["-m", "serve.daemon", "fetch"] + (["--vision"] if vision else [])
     # stdout belongs to the answer
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr.fileno(), check=False)

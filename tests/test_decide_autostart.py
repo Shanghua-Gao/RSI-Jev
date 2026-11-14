@@ -24,7 +24,7 @@ PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0
 def home(release):  # noqa: F811
     h = Path(tempfile.mkdtemp(prefix="rj", dir="/tmp"))     # a socket path has a short limit
     env = {**os.environ, "RSIJEV_AUTOSTART": "1", "RSIJEV_HOME": str(h), "RSIJEV_DECIDE_MODEL": str(release[1]),
-           "RSIJEV_MLX_DEVICE": "cpu",
+           "RSIJEV_MLX_DEVICE": "cpu", "RSIJEV_BACKEND": "mlx",
            "PYTHONPATH": os.pathsep.join([str(ROOT), os.environ.get("PYTHONPATH", "")])}
     env.pop("DECIDE_URL", None)
     yield h, env
@@ -119,3 +119,44 @@ def test_the_hook_never_waits_for_a_cold_model(home):
     while time.monotonic() < end and not (h / "daemon.json").exists():
         time.sleep(0.2)
     assert (h / "daemon.json").exists(), "the hook starts the model for the next call"
+
+
+# ------------------------------------------------------------- PyTorch (the Linux install)
+@pytest.fixture
+def torch_home(home, release):  # noqa: F811
+    h, env = home
+    return h, {**env, "RSIJEV_BACKEND": "torch", "RSIJEV_DECIDE_MODEL": str(release[0])}
+
+
+def test_torch_backend_starts_answers_and_is_shared(torch_home):
+    h, env = torch_home
+    r = decide(env)
+    assert r.returncode in (0, 1), r.stderr
+    assert 0.0 <= json.loads(r.stdout)["p"] <= 1.0
+    first = pid(h)
+    assert decide(env).returncode in (0, 1)
+    assert pid(h) == first
+    log = (h / "daemon.log").read_text()
+    assert "on MLX as" not in log and "runtime: torch" in log
+
+
+def test_torch_backend_reads_a_picture_without_a_restart(torch_home, tmp_path):
+    import base64
+    h, env = torch_home
+    assert decide(env).returncode in (0, 1)
+    first = pid(h)
+    assert json.loads((h / "daemon.json").read_text())["vision"] is True     # loaded with the model
+    img = tmp_path / "a.png"
+    img.write_bytes(base64.b64decode(PNG))
+    r = decide(env, "--image", str(img), stdin="")
+    assert r.returncode in (0, 1), r.stderr
+    assert pid(h) == first
+
+
+def test_default_model_follows_the_backend(monkeypatch):
+    from serve import autostart
+    monkeypatch.delenv("RSIJEV_DECIDE_MODEL", raising=False)
+    monkeypatch.setenv("RSIJEV_BACKEND", "torch")
+    assert autostart.model_ref() == autostart.TORCH_MODEL
+    monkeypatch.setenv("RSIJEV_BACKEND", "mlx")
+    assert autostart.model_ref() == autostart.DEFAULT_MODEL
