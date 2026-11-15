@@ -229,7 +229,8 @@ def answer_request(scorer: Scorer, req: SystemOneRequest, *, lock=None,
 def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-latest",
                api_key: str | None = None, version: str = "v2.1",
                calibration: str = "none", accept_models: Sequence[str] = (),
-               images: dict[str, Any] | None = None) -> FastAPI:
+               images: dict[str, Any] | None = None,
+               memory: Callable[[], dict] | None = None) -> FastAPI:
     # Apps built on Jev often pin a Jev version ("jev-1.13.0") in their requests.
     # `accept_models` lets a deployment answer those names without code changes in
     # the app. The response still names THIS model: echoing a borrowed name would
@@ -329,7 +330,7 @@ def create_app(scorer: Scorer, *, served_model_name: str, alias: str = "jev-late
         # rescaled. The chosen option is the same either way, the numbers are not.
         return {**limits(), "served_model_name": served_model_name, "version": version,
                 "calibration": calibration, "accepted_model_names": sorted(borrowed),
-                "images": images}
+                "images": images, **({"memory": memory()} if memory is not None else {})}
 
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:

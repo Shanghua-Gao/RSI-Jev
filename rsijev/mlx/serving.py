@@ -329,6 +329,45 @@ def _arrays(obj, seen=None) -> list:
     return out
 
 
+CACHE_GB = 1.0          # MLX's own default lets freed buffers grow to about its memory limit
+
+
+def configure_memory() -> dict:
+    """Bound what MLX keeps after a request. MLX keeps freed buffers for reuse, by default up to
+    about its memory limit: a long-running server answering requests of varying length can hold
+    many GB that no request uses. RSIJEV_MLX_CACHE_GB (default 1) caps those buffers;
+    RSIJEV_MLX_MEMORY_GB, when set, is passed to mx.set_memory_limit (MLX treats it as a
+    guideline, not a hard cap). Returns what was set, for /v1/limits."""
+    def gb(name, default):
+        v = os.environ.get(name, "").strip()
+        if not v:
+            return default
+        x = float(v)
+        if not x >= 0:
+            raise ValueError(f"{name} must be a number of GB >= 0, got {v!r}")
+        return x
+    cache = gb("RSIJEV_MLX_CACHE_GB", CACHE_GB)
+    mx.set_cache_limit(int(cache * 2 ** 30))
+    memory = gb("RSIJEV_MLX_MEMORY_GB", None)
+    if memory is not None:
+        mx.set_memory_limit(int(memory * 2 ** 30))
+    budget = {"cache_limit_gb": cache, "memory_limit_gb": memory}
+    _BUDGET.update(budget)
+    return budget
+
+
+_BUDGET: dict = {}
+
+
+def memory_stats() -> dict:
+    """MLX's allocator counters, in GB: live arrays, retained free buffers, the peak since start.
+    The process's physical footprint on a Mac is about weights + active + cache."""
+    g = 2 ** 30
+    return {"backend": "mlx", "active_gb": round(mx.get_active_memory() / g, 3),
+            "cache_gb": round(mx.get_cache_memory() / g, 3),
+            "peak_gb": round(mx.get_peak_memory() / g, 3), **_BUDGET}
+
+
 def serving_stream():
     """A stream on the default device that any thread may run (MLX's thread-unsafe stream;
     the default stream where MLX has no per-thread streams)."""
@@ -365,6 +404,7 @@ def load_for_serving(ref, *, revision=None, max_length=None, truncate=None, fixe
     # may use (one request at a time, so no two threads use it at once)
     stream = serving_stream()
     mx.set_default_stream(stream)
+    configure_memory()
     model = MLXDecisionModel(path, vision=bool(vb) and vision is not False, dtype=dt)
     model.serving_stream = stream
     # mx.load is lazy, and its reads run on the loading thread's CPU stream: read every
