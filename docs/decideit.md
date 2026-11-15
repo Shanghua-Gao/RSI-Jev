@@ -55,7 +55,9 @@ some_cmd | decide "Is this output a failure?" --min-p 0.9 --json
     yes/no question, and the winner's probability for a choice.
 - **Other flags:**
   - `--effort low|medium|high|auto`: how deep the model reads;
-  - `--timeout SECONDS`;
+  - `--timeout SECONDS` for the answer, and `--start-timeout SECONDS`, one limit on everything before it with the
+    local model: waiting for another `decide` that is starting it, a first download and the start. By default a
+    download has no limit and the start gets 300 s;
   - `--url URL` to use a running server (or set `DECIDE_URL`).
 - **Another model:** set `RSIJEV_DECIDE_MODEL` to an alias, a Hugging Face repo id or a local directory.
 
