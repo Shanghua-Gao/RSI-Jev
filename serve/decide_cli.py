@@ -145,9 +145,16 @@ def ask(a: argparse.Namespace, body: dict, *, vision: bool) -> dict:
     if a.url or not autostart.available():
         return post(a.url or DEFAULT_URL, body, timeout=a.timeout, api_key=os.environ.get("RSIJEV_API_KEY"))
     try:
-        return autostart.ask(body, vision=vision, timeout=a.timeout)
+        return autostart.ask(body, vision=vision, timeout=a.timeout, start_timeout=a.start_timeout)
     except autostart.Unavailable as e:
         raise Failure(str(e)) from e
+
+
+def _seconds(text: str) -> float:
+    v = float(text)
+    if not v > 0:                    # NaN fails this too
+        raise argparse.ArgumentTypeError(f"{text} is not a positive number of seconds")
+    return v
 
 
 def _min_p(text: str) -> float:
@@ -170,7 +177,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--url", default=os.environ.get("DECIDE_URL"),
                     help="a running server (default $DECIDE_URL); on Apple Silicon the model "
                          f"otherwise starts by itself, elsewhere the default is {DEFAULT_URL}")
-    ap.add_argument("--timeout", type=float, default=60.0, help="seconds, default 60")
+    ap.add_argument("--timeout", type=float, default=60.0,
+                    help="seconds to wait for the answer, default 60")
+    ap.add_argument("--start-timeout", type=_seconds, default=None, metavar="SECONDS",
+                    help="the local model only: one limit on everything before the answer "
+                         "(another decide starting it, a first download, the start). "
+                         "Default: no limit on a download, 300 s to start")
     ap.add_argument("--json", action="store_true", help="one JSON object on stdout")
     return ap
 

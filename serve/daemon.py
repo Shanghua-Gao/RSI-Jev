@@ -64,6 +64,16 @@ class IdleWatch:
 
 
 def run(vision: bool) -> int:
+    import fcntl
+    # One daemon per home, for its whole life, loading included. A second one exits at once:
+    # the starter that spawned it then waits for the first (serve/autostart.py, _wait).
+    life = open(home() / "daemon.lock", "a")
+    try:
+        fcntl.flock(life, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        life.close()
+        print("a model is already loading or serving here; this one exits", flush=True)
+        return 0
     import uvicorn
     from serve.server import add_serve_args, build_mlx_app, build_torch_app
     model = json.loads((home() / "model.json").read_text())
@@ -74,6 +84,10 @@ def run(vision: bool) -> int:
     if be == "torch":                # the PyTorch release loads its vision tower with the model
         vision = bool(model.get("vision"))
     a.vision = bool(vision)
+    # Written before the load, so a caller can tell what is loading and stop it if it is not
+    # what it asked for. Only trusted while this process holds the lifetime lock.
+    _write("daemon.json", {"pid": os.getpid(), "vision": bool(vision), "model": model["ref"],
+                           "backend": be, "state": "loading"})
     build = build_mlx_app if be == "mlx" else build_torch_app
     watch = IdleWatch(build(a, model["path"]))
     sock = home() / "model.sock"
@@ -88,7 +102,8 @@ def run(vision: bool) -> int:
 
     if limit > 0:
         threading.Thread(target=exit_when_idle, daemon=True).start()
-    _write("daemon.json", {"pid": os.getpid(), "vision": bool(vision), "model": model["ref"]})
+    _write("daemon.json", {"pid": os.getpid(), "vision": bool(vision), "model": model["ref"],
+                           "backend": be, "state": "serving"})
     try:
         server.run()
     finally:

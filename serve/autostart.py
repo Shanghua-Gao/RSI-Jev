@@ -29,6 +29,10 @@ class Unavailable(Exception):
     """The local model could not answer."""
 
 
+class _OtherModel(Unavailable):
+    """The running daemon serves another model than the one asked for."""
+
+
 def home() -> Path:
     h = Path(os.environ.get("RSIJEV_HOME") or "~/.rsi-jev").expanduser()
     h.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -93,12 +97,56 @@ def _read(name: str) -> dict:
 
 
 @contextlib.contextmanager
-def _lock():
-    """One starter at a time: pipelines run several `decide` at once."""
+def _lock(deadline: float | None = None):
+    """One starter at a time: pipelines run several `decide` at once. Waits until `deadline`."""
     import fcntl
     with open(home() / "lock", "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise Unavailable("another decide is starting the model and it is taking longer "
+                                      "than --start-timeout") from None
+                time.sleep(0.05)
         yield
+
+
+def running() -> bool:
+    """Whether a daemon holds its lifetime lock: loading or serving."""
+    import fcntl
+    try:
+        f = open(home() / "daemon.lock", "a")
+    except OSError:
+        return False
+    with f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(f, fcntl.LOCK_UN)
+        return False
+
+
+def _record() -> dict:
+    """What the running daemon serves; nothing when no daemon holds the lifetime lock."""
+    return _read("daemon.json") if running() else {}
+
+
+def _serves(rec: dict, vision: bool) -> bool:
+    """Whether a daemon's record is the model this caller asked for, with images if needed."""
+    return (rec.get("model") == model_ref() and rec.get("backend", "mlx") == backend()
+            and (not vision or bool(rec.get("vision"))))
+
+
+def _remaining(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise Unavailable("the model did not start within --start-timeout")
+    return left
 
 
 def _fetched(vision: bool) -> bool:
@@ -117,7 +165,7 @@ def _say(text: str) -> None:
         print(f"decide: {text}", file=sys.stderr, flush=True)
 
 
-def _fetch(vision: bool) -> None:
+def _fetch(vision: bool, deadline: float | None = None) -> None:
     if _fetched(vision):
         return
     if backend() == "mlx":
@@ -127,7 +175,12 @@ def _fetch(vision: bool) -> None:
     print(f"decide: downloading the model, once {size}", file=sys.stderr, flush=True)
     cmd = _python() + ["-m", "serve.daemon", "fetch"] + (["--vision"] if vision else [])
     # stdout belongs to the answer
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr.fileno(), check=False)
+    try:
+        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr.fileno(), check=False,
+                           timeout=_remaining(deadline))
+    except subprocess.TimeoutExpired:
+        raise Unavailable("the model download did not finish within --start-timeout; "
+                          "it resumes where it stopped next time") from None
     if r.returncode != 0 or not _fetched(vision):
         raise Unavailable("the model could not be downloaded; check the network and try again")
 
@@ -146,47 +199,74 @@ def _spawn(vision: bool) -> subprocess.Popen:
                                 cwd=home(), start_new_session=True)
 
 
-def _wait(proc: subprocess.Popen, timeout: float) -> None:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
+def _wait(proc: subprocess.Popen | None, deadline: float) -> None:
+    """Until the daemon answers. `proc` is the one this caller started, or None when another
+    caller's daemon is loading. A child that finds a daemon already loading exits at once (0);
+    then the wait is for that one."""
+    while time.monotonic() < deadline:
         if alive():
             return
-        if proc.poll() is not None:
+        if proc is not None and proc.poll() is not None:
+            if proc.returncode != 0 or not running():
+                raise Unavailable(f"the model stopped while loading: {_log_tail()}")
+            proc = None
+        elif proc is None and not running():
             raise Unavailable(f"the model stopped while loading: {_log_tail()}")
         time.sleep(0.1)
-    raise Unavailable(f"the model did not start in {timeout:.0f} s; see {home() / 'daemon.log'}")
+    raise Unavailable(f"the model did not start in time; see {home() / 'daemon.log'}")
 
 
 def stop() -> None:
-    pid = _read("daemon.json").get("pid")
-    if not isinstance(pid, int) or not alive():
+    """Stop the daemon, loading or serving, and wait until it has let go of its lock."""
+    if not running():
         return
-    with contextlib.suppress(OSError):
-        os.kill(pid, signal.SIGTERM)
-    end = time.monotonic() + STOP_TIMEOUT
-    while time.monotonic() < end and alive():
-        time.sleep(0.05)
+    pid = _read("daemon.json").get("pid")
+    if not isinstance(pid, int):
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        with contextlib.suppress(OSError):
+            os.kill(pid, sig)
+        end = time.monotonic() + STOP_TIMEOUT
+        while time.monotonic() < end and running():
+            time.sleep(0.05)
+        if not running():
+            return
+    raise Unavailable(f"the running model (pid {pid}) did not stop")
 
 
 def _ready(vision: bool) -> bool:
-    return alive() and (not vision or bool(_read("daemon.json").get("vision")))
+    return _serves(_record(), vision) and alive()
 
 
-def ensure(vision: bool = False, *, timeout: float = START_TIMEOUT) -> None:
+def ensure(vision: bool = False, *, timeout: float = START_TIMEOUT, deadline: float | None = None,
+           fetch_deadline: float | None = None) -> None:
+    """The model asked for (model_ref(), backend(), images if `vision`) running and answering.
+
+    One deadline covers waiting for another starter, stopping a daemon that serves something
+    else, and the start; `fetch_deadline` bounds a first download (None: no limit)."""
+    if deadline is None:
+        deadline = time.monotonic() + timeout
     if _ready(vision):
         return
-    with _lock():
+    with _lock(deadline):
         if _ready(vision):
             return
-        stop()                       # text only, and images were asked for
-        _fetch(vision)
+        rec = _record()
+        if rec and _serves(rec, vision):
+            _say("waiting for the model to start")
+            _wait(None, deadline)    # another caller's daemon is loading what we want
+            return
+        stop()                       # another model, or text only and images were asked for
+        _fetch(vision, fetch_deadline)
+        _remaining(deadline)
         _say("starting the model")
-        _wait(_spawn(vision), timeout)
+        _wait(_spawn(vision), deadline)
 
 
 def kick() -> None:
-    """Start the model in the background if it is on disk. Never waits, never downloads."""
-    if alive() or not _fetched(False):
+    """Start the model in the background if it is on disk. Never waits, never downloads,
+    never replaces a daemon that is loading or serving."""
+    if running() or not _fetched(False):
         return
     import fcntl
     with open(home() / "lock", "w") as f:
@@ -194,11 +274,14 @@ def kick() -> None:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             return                   # someone is already starting it
-        if not alive():
-            _spawn(False)
+        if not running():
+            _spawn(False)            # a second child that loses the lifetime lock exits at once
 
 
 def post(body: dict, *, timeout: float) -> dict:
+    """Ask the running daemon. The request names the model asked for, so a daemon that serves
+    another one refuses it instead of answering in its place."""
+    body = {**body, "model": model_ref()}
     data = json.dumps(body).encode("utf-8")
     status, raw = _request("POST", "/v1/systemone", data, timeout)
     try:
@@ -208,16 +291,29 @@ def post(body: dict, *, timeout: float) -> dict:
     if status != 200:
         error = answer.get("error") if isinstance(answer, dict) else None
         detail = error.get("message") if isinstance(error, dict) else answer
+        if str(detail).startswith("Unknown model"):
+            raise _OtherModel(f"the running model is not {model_ref()}")
         raise Unavailable(f"the model said {status}: {str(detail)[:300]}")
     return answer
 
 
-def ask(body: dict, *, vision: bool = False, timeout: float = 60.0) -> dict:
-    """The model's response to `body`, starting (and first downloading) it when needed."""
+def ask(body: dict, *, vision: bool = False, timeout: float = 60.0,
+        start_timeout: float | None = None) -> dict:
+    """The model's response to `body`, starting (and first downloading) it when needed.
+
+    `timeout` bounds each answer. `start_timeout` is one budget for everything before it,
+    retries included: waiting for another caller, a first download and the start. Without it a
+    download has no limit and the start gets START_TIMEOUT."""
+    now = time.monotonic()
+    deadline = now + (START_TIMEOUT if start_timeout is None else start_timeout)
+    fetch_deadline = None if start_timeout is None else deadline
     for retry in (True, False):
-        ensure(vision)
+        ensure(vision, deadline=deadline, fetch_deadline=fetch_deadline)
         try:
             return post(body, timeout=timeout)
+        except _OtherModel:
+            if not retry:                # another caller switched it back in between
+                raise
         except (ConnectionError, FileNotFoundError, http.client.RemoteDisconnected) as e:
             if not retry:                # it went idle between the check and the question
                 raise Unavailable(f"the model went away: {e}") from e
