@@ -398,7 +398,7 @@ def build_mlx_app(a: argparse.Namespace, ref):
     """The loaded model behind the HTTP app, ready to run. `a.vision` False skips the vision tower."""
     from serve.app import create_app
     from serve.effort import default_effort
-    from rsijev.mlx.serving import load_for_serving as load_mlx, model_worker as mlx_worker
+    from rsijev.mlx.serving import load_for_serving as load_mlx, memory_stats, model_worker as mlx_worker
     if a.batch_window_ms is not None:
         print("micro-batching is not available on the MLX backend; --batch-window-ms ignored", flush=True)
     s = load_mlx(ref, revision=a.revision, max_length=getattr(a, "max_length", None),
@@ -417,9 +417,13 @@ def build_mlx_app(a: argparse.Namespace, ref):
     served_version = a.version or s.version
     app = create_app(scorer, served_model_name=name, alias=a.alias, api_key=a.api_key,
                      accept_models=a.accept_model, images=s.image_limits,
-                     calibration=s.meta.get("calibration", "none"),
+                     calibration=s.meta.get("calibration", "none"), memory=memory_stats,
                      **({"version": served_version} if served_version else {}))
     import mlx.core as mx
+    m = memory_stats()
+    print(f"memory: freed buffers kept up to {m['cache_limit_gb']:g} GB (RSIJEV_MLX_CACHE_GB)"
+          + (f", memory limit {m['memory_limit_gb']:g} GB" if m["memory_limit_gb"] is not None else "")
+          + "; GET /v1/limits reports active, cached and peak memory", flush=True)
     rec = s.model.mlx_record.get("tower") or {}
     print(f"runtime: mlx {mx.__version__}, {s.device}, tower {s.dtype_name}"
           + (f" (affine g{rec.get('group_size')})" if rec.get("group_size") else "")

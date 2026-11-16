@@ -57,6 +57,12 @@ Measured on an M2 Max (34 GB) with `scripts/mac_check.sh`:
 Inputs longer than 4,096 tokens run through each DeltaNet layer in 4,096-token pieces with the
 state carried over, which keeps the 32k case at 5.54 GB.
 
+MLX keeps freed memory for reuse, by default up to about its memory limit. The server lets it
+keep at most 1 GB (`RSIJEV_MLX_CACHE_GB`). `RSIJEV_MLX_MEMORY_GB` sets MLX's memory limit, which MLX
+treats as a guideline. `GET /v1/limits` reports `memory`: live arrays, freed memory kept, and
+the peak. For the model behind `decide`:
+`curl -s --unix-socket ~/.rsi-jev/model.sock localhost/v1/limits`.
+
 ## v6.1-VL 4B
 
 RSI-Jev v6.1-VL 4B runs on Apple silicon through [MLX](https://github.com/ml-explore/mlx). There
