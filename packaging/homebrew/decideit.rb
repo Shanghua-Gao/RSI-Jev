@@ -3,8 +3,8 @@
 class Decideit < Formula
   desc "Local judgment model for your shell: decide, agentguard"
   homepage "https://github.com/Shanghua-Gao/RSI-Jev"
-  url "https://github.com/Shanghua-Gao/RSI-Jev/releases/download/v7.0.0/rsi-jev-7.0.0-macos-arm64.tar.gz"
-  version "7.0.0"
+  url "https://github.com/Shanghua-Gao/RSI-Jev/releases/download/v7.0.2/rsi-jev-7.0.2-macos-arm64.tar.gz"
+  version "7.0.2"
   sha256 "@SHA256@"
   license "MIT"
 

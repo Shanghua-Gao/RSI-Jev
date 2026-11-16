@@ -4,8 +4,8 @@
 # Remove it with: rm -rf ~/.rsi-jev ~/.local/bin/decide ~/.local/bin/decideit ~/.local/bin/agentguard ~/.local/bin/rsi-jev
 set -eu
 
-version=7.0.1          # the Linux install builds this tag
-mac_bundle=7.0.0       # the newest Mac bundle, a file of that release
+version=7.0.2          # the Linux install builds this tag
+mac_bundle=7.0.2       # the newest Mac bundle, a file of that release
 
 main() {
     case "$(uname -s)" in
